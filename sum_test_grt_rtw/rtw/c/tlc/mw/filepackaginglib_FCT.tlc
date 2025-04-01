@@ -1,0 +1,102 @@
+%%
+%% Copyright 2022-2023 The MathWorks, Inc.
+%%
+%% Abstract:
+%%   This file contains all FCT-related utility functions
+%%
+
+%if EXISTS(_FILEPACKAGINGLIB_FCT_) == 0
+%assign _FILEPACKAGINGLIB_FCT_ = 1
+
+%function UpdateUnusedParamSymbolForModelEntryPointFunctionFile(UnusedParamBuffer, fcnType, tid) void
+    %% If "UNUSED_PARAMETER" is called in the model entry point function
+    %% need to include the corresponding header file that defines this marco
+    %if CGMODEL_ACCESS("String.find", UnusedParamBuffer, "UNUSED_PARAMETER") >= 0 && SLibGetEnableFileControlForEntryPointFcns()
+        %assign fcnSourceFile = GetEntryPointFcnMappedFile(fcnType, "Source", tid)
+        %if !SLibIsCompactFileFormat() && fcnSourceFile != SLibGetFileNameForCode("mdl_src") + "." + ::LangFileExt
+            %assign unusedParamHeaderFile = LibGenUnusedParamHeaderFile("RT_UNUSED_PARAMETER", "%<::tSimStruct>")
+            %<SLibUpdateHeadersNeededByFile(fcnSourceFile, unusedParamHeaderFile)>\
+        %endif
+    %endif
+%endfunction
+
+%function SLibGetFileRecForModelReferenceCode(codeGroupName, system)
+    %if SLibIsMoveFilePackagingTableFromTLC()
+        %assign fileName = CGMODEL_ACCESS("FileRepository.getSystemFileNameForModelReferenceCode", codeGroupName, system.FileNameOwnerIdx)
+        %assign fileType = CGMODEL_ACCESS("FileRepository.getSystemFileAttribute", codeGroupName, "Type")
+        %assign fileRec = SLibAddModelFile(fileType, "Simulink", fileName)
+        %return fileRec
+    %else
+        %assign systemSrcFileName = SLibGetSystemOutputSrcFileBaseName(system)
+        %assign systemHdrFileName = SLibGetSystemOutputHdrFileBaseName(system)
+        %assign systemPrivHdrFileName = systemHdrFileName + "_private"
+
+        %assign value = GETFIELD(::CompiledModel.systemFilePackagingTable, codeGroupName)
+        %assign fileName_ID = value[0]
+        %assert (TYPE(fileName_ID)=="Number")
+        %assign fileNameString = ::CompiledModel.systemFileNameTable.File%<fileName_ID>.Name
+        %assign fileType = ::CompiledModel.systemFileNameTable.File%<fileName_ID>.Type
+        %assign fileName = %<fileNameString>
+        %assign fileRec = SLibAddModelFile(fileType, "Simulink", fileName)
+        %return fileRec
+    %endif
+%endfunction
+
+%function FcnDeclareCanonicalIOArgInModelReferncePrivateHeaderFile(system) void
+    %% We are defining global variables for model reference target canonical IO arg
+    %% Declare those variables in <model>_private.h in modular file packaging format
+    %if SLibGetEnableFileControlForEntryPointFcns() && !SLibIsCompactFileFormat()
+        %assign fileRec = SLibGetFileRecForModelReferenceCode("mdl_priv_hdr", system)
+
+        %assign fileName = LibGetModelFileAttribute(fileRec.Index, "Name")
+        %assign buf = LibDeclareGlobalVars(system, "extern", fileName)
+        %if WHITE_SPACE(buf)
+            %return
+        %endif
+
+        %assign sysInfo = GetSystemNameForComments(system)
+        %openfile globalVarDeclBuf
+
+        /* Declare global variables for system: %<sysInfo> */
+        %<buf>\
+        %closefile globalVarDeclBuf
+        %<SLibSetModelFileAttribute(fileRec, "Declarations", globalVarDeclBuf)>
+    %endif
+%endfunction
+
+%function SLibPrintModelInitializeFcnDefnToSourceFile(mdlRegFcnHasBody, initFcnBuffer)
+    %if SLibGetEnableFileControlForEntryPointFcns()
+        %assign headerFileName = GetEntryPointFcnMappedFile("InitFcn", "Header", 0)
+        %assign sourceFileName = GetEntryPointFcnMappedFile("InitFcn", "Source", 0)
+        %if sourceFileName == SLibGetFileNameForCode("mdl_src") + "." + ::LangFileExt
+            %return initFcnBuffer
+        %endif
+
+        %<SLibAddEntryToFunctionTable("ModelInitialize", headerFileName, sourceFileName, "", "")>\
+        %<SLibSetSourceFileFunctionsAttribute(sourceFileName, initFcnBuffer)>\
+        %if SLibFcnBufferContainsRTM(initFcnBuffer)
+            %<SLibUpdateSymbolForFunction("ModelInitialize", SLibGetFcnDeclarationRTMSymbolName(), TLC_FALSE)>\
+        %endif
+
+        %if !::SeparateRegistrationFcn && !WHITE_SPACE(::CompiledModel.RegCodeBuffer) && !SLibIsCompactFileFormat()
+            %<SLibUpdateHeadersNeededByFile(sourceFileName, SLibGetFullFileNameForCode("mdl_priv_hdr"))>\
+        %endif
+
+        %if mdlRegFcnHasBody
+            %% Since model_initialize is constructed in TLC, no parsing is done. Always include <model>.h
+            %% include <model>_private.h when using modular file packaging
+            %<SLibUpdateHeadersNeededByFile(sourceFileName, LibGetModelFileFullName("ModelHeaderFile"))>\
+            %if SLibIsERTCodeFormat() && !SLibIsCompactFileFormat()
+                %<SLibUpdateHeadersNeededByFile(sourceFileName, LibGetModelFileFullName("ModelPrivateFile"))>\
+            %endif
+        %endif
+
+        %return ""
+    %else
+        %return initFcnBuffer
+    %endif
+%endfunction
+
+%endif %% _FILEPACKAGINGLIB_FCT_
+
+%% [EOF] filepackaginglib_FCT.tlc

@@ -1,0 +1,39 @@
+
+%%
+%%
+%%
+%%
+%% Copyright 1994-2023 The MathWorks, Inc.
+%%
+%% Abstract:
+%%      Library to support the notion of an RTModel object
+%%
+
+%if EXISTS(::_RTMDL_API_V3_) == 0
+%assign ::_RTMDL_API_V3_ = 1
+
+%function RTMsGetModelSS(system, getAddressTakenCareOf) void
+    %<SLibV3CallsiteValid("RTMsGetModelSS")>
+    %return CGMODEL_ACCESS("Block.RTMGetModelSS", RecordIdx[0], RecordIdx[1], ...
+        ::CurrentBlockFcn, ::CurrentBlockTid, system.SystemIdx, getAddressTakenCareOf)
+%endfunction %% RTMGetRootSS
+
+%function RTMsGet(system, recordName) void
+    %<SLibV3CallsiteValid("RTMsGet")>
+    %return CGMODEL_ACCESS("Block.RTMsGET", RecordIdx[0], RecordIdx[1], ...
+        ::CurrentBlockFcn, ::CurrentBlockTid, system.SystemIdx, recordName)
+%endfunction
+
+%function RTMSetErrStat(errStat) void
+    %<SLibV3CallsiteValid("RTMSetErrStat")>
+    %return CGMODEL_ACCESS("Block.RTMSetErrStat", RecordIdx[0], RecordIdx[1], ...
+        ::CurrentBlockFcn, ::CurrentBlockTid, errStat)
+%endfunction
+
+%function RTMGet(recordName) void
+    %<SLibV3CallsiteValid("RTMGet")>
+    %return RTMsGet(FcnInferredSystemAndAccessRTMArgDef(), recordName)
+
+%endfunction
+
+%endif

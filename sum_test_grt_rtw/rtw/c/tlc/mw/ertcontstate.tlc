@@ -1,0 +1,2570 @@
+%% ============================================================================
+%% File : ertcontstate.tlc
+%%
+%%
+%% Copyright 2003-2022 The MathWorks, Inc.
+%% ============================================================================
+%selectfile NULL_FILE
+
+%if EXISTS(_ERT_CONT_STATE_) == 0
+%assign _ERT_CONT_STATE_ = 1
+
+%function FcnCreateAndInitializeSolverData(bEmitReg, bEmitInit)
+    %assign intType = LibGetDataTypeNameFromId(::CompiledModel.tSS_INTEGER)
+    %assign realType = LibGetDataTypeNameFromId(::CompiledModel.tSS_DOUBLE)
+    %assign addr = IsMultiInstanceERTOrModelReference() ? "" : "&"
+    %if GenerateClassInterface
+        %assign addr = "&"
+    %endif
+    %openfile buff
+    %assert !IsModelReferenceTarget() %% Not supported yet
+
+    %if bEmitReg
+        %% Legacy GRT Malloc always dumped solver info object creation,
+        %% other ert-derived targets did so only for LibIsContinuous(0)
+        %if LibIsContinuous(0) || UsingMalloc
+            %<FcnDumpSolverInfoObjectCreation(bEmitReg, bEmitInit)>\
+        %endif %% LibIsContinuous(0)
+    %endif %% bEmitReg
+    %if LibIsContinuous(0)
+        %if bEmitInit
+            %<RTMSolverSet("SimTimeStep", "MAJOR_TIME_STEP")>;
+            rtsiSetIsMinorTimeStepWithModeChange(%<RTMGetSolverInfo()>, %<GET_TYPE_ID_REPLACEMENT("false")>);
+            %if NumContStates > 0
+                %if ISEQUAL(Solver, "ode1")
+                    %<RTMGet("IntgData")>.f[0] = %<RTMGet("OdeF")>[0];
+                %elseif ISEQUAL(Solver, "ode2")
+                    %<RTMGet("IntgData")>.y = %<RTMGet("OdeY")>;
+                    %<RTMGet("IntgData")>.f[0] = %<RTMGet("OdeF")>[0];
+                    %<RTMGet("IntgData")>.f[1] = %<RTMGet("OdeF")>[1];
+                %elseif ISEQUAL(Solver, "ode3")
+                    %<RTMGet("IntgData")>.y = %<RTMGet("OdeY")>;
+                    %<RTMGet("IntgData")>.f[0] = %<RTMGet("OdeF")>[0];
+                    %<RTMGet("IntgData")>.f[1] = %<RTMGet("OdeF")>[1];
+                    %<RTMGet("IntgData")>.f[2] = %<RTMGet("OdeF")>[2];
+                %elseif ISEQUAL(Solver, "ode4")
+                    %<RTMGet("IntgData")>.y = %<RTMGet("OdeY")>;
+                    %<RTMGet("IntgData")>.f[0] = %<RTMGet("OdeF")>[0];
+                    %<RTMGet("IntgData")>.f[1] = %<RTMGet("OdeF")>[1];
+                    %<RTMGet("IntgData")>.f[2] = %<RTMGet("OdeF")>[2];
+                    %<RTMGet("IntgData")>.f[3] = %<RTMGet("OdeF")>[3];
+                %elseif ISEQUAL(Solver, "ode5")
+                    %<RTMGet("IntgData")>.y = %<RTMGet("OdeY")>;
+                    %<RTMGet("IntgData")>.f[0] = %<RTMGet("OdeF")>[0];
+                    %<RTMGet("IntgData")>.f[1] = %<RTMGet("OdeF")>[1];
+                    %<RTMGet("IntgData")>.f[2] = %<RTMGet("OdeF")>[2];
+                    %<RTMGet("IntgData")>.f[3] = %<RTMGet("OdeF")>[3];
+                    %<RTMGet("IntgData")>.f[4] = %<RTMGet("OdeF")>[4];
+                    %<RTMGet("IntgData")>.f[5] = %<RTMGet("OdeF")>[5];
+                %elseif ISEQUAL(Solver, "ode8")
+                    %<RTMGet("IntgData")>.deltaY= %<RTMGet("OdeDeltaY")>;
+                    %<RTMGet("IntgData")>.f[0]  = %<RTMGet("OdeF")>[0];
+                    %<RTMGet("IntgData")>.f[1]  = %<RTMGet("OdeF")>[1];
+                    %<RTMGet("IntgData")>.f[2]  = %<RTMGet("OdeF")>[2];
+                    %<RTMGet("IntgData")>.f[3]  = %<RTMGet("OdeF")>[3];
+                    %<RTMGet("IntgData")>.f[4]  = %<RTMGet("OdeF")>[4];
+                    %<RTMGet("IntgData")>.f[5]  = %<RTMGet("OdeF")>[5];
+                    %<RTMGet("IntgData")>.f[6]  = %<RTMGet("OdeF")>[6];
+                    %<RTMGet("IntgData")>.f[7]  = %<RTMGet("OdeF")>[7];
+                    %<RTMGet("IntgData")>.f[8]  = %<RTMGet("OdeF")>[8];
+                    %<RTMGet("IntgData")>.f[9]  = %<RTMGet("OdeF")>[9];
+                    %<RTMGet("IntgData")>.f[10] = %<RTMGet("OdeF")>[10];
+                    %<RTMGet("IntgData")>.f[11] = %<RTMGet("OdeF")>[11];
+                    %<RTMGet("IntgData")>.f[12] = %<RTMGet("OdeF")>[12];
+                    %<RTMGet("IntgData")>.x0    = %<RTMGet("OdeX0")>;
+                %elseif ISEQUAL(Solver, "ode14x")
+                    %<RTMGet("IntgData")>.x0      = %<RTMGet("OdeX0")>;
+                    %<RTMGet("IntgData")>.f0      = %<RTMGet("OdeF0")>;
+                    %<RTMGet("IntgData")>.x1start = %<RTMGet("OdeX1START")>;
+                    %<RTMGet("IntgData")>.f1      = %<RTMGet("OdeF1")>;
+                    %<RTMGet("IntgData")>.Delta   = %<RTMGet("OdeDELTA")>;
+                    %<RTMGet("IntgData")>.E       = %<RTMGet("OdeE")>;
+                    %<RTMGet("IntgData")>.fac     = %<RTMGet("OdeFAC")>;
+
+                    /* initialize */
+                    {
+                        %<intType> i;
+                        %<realType> *f =  %<RTMGet("IntgData")>.fac;
+                        %assign inputArg = "(%<intType>)(sizeof(%<RTMGet("OdeFAC")>)/sizeof(%<realType>))"
+                        %assign inputArg = FcnReplaceCCastWithStaticCastForCPP(inputArg)
+                        for(i = 0; i < %<inputArg>; i++) {
+                            f[i] = 1.5e-8;
+                        }
+                    }
+                    %<RTMGet("IntgData")>.DFDX    = %<RTMGet("OdeDFDX")>;
+                    %<RTMGet("IntgData")>.W       = %<RTMGet("OdeW")>;
+                    %<RTMGet("IntgData")>.pivots  = %<RTMGet("OdePIVOTS")>;
+                    %<RTMGet("IntgData")>.xtmp  = %<RTMGet("OdeXTMP")>;
+                    %<RTMGet("IntgData")>.ztmp  = %<RTMGet("OdeZTMP")>;
+
+                    %if (SLibGetModelIsLinearlyImplicit() == "yes")
+                        %<RTMGet("IntgData")>.M = %<RTMGet("OdeMASSMATRIX_M")>;
+                        %if (SLibModelMassMatrixType() != "constant")
+                            %<RTMGet("IntgData")>.M1 = %<RTMGet("OdeMASSMATRIX_M1")>;
+                            %if (SLibModelMassMatrixType() == "statedep")
+                                %<RTMGet("IntgData")>.xdot   = %<RTMGet("OdeXDOT")>;
+                                %<RTMGet("IntgData")>.Edot   = %<RTMGet("OdeEDOT")>;
+                                %<RTMGet("IntgData")>.fminusMxdot  = %<RTMGet("OdeFMXDOT")>;
+                            %endif
+                        %endif
+                    %endif
+
+                    %<RTMGet("IntgData")>.isFirstStep  = %<GET_TYPE_ID_REPLACEMENT("true")>;
+
+                    %<RTMSolverSet("SolverExtrapolationOrder", "%<FixedStepOpts.ExtrapolationOrder>")>;
+                    %<RTMSolverSet("SolverNumberNewtonIterations", "%<FixedStepOpts.NumberNewtonIterations>")>;
+
+                %elseif ISEQUAL(Solver, "ode1be")
+                    %<RTMGet("IntgData")>.x0      = %<RTMGet("OdeX0")>;
+                    %<RTMGet("IntgData")>.f0      = %<RTMGet("OdeF0")>;
+                    %<RTMGet("IntgData")>.f1      = %<RTMGet("OdeF1")>;
+                    %<RTMGet("IntgData")>.Delta   = %<RTMGet("OdeDELTA")>;
+                    %<RTMGet("IntgData")>.fac     = %<RTMGet("OdeFAC")>;
+
+                    /* initialize */
+                    {
+                        %<intType> i;
+                        %<realType> *f =  %<RTMGet("IntgData")>.fac;
+                        for(i = 0; i < (%<intType>)(sizeof(%<RTMGet("OdeFAC")>)/sizeof(%<realType>)); i++) {
+                            f[i] = 1.5e-8;
+                        }
+                    }
+                    %<RTMGet("IntgData")>.DFDX    = %<RTMGet("OdeDFDX")>;
+                    %<RTMGet("IntgData")>.W       = %<RTMGet("OdeW")>;
+                    %<RTMGet("IntgData")>.pivots  = %<RTMGet("OdePIVOTS")>;
+                    %<RTMGet("IntgData")>.z  = %<RTMGet("OdeZ")>;
+
+                    %if (SLibGetModelIsLinearlyImplicit() == "yes")
+                        %<RTMGet("IntgData")>.M = %<RTMGet("OdeMASSMATRIX_M")>;
+                    %endif
+
+                    %<RTMGet("IntgData")>.isFirstStep  = %<GET_TYPE_ID_REPLACEMENT("true")>;
+
+                    %<RTMSolverSet("SolverNumberNewtonIterations", "%<FixedStepOpts.NumberNewtonIterations>")>;
+                %endif  %% elseif ode1be
+                %assign contStateTypeInRTM = FcnGetContStateType()
+                %% The C-style cast needs reinterpret_cast in C++ under some cases (g1965620)
+                %assign x = "(%<contStateTypeInRTM> *) %<addr>%<LibGetContinuousStateStruct()>"
+                %<LibAccessArg(System[NumSystems-1].Interface.ContStatesArgDef)>
+                %<RTMSet("ContStates", x)>;
+
+                %assign disabledStateTypeInRTM = FcnGetContStateDisabledType()
+                %assign x = "(%<disabledStateTypeInRTM> *) %<addr>%<LibGetContinuousStateDisabledStruct()>"
+                %<LibAccessArg(System[NumSystems-1].Interface.ContStatesDisabledArgDef)>
+                %<RTMSet("ContStateDisabled", x)>;
+                %<RTMSet("StartTime", ::CompiledModel.StartTime)>;
+
+                %if NumPeriodicContStates > 0
+                    %<RTMSet("PeriodicContStateIndices", "(%<intType>*) %<LibGetPeriodicContStateIndices()>")>;
+                    %<RTMSet("PeriodicContStateRanges", "(%<realType>*) %<LibGetPeriodicContStateRanges()>")>;
+                %endif
+
+                %if (SLibGetModelIsLinearlyImplicit() == "yes")
+                    %assign type  = "(ssMatrixType)%<ModelMassMatrixType>"
+                    %assign nzmax = %<ModelMassMatrixNzMax>
+                    %if SLibIsDeploymentDiagramWithTopSolver()
+                        %assign nzmax = nzmax-SLibDeploymentGetMassMatrixNzMax()
+                    %endif
+                    %assign ir = "%<LibGetMassMatrixGlobalIr()>"
+                    %assign jc = "%<LibGetMassMatrixGlobalJc()>"
+                    %assign pr = "%<LibGetMassMatrixGlobalPr()>"
+
+                    %<RTMSet("MassMatrixType",type)>;
+                    %<RTMSet("MassMatrixNzMax","%<nzmax>")>;
+                    %<RTMSet("MassMatrixIr", ir)>;
+                    %<RTMSet("MassMatrixJc", jc)>;
+                    %<RTMSet("MassMatrixPr", pr)>;
+
+                    %<RTMSolverSet("SolverMassMatrixType",type)>;
+                    %<RTMSolverSet("SolverMassMatrixNzMax","%<nzmax>")>;
+
+                %endif
+                %assign inputArg = "(void *)&%<RTMGet("IntgData")>"
+                %assign inputArg = FcnReplaceCCastWithStaticCastForCPP(inputArg)
+                rtsiSetSolverData(%<RTMGetSolverInfo()>, %<inputArg>);
+                %if SLibGetIsFixedStepZeroCrossingEnabled()
+                    {
+                        /* Zero-crossing Data */
+                        %<SLibGetZeroCrossingDataStructures()>
+                        rtsiSetSolverZcSignalAttrib(%<RTMGetSolverInfo()>,
+                        zcAttributes);
+                        %<RTMGet("ZcDetectorData")>.vL  = %<RTMGet("ZCVL")>;
+                        %<RTMGet("ZcDetectorData")>.vR  = %<RTMGet("ZCVR")>;
+                        %<RTMGet("ZcDetectorData")>.vZ  = %<RTMGet("ZCVZ")>;
+                        %<RTMGet("ZcDetectorData")>.t0  = %<RTMGet("ZCt0")>;
+                        %<RTMGet("ZcDetectorData")>.tR  = %<RTMGet("ZCtR")>;
+                        %<RTMGet("ZcDetectorData")>.x0  = %<RTMGet("ZCx0")>;
+                        %<RTMGet("ZcDetectorData")>.xR  = %<RTMGet("ZCxR")>;
+                    }
+                %endif
+            %endif %% end of if NumContStates > 0
+        %endif %% bEmitInit
+    %endif %% end of If LibIsContinuous(0)
+    %if bEmitReg
+        rtsiSetSolverName(%<RTMGetSolverInfo()>,"%<Solver>");
+        %if NumChildSFunctions
+            %assign solverInfo = "%<RTMGetSolverInfo()>"
+            %<RTMSet("RTWSolverInfoPtr", solverInfo)>;
+        %endif
+    %endif
+    %closefile buff
+
+    %return buff
+%endfunction %% FcnCreateAndInitializeSolverData()
+
+
+%% Function: LocEmitCallSolverOutputComputed
+%% Abstract: Utility function to generate call to solver output computed function
+%function LocEmitCallSolverOutputComputed(si, b) Output
+    %if LibIsDeploymentDiagram()
+        rtsiSetSolverOutputComputed(%<si>, %<b>);
+    %endif
+%endfunction
+
+
+%% Function: LocDumpRTUtilityFunctions =============================================================
+%% Abstract: generates rt_ utility function calls from TFL query used by ode14x and ode1be solver
+%function LocDumpRTUtilityFunctions() Output
+    %% call TFL query to generate proper rt_ function
+    %% rt_ForwardSubstitutionRR_Dbl(W,Delta,f1,nx,1,pivots,1);
+    %createrecord FcnRec{Name "rt_ForwardSubstitution"; NumArgs 7}
+    %addtorecord FcnRec ArgList{Expr "W"; TypeId tSS_DOUBLE; IsPtr 1; IsCplx 0; IsConst 0}
+    %addtorecord FcnRec ArgList{Expr " Delta"; TypeId tSS_DOUBLE; IsPtr 1; IsCplx 0; IsConst 0}
+    %addtorecord FcnRec ArgList{Expr " f1"; TypeId tSS_DOUBLE; IsPtr 1; IsCplx 0; IsConst 0}
+    %addtorecord FcnRec ArgList{Expr " nx"; TypeId tSS_INTEGER; IsPtr 0; IsCplx 0; IsConst 0}
+    %addtorecord FcnRec ArgList{Expr " 1"; TypeId tSS_INTEGER; IsPtr 0; IsCplx 0; IsConst 0}
+    %addtorecord FcnRec ArgList{Expr " pivots"; TypeId tSS_INT32; IsPtr 1; IsCplx 0; IsConst 0}
+    %addtorecord FcnRec ArgList{Expr " 1"; TypeId tSS_BOOLEAN; IsPtr 0; IsCplx 0; IsConst 0}
+    %<LibGenFcnCall(FcnRec)>;
+
+    %% call TFL query to generate proper rt_ function
+    %% rt_BackwardSubstitutionRR_Dbl(W+nx*nx-1,f1+nx-1,Delta,nx,1,0);
+    %createrecord FcnRec{Name "rt_BackwardSubstitution"; NumArgs 6}
+    %addtorecord FcnRec ArgList{Expr "W+nx*nx-1"; TypeId tSS_DOUBLE; IsPtr 1; IsCplx 0; IsConst 0}
+    %addtorecord FcnRec ArgList{Expr " f1+nx-1"; TypeId tSS_DOUBLE; IsPtr 1; IsCplx 0; IsConst 0}
+    %addtorecord FcnRec ArgList{Expr " Delta"; TypeId tSS_DOUBLE; IsPtr 1; IsCplx 0; IsConst 0}
+    %addtorecord FcnRec ArgList{Expr " nx"; TypeId tSS_INTEGER; IsPtr 0; IsCplx 0; IsConst 0}
+    %addtorecord FcnRec ArgList{Expr " 1"; TypeId tSS_INTEGER; IsPtr 0; IsCplx 0; IsConst 0}
+    %addtorecord FcnRec ArgList{Expr " 0"; TypeId tSS_BOOLEAN; IsPtr 0; IsCplx 0; IsConst 0}
+    %<LibGenFcnCall(FcnRec)>;
+
+%endfunction
+
+%% Function: LocEmitCallSolverFunction
+%% Abstract: utility function to generate solver functions calls for a model and
+%%    deployment diagram.
+%function LocEmitCallSolverFunction(taskName, fcnName) Output
+    %if LibIsDeploymentDiagram() && !WHITE_SPACE(taskName)
+        %<SLibDeploymentEmitSolverFunctions(taskName, fcnName)>
+    %else
+        %switch fcnName
+          %case "Derivative"
+            %<Name>_derivatives(%<SLibModelFcnArgs("Derivative",2,"")>);
+            %break
+          %case "Projection"
+            %<Name>_projection(%<SLibModelFcnArgs("Projection",2,"")>);
+            %break
+          %case "ForcingFunction"
+            %<Name>_forcingfunction(%<SLibModelFcnArgs("ForcingFunction",2,"")>);
+            %break
+          %case "MassMatrix"
+            %<Name>_massmatrix(%<SLibModelFcnArgs("MassMatrix",2,"")>);
+            %break
+          %case "ZeroCrossing"
+            %<Name>_zeroCrossings(%<SLibModelFcnArgs("ZeroCrossing",2,"")>);
+            %break
+          %default %% always assert
+            %assert TLC_FALSE
+        %endswitch
+    %endif
+%endfunction
+
+%% Function: LocEmitCallToLocalSolverFunction
+%% Abstract: utility function to generate local solver functions calls for a
+%%   model and deployment diagram.
+%function LocEmitCallToLocalSolverFunction(taskName, fcnType, si, arg1, arg2, ...
+    arg3, arg4, arg5, arg6) Output
+    %assign fcnName = "%<fcnType>"
+    %if ISEQUAL(fcnType, "local_numjac_linearModel")
+        %assign fcnName = "local_numjac"
+    %endif
+    %if LibIsDeploymentDiagram() && !WHITE_SPACE(taskName)
+        %assign fcnName = "%<taskName>_%<fcnName>"
+    %endif
+
+    %switch fcnType
+      %case "local_evaluateMassMatrix"
+        %% local_evaluateMassMatrix(si,M %<reuseArgsEvalMassMatrixCall>);
+        %<fcnName>(%<si>,%<arg1> \
+        %<arg2>);
+        %break
+      %case "local_evaluateFminusMv"
+        %% local_evaluateFminusMv(si,v,p %<reuseArgsEvalMassMatrixCall>);
+        %<fcnName>(%<si>,%<arg1>,%<arg2>  \
+        %<arg3>);
+        %break
+      %case "local_numjac_linearModel"
+        %% local_numjac(si,x0,xdot,fminusMxdot,fac,dfdx %<reuseArgsNumjacCall>);
+        %<fcnName>(%<si>,%<arg1>,%<arg2>,%<arg3>,%<arg4>,%<arg5> %<arg6>);
+        %break
+      %case "local_numjac"
+        %% local_numjac(si,x0,f0,fac,dfdx %<reuseArgsNumjacCall>);
+        %<fcnName>(%<si>,%<arg1>,%<arg2>,%<arg3>,%<arg4> %<arg5>);
+        %break
+      %default %% always assert
+        %assert TLC_FALSE
+    %endswitch
+%endfunction
+
+
+%% Function: SLibDumpSolverCode ====================================================================
+%% Abstract:
+%%   Dumps the solver code for selected solver in two cases:
+%%   - For a regular block diagram, there is one solver per top model.
+%%   - For a deployment diagram, a solver is generated for each continuous task.
+%%     The task is identified by %<taskName>. The solver contains only the calls to
+%%     the derivates, outputs, etc of the components which were mapped to this task.
+%%     (and not derivates of all blocks as for a normal model).
+%%   Because there is no other difference in the solver code than which derivatives,
+%%   outputs,etc are called, the function is used for both diagram types and uses
+%%   if LibIsDeploymentDiagram conditions for the differences.
+%%
+%function SLibDumpSolverCode(task, stateReductionFcnDefined) Output
+    %assign uintType = LibGetDataTypeNameFromId(::CompiledModel.tSS_UINTEGER)
+    %assign realType = LibGetDataTypeNameFromId(::CompiledModel.tSS_DOUBLE)
+    %assign booleanType = LibGetDataTypeNameFromId(::CompiledModel.tSS_BOOLEAN)
+    %assign uint8Type = LibGetDataTypeNameFromId(::CompiledModel.tSS_UINT8)
+    %assign intType = LibGetDataTypeNameFromId(::CompiledModel.tSS_INTEGER)
+    %assign uintType = LibGetDataTypeNameFromId(::CompiledModel.tSS_UINTEGER)
+    %assign timeType = LibGetDataTypeNameFromId(::CompiledModel.tSS_TIME)
+    %assign realType = LibGetDataTypeNameFromId(::CompiledModel.tSS_DOUBLE)
+    %assert  (!IsModelReferenceTarget())
+
+    %assign isDeploymentDiagram = LibIsDeploymentDiagram()
+    %assign isSolverForDeploymentDiagramTask = isDeploymentDiagram && !WHITE_SPACE(task)
+
+    %if isSolverForDeploymentDiagramTask
+        %assign taskName = task.FunctionName
+        %assign numContinuousStates = task.NumContStates
+        %assign numPeriodicContStates = task.NumPeriodicContStates
+        %assign isLinearlyImplicit = task.IsLinearlyImplicit
+        %assign hasProjections = task.HasProjections
+    %else
+        %assign taskName = ""
+        %assign numContinuousStates = NumContStates
+        %assign numPeriodicContStates = NumPeriodicContStates
+        %if isDeploymentDiagram
+            %% Adjust number of continuous states
+            %assign numContinuousStates = numContinuousStates-SLibDeploymentGetNumContStates()
+            %assign numPeriodicContStates = numPeriodicContStates-SLibDeploymentGetNumPeriodicContStates()
+        %endif
+        %assign isLinearlyImplicit = SLibGetModelIsLinearlyImplicit()
+        %assign hasProjections = SLibGetModelHasProjections()
+    %endif
+    %if numPeriodicContStates > 0
+        %assign needsStateReductionFcn = !stateReductionFcnDefined
+    %endif
+    %% Fixed-step Zero Crossing related code
+    %assign isFixedStepZcEnabled = SLibGetIsFixedStepZeroCrossingEnabled() && !LibZCSignalValueStructIsEmpty()
+    %if isFixedStepZcEnabled
+        %assign integrationMethodName = "rt_ertODEIntegrate"
+    %else
+        %assign integrationMethodName = "rt_ertODEUpdateContinuousStates"
+    %endif
+
+    %% SLibModelFcnArgs depends on side-effects of rootSystemCurrentTID
+    %assign saveCurrentTID = rootSystem.CurrentTID
+    %if ISFIELD(rootSystem, "CurrentPID")
+        %assign saveCurrentPID = rootSystem.CurrentPID
+    %endif
+    %if SLibIsPeriodicRateGrouping()
+        %assign rootSystem.CurrentTID = 0
+    %else
+        %assign rootSystem.CurrentTID = ""
+    %endif
+
+    %assign equalSign = LibGetDataInitEqualSign()
+    %assign scalarTokens = LibGetScalarDataInitTokens()
+
+    %openfile buff
+
+    %if GenerateGRTWrapper
+        %openfile grtSolverInterface
+        /* Solver interface called by GRT_Main */
+        #ifndef USE_GENERATED_SOLVER
+        %assign linkagePref = ::ExternCPrefix
+        %if isSolverForDeploymentDiagramTask
+            %<linkagePref> void %<taskName>_rt_ODECreateIntegrationData(RTWSolverInfo *si)
+        %else
+            %<linkagePref> void rt_ODECreateIntegrationData(RTWSolverInfo *si)
+        %endif
+        {
+            UNUSED_PARAMETER(si);
+            return;
+        } /* do nothing */
+        %if isSolverForDeploymentDiagramTask
+            %<linkagePref> void %<taskName>_rt_ODEDestroyIntegrationData(RTWSolverInfo *si)
+        %else
+            %<linkagePref> void rt_ODEDestroyIntegrationData(RTWSolverInfo *si)
+        %endif
+        {
+            UNUSED_PARAMETER(si);
+            return;
+        } /* do nothing */
+        %if isSolverForDeploymentDiagramTask
+            %<linkagePref> void %<taskName>_rt_ODEUpdateContinuousStates(RTWSolverInfo *si)
+        %else
+            %<linkagePref> void rt_ODEUpdateContinuousStates(RTWSolverInfo *si)
+        %endif
+        {
+            UNUSED_PARAMETER(si);
+            return;
+        } /* do nothing */
+        #endif
+        %closefile grtSolverInterface
+        %assign ::CompiledModel.GRTWrapper = ::CompiledModel.GRTWrapper + grtSolverInterface
+    %endif
+
+    %if (hasProjections == "yes")
+        %% put projection code here
+        %if !isSolverForDeploymentDiagramTask && !isDeploymentDiagram
+            %<SLibGetBodyProjectionFcnCache(rootSystem)>
+        %elseif !isSolverForDeploymentDiagramTask
+            %% for synthesized task containing continuous rate
+            %assert WHITE_SPACE(task)
+            %assign pid = SLibGetMDSRootSyntPIDForContRate()
+            %if pid != -1
+                %assign rootSystem.CurrentPID = pid
+                %<SLibGetBodyProjectionFcnCache(rootSystem)>
+            %endif
+        %endif
+    %endif
+
+    %if (isLinearlyImplicit == "yes")
+        %if ( ISEQUAL(Solver,"ode14x") || ISEQUAL(Solver, "ode1be") )  %% The only solvers  using MassMatrix/ForcingFunction
+            %% put MassMatrix/ForcingFunction code here
+            %if !isSolverForDeploymentDiagramTask && !isDeploymentDiagram
+                %<SLibGetBodyForcingFunctionFcnCache(rootSystem)>
+                %<SLibGetBodyMassMatrixFcnCache(rootSystem)>
+            %elseif !isSolverForDeploymentDiagramTask
+                %assert WHITE_SPACE(task)
+                %assign pid = SLibGetMDSRootSyntPIDForContRate()
+                %if pid != -1
+                    %assign rootSystem.CurrentPID = pid
+                    %<SLibGetBodyForcingFunctionFcnCache(rootSystem)>
+                    %<SLibGetBodyMassMatrixFcnCache(rootSystem)>
+                %endif
+            %endif
+            %assign reuseArgsEvalMassMatrix = SLibModelFcnArgs("ODEUpdateContinuousStates",TLC_FALSE,"")
+            %if ISEQUAL(reuseArgsEvalMassMatrix,"void")
+                %assign reuseArgsEvalMassMatrix = ""
+                %assign reuseArgsEvalMassMatrixCall = ""
+            %else
+                %assign reuseArgsEvalMassMatrix = ", " + reuseArgsEvalMassMatrix
+                %assign reuseArgsEvalMassMatrixCall = ", " + SLibModelFcnArgs("ODEUpdateContinuousStates",2,0)
+            %endif
+
+            %if isSolverForDeploymentDiagramTask
+                %assign fcnName = "%<taskName>_local_evaluateMassMatrix"
+            %else
+                %assign fcnName = "local_evaluateMassMatrix"
+            %endif
+            %assign fcnReturns = "void"
+            %assign fcnParams = "RTWSolverInfo *si, %<realType> *Mdest %<reuseArgsEvalMassMatrix>"
+            %createrecord fcnRec {Name fcnName; Returns fcnReturns; Params fcnParams; Abstract ""; ...
+                Category "model"; GeneratedBy "ertcontstate.tlc"; Type "Utility"}
+            %<SLibDumpFunctionBanner(fcnRec)>
+            %undef fcnRec
+            %<SLibGetFcnMemSecPragma(fcnName, "MemSecFuncExecute", "Pre")>\
+            %<fcnReturns> %<fcnName>(%<fcnParams>)
+            {
+                /* Refresh global mass matrix */
+                %<LocEmitCallSolverFunction(taskName, "MassMatrix")>
+                /* Copy the mass matrix from system to the destination, if needed. */
+                if (Mdest != rtsiGetSolverMassMatrixPr(si)) {
+                    %<realType> *Msrc%<scalarTokens[0]>rtsiGetSolverMassMatrixPr(si)%<scalarTokens[1]>;
+                    %<intType>  nzmax%<scalarTokens[0]>rtsiGetSolverMassMatrixNzMax(si)%<scalarTokens[1]>;
+                    %assign inputArg = "(%<uintType>)nzmax"
+                    %assign inputArg = FcnReplaceCCastWithStaticCastForCPP(inputArg)
+                    (void) %<LibGenMemFcnCall("memcpy","Mdest", "Msrc", "%<inputArg>*sizeof(%<realType>)")>;
+                }
+            }
+            %<SLibGetFcnMemSecPragma(fcnName, "MemSecFuncExecute", "Post")>\
+
+            %if ((SLibModelMassMatrixType() == "statedep") && (ISEQUAL(Solver, "ode14x")))
+                %if isSolverForDeploymentDiagramTask
+                    %assign fcnName = "%<taskName>_local_evaluateFminusMv"
+                %else
+                    %assign fcnName = "local_evaluateFminusMv"
+                %endif
+                %assign fcnReturns = "void"
+                %assign fcnParams = "RTWSolverInfo *si, const %<realType> *v, %<realType> *fminusMv %<reuseArgsEvalMassMatrix>"
+                %createrecord fcnRec {Name fcnName; Returns fcnReturns; Params fcnParams; Abstract ""; ...
+                    Category "model"; GeneratedBy "ertcontstate.tlc"; Type "Utility"}
+                %<SLibDumpFunctionBanner(fcnRec)>
+                %undef fcnRec
+                %<SLibGetFcnMemSecPragma(fcnName, "MemSecFuncExecute", "Pre")>\
+                %<fcnReturns> %<fcnName>(%<fcnParams>)
+                {
+                    /* Refresh forcing function */
+                    rtsiSetdX(si,fminusMv);
+                    %<LocEmitCallSolverFunction(taskName, "ForcingFunction")>
+
+                    /* Refresh global mass matrix */
+                    %<LocEmitCallSolverFunction(taskName, "MassMatrix")>
+
+                    /* Form f - M*v */
+                    {
+                        %<realType> *elptr %<scalarTokens[0]>rtsiGetSolverMassMatrixPr(si)%<scalarTokens[1]>;
+                        %<intType>  *iptr  %<scalarTokens[0]>rtsiGetSolverMassMatrixIr(si)%<scalarTokens[1]>;
+                        %<intType>  *jc    %<scalarTokens[0]>rtsiGetSolverMassMatrixJc(si)%<scalarTokens[1]>;
+                        %<intType>     nx  %<scalarTokens[0]>%<numContinuousStates>%<scalarTokens[1]>;
+
+                        %<intType>     col,row;
+
+                        for (col = 0; col < nx; col++) {
+                            for (row = jc[col]; row < jc[col+1]; row++) {
+                                fminusMv[*iptr++] -= (*v) * (*elptr++);
+                            }
+                            v++;
+                        }
+                    }
+                }
+                %<SLibGetFcnMemSecPragma(fcnName, "MemSecFuncExecute", "Post")>\
+            %endif
+        %endif
+    %endif
+
+    %if numPeriodicContStates > 0
+        %assign fcnName = "local_stateReduction"
+        %if needsStateReductionFcn
+            %assign fcnReturns = "void"
+            %assign fcnParams = "%<realType>* x, %<intType>* p, %<intType> n, %<realType>* r"
+            %createrecord fcnRec {Name fcnName; ...
+                Returns fcnReturns; ...
+                Params fcnParams; ...
+                Abstract ""; ...
+                Category "model"; ...
+                GeneratedBy "ertcontstate.tlc"; ...
+                Type "Utility"}
+            %<SLibDumpFunctionBanner(fcnRec)>
+            %undef fcnRec
+            %<SLibGetFcnMemSecPragma(fcnName, "MemSecFuncExecute", "Pre")>\
+            /* State reduction function */
+            %<fcnReturns> %<fcnName>(%<fcnParams>) {
+                %<intType> i, j;
+
+                for (i = 0, j = 0; i < n; ++i, ++j) {
+                    %<intType> k%<scalarTokens[0]>p[i]%<scalarTokens[1]>;
+                    %<realType> lb%<scalarTokens[0]>r[j++]%<scalarTokens[1]>;
+                    %<realType> xk%<scalarTokens[0]>x[k]-lb%<scalarTokens[1]>;
+                    %<realType> rk%<scalarTokens[0]>r[j]-lb%<scalarTokens[1]>;
+                    %<intType> q%<scalarTokens[0]>(%<intType>) %<LibGenMathFcnCall("floor", tSS_DOUBLE, "xk/rk", "")>%<scalarTokens[1]>;
+
+                    if (q) {
+                        x[k] = xk-q*rk+lb;
+                    }
+                }
+            }
+            %<SLibGetFcnMemSecPragma(fcnName, "MemSecFuncExecute", "Post")>\
+        %endif
+        %assign stateReductionFcnName = "%<fcnName>"
+    %endif
+
+    %assign reuseArgs = SLibModelFcnArgs("ODEUpdateContinuousStates",TLC_FALSE,"")
+    %if ISEQUAL(reuseArgs,"void") || ISEMPTY(reuseArgs)
+        %assign reuseArgs = ""
+    %else
+        %assign reuseArgs = ", " + reuseArgs
+    %endif
+    %openfile invokeOutput
+
+    %assign tid = SLibIsPeriodicRateGrouping() ? "0" : ""
+
+    %if GenerateClassInterface
+        %assign saveCPPObjectName = ::CPPObjectName
+        %assign ::CPPObjectName = "this"
+    %endif
+
+    %if CombineOutputUpdateFcns
+        %if isSolverForDeploymentDiagramTask
+            %<TaskGetPeriodicEntryPointName(task, "OutputUpdate")>();
+        %elseif isDeploymentDiagram
+            %<SLibModelStepFcnName("")>%<tid>();
+        %else
+            %<SLibModelStepFcnName(tid)>(%<SLibModelFcnArgs("UpdateContStates",2,0)>);
+        %endif
+    %else
+        %if isSolverForDeploymentDiagramTask
+            %<TaskGetPeriodicEntryPointName(task, "Output")>();
+        %elseif isDeploymentDiagram
+            %<FcnGetModelOutputFcnNameFromCoderDictionary("")>%<tid>();
+        %else
+            %<FcnGetModelOutputFcnNameFromCoderDictionary(tid)>(%<SLibModelFcnArgs("Output",2,0)>);
+        %endif
+    %endif
+
+    %if GenerateClassInterface
+        %assign ::CPPObjectName = saveCPPObjectName
+    %endif
+
+    %closefile invokeOutput
+
+    %% We only need to call update in solver code if using fixed-step zero crossing
+    %% for the separate output update case.
+    %if isFixedStepZcEnabled && !CombineOutputUpdateFcns
+        %openfile invokeUpdate
+
+        %assign tid = SLibIsPeriodicRateGrouping() ? "0" : ""
+
+        %if GenerateClassInterface
+            %assign saveCPPObjectName = ::CPPObjectName
+            %assign ::CPPObjectName = "this"
+        %endif
+
+        %assert (!isDeploymentDiagram)
+        %assert(!isSolverForDeploymentDiagramTask)
+        %<FcnGetModelUpdateFcnNameFromCoderDictionary(tid)>(%<SLibModelFcnArgs("Update",2,0)>);
+
+        %if GenerateClassInterface
+            %assign ::CPPObjectName = saveCPPObjectName
+        %endif
+        %closefile invokeUpdate
+    %endif
+
+    %if ( ISEQUAL(Solver,"ode14x") || ISEQUAL(Solver, "ode1be") )  %% The only solvers  using numjac
+        %assign reuseArgsNumjac = SLibModelFcnArgs("ODEUpdateContinuousStates",TLC_FALSE,"")
+        %if ISEQUAL(reuseArgsNumjac,"void") || ISEMPTY(reuseArgsNumjac)
+            %assign reuseArgsNumjac = ""
+            %assign reuseArgsNumjacCall = ""
+        %else
+            %assign reuseArgsNumjac = ", " + reuseArgsNumjac
+            %assign reuseArgsNumjacCall = ", " + SLibModelFcnArgs("ODEUpdateContinuousStates",2,0)
+        %endif
+
+        %assign fcnAbstract = "Simplified version of numjac.cpp, for use with RTW."
+        %if isSolverForDeploymentDiagramTask
+            %assign fcnName = "%<taskName>_local_numjac"
+        %else
+            %assign fcnName = "local_numjac"
+        %endif
+        %if !GenerateClassInterface
+            %assign tmpfcnName = fcnName
+        %else
+            %assign tmpfcnName = "%<CPPClassName>::%<fcnName>"
+        %endif
+        %assign fcnReturns = "void"
+        %% Only use f-Mv Jacobian for ode14x.  ode1be uses regular forcing function jacobian
+        %if (isLinearlyImplicit == "yes") && (SLibModelMassMatrixType() == "statedep") && (ISEQUAL(Solver,"ode14x"))
+            %assign fcnParams = ["RTWSolverInfo   *si,", ...
+                "%<realType>          *y,", ...
+                "const %<realType>    *v,", ...
+                "const %<realType>    *Fty,", ...
+                "%<realType>     *fac,", ...
+                "%<realType>          *dFdy", ...
+                "%<reuseArgsNumjac>"]
+        %else
+            %assign fcnParams = ["RTWSolverInfo   *si,", ...
+                "%<realType>          *y,", ...
+                "const %<realType>         *Fty,", ...
+                "%<realType>         *fac,", ...
+                "%<realType>         *dFdy", ...
+                "%<reuseArgsNumjac>"]
+        %endif
+        %createrecord fcnRec {Name tmpfcnName; Returns fcnReturns; Params fcnParams; Abstract fcnAbstract; ...
+            Category "model"; GeneratedBy "ertcontstate.tlc"; Type "Utility"}
+        %<SLibDumpFunctionBanner(fcnRec)>
+        %undef fcnRec
+        %<SLibGetFcnMemSecPragma(fcnName, "MemSecFuncExecute", "Pre")>\
+        %<fcnReturns> %<tmpfcnName>(\
+        %foreach idx = SIZE(fcnParams, 1)
+            %<fcnParams[idx]>\
+        %endforeach
+        )
+        {
+            /* constants */
+            %<realType> THRESH%<scalarTokens[0]>1e-6%<scalarTokens[1]>;
+            %<realType> EPS   %<scalarTokens[0]>2.2e-16%<scalarTokens[1]>;  /* utGetEps(); */
+            %<realType> BL    %<scalarTokens[0]>%<SLibGenPowFcnCall("pow",tSS_DOUBLE,"EPS", "0.75")>%<scalarTokens[1]>;
+            %<realType> BU    %<scalarTokens[0]>%<SLibGenPowFcnCall("pow",tSS_DOUBLE,"EPS", "0.25")>%<scalarTokens[1]>;
+            %<realType> FACMIN%<scalarTokens[0]>%<SLibGenPowFcnCall("pow",tSS_DOUBLE,"EPS", "0.78")>%<scalarTokens[1]>;
+            %<realType> FACMAX%<scalarTokens[0]>0.1%<scalarTokens[1]>;
+            %<intType>     nx %<scalarTokens[0]>%<numContinuousStates>%<scalarTokens[1]>;
+
+            %<realType>    *x%<scalarTokens[0]>rtsiGetContStates(si)%<scalarTokens[1]>;
+            %<booleanType> *xdis%<scalarTokens[0]>rtsiGetContStateDisabledPtr(si)%<scalarTokens[1]>;
+            %<realType>    del;
+            %<realType>    difmax;
+            %<realType>    FdelRowmax;
+            %<realType>    temp;
+            %<realType>    Fdiff;
+            %<realType>    maybe;
+            %<realType>    xscale;
+            %<realType>    fscale;
+            %<realType>    *p;
+            %<intType>     rowmax;
+            %<intType>     i,j;
+
+            %assign inputArg = "(%<uintType>)nx"
+            %assign inputArg = FcnReplaceCCastWithStaticCastForCPP(inputArg)
+            if (x != y) (void) %<LibGenMemFcnCall("memcpy", "x", "y", "%<inputArg>*sizeof(%<realType>)")>;
+
+            rtsiSetSolverComputingJacobian(si,%<GET_TYPE_ID_REPLACEMENT("true")>);
+
+            for (p = dFdy, j = 0; j < nx; j++, p += nx) {
+
+                /* Zero column j of dFdy if state j is currently disabled. */
+                if (xdis[j]) {
+                    %assign inputArg = "(uint_T)nx"
+                    (void) %<LibGenMemFcnCall("memset", "p", "0", "%<inputArg>*sizeof(p[0])")>;
+                    continue;
+                }
+
+                /* Select an increment del for a difference approximation to
+                column j of dFdy.  The vector fac accounts for experience
+                gained in previous calls to numjac. */
+                xscale = %<LibGenMathFcnCall("abs", tSS_DOUBLE,"x[j]","")>;
+                if (xscale < THRESH) xscale = THRESH;
+                temp = (x[j] + fac[j]*xscale);
+                del  = temp  - y[j];
+                while (del == 0.0) {
+                    if (fac[j] < FACMAX) {
+                        fac[j] *= 100.0;
+                        if (fac[j] > FACMAX) fac[j] = FACMAX;
+                        temp = (x[j] + fac[j]*xscale);
+                        del  = temp  - x[j];
+                    } else {
+                        del = THRESH; /* thresh is nonzero */
+                        break;
+                    }
+                }
+                /* Keep del pointing into region. */
+                %assign absExpr = LibGenMathFcnCall("abs",tSS_DOUBLE,"del","")
+                if (Fty[j] >= 0.0) del = %<absExpr>;
+                else del = -%<absExpr>;
+
+                /* Form a difference approximation to column j of dFdy. */
+                temp = x[j];
+                x[j] += del;
+
+                %<invokeOutput>\
+                %if (isLinearlyImplicit == "yes")
+                    %% Only evaluate f-Mv jacobian for ode14x and state dependent mass matrices
+                    %if (SLibModelMassMatrixType() == "statedep") && (ISEQUAL(Solver,"ode14x"))
+                        %<LocEmitCallToLocalSolverFunction(taskName, ...
+                            "local_evaluateFminusMv", "si", "v", "p", ...
+                            reuseArgsEvalMassMatrixCall, "", "", "")>
+                    %else
+                        rtsiSetdX(si,p);
+                        %<LocEmitCallSolverFunction(taskName, "ForcingFunction")>
+                    %endif
+                %else  %% explicit ODE
+                    rtsiSetdX(si,p);
+                    %<LocEmitCallSolverFunction(taskName, "Derivative")>
+                %endif
+
+                x[j] = temp;
+                difmax = 0.0;
+                rowmax = 0;
+                FdelRowmax = p[0];
+                temp = 1.0 / del;
+                for (i = 0; i < nx; i++) {
+                    Fdiff = p[i] - Fty[i];
+                    maybe = %<LibGenMathFcnCall("abs",tSS_DOUBLE,"Fdiff","")>;
+                    if (maybe > difmax) {
+                        difmax = maybe;
+                        rowmax = i;
+                        FdelRowmax = p[i];
+                    }
+                    p[i] = temp * Fdiff;
+                }
+
+                /* Adjust fac for next call to numjac. */
+                if (((FdelRowmax != 0.0) && (Fty[rowmax] != 0.0)) || (difmax == 0.0)) {
+                    fscale = %<LibGenMathFcnCall("abs",tSS_DOUBLE,"FdelRowmax","")>;
+                    %assign absExpr = LibGenMathFcnCall("abs",tSS_DOUBLE,"Fty[rowmax]","")
+                    if (fscale < %<absExpr>) fscale = %<absExpr>;
+
+                    if (difmax <= BL*fscale) {
+                        /* The difference is small, so increase the increment. */
+                        fac[j] *= 10.0;
+                        if (fac[j] > FACMAX) fac[j] = FACMAX;
+
+                    } else if (difmax > BU*fscale) {
+                        /* The difference is large, so reduce the increment. */
+                        fac[j] *= 0.1;
+                        if (fac[j] < FACMIN) fac[j] = FACMIN;
+
+                    }
+                }
+            }
+
+            rtsiSetSolverComputingJacobian(si,%<GET_TYPE_ID_REPLACEMENT("false")>);
+
+        } /* end local_numjac */
+        %<SLibGetFcnMemSecPragma(fcnName, "MemSecFuncExecute", "Post")>\
+
+    %endif
+
+    %if isFixedStepZcEnabled
+        %% checkForEvent
+        %assign fcnAbstract = "Detector for Fixed step detector, for use with RTW."
+        %if isSolverForDeploymentDiagramTask
+            %assign fcnName = "%<taskName>_rt_checkForEvent"
+        %else
+            %assign fcnName = "rt_checkForEvent"
+        %endif
+        %if !GenerateClassInterface
+            %assign tmpfcnName = fcnName
+        %else
+            %assign tmpfcnName = "%<CPPClassName>::%<fcnName>"
+        %endif
+        %assign fcnReturns = booleanType
+
+        %assign fcnParams = ["RTWSolverInfo  *si,", ...
+            "%<realType>* vL,",...
+            "%<realType>* vR,",...
+            "%<intType>         izc"]
+
+        %createrecord fcnRec {Name tmpfcnName; Returns fcnReturns; Params fcnParams; Abstract fcnAbstract; ...
+            Category "model"; GeneratedBy "ertcontstate.tlc"; Type "Utility"}
+        %<SLibDumpFunctionBanner(fcnRec)>
+        %undef fcnRec
+        %<SLibGetFcnMemSecPragma(fcnName, "MemSecFuncExecute", "Pre")>\
+        %<fcnReturns> %<tmpfcnName>(\
+        %foreach idx = SIZE(fcnParams, 1)
+            %<fcnParams[idx]>\
+        %endforeach
+        )
+        {
+
+            %<intType> nZc = %<::CompiledModel.ZCVectorlength>;
+            %<uint8Type> *zcSignalAttributes = rtsiGetSolverZcSignalAttrib(si);
+
+            static const slZcEventType eventMatrix[4][4] = {
+                /*          ZER              POS              NEG              UNK */
+                { SL_ZCS_EVENT_NUL, SL_ZCS_EVENT_Z2P, SL_ZCS_EVENT_Z2N, SL_ZCS_EVENT_NUL },/* ZER */
+
+                { SL_ZCS_EVENT_P2Z, SL_ZCS_EVENT_NUL, SL_ZCS_EVENT_P2N, SL_ZCS_EVENT_NUL },/* POS */
+
+                { SL_ZCS_EVENT_N2Z, SL_ZCS_EVENT_N2P, SL_ZCS_EVENT_NUL, SL_ZCS_EVENT_NUL },/* NEG */
+
+                { SL_ZCS_EVENT_NUL, SL_ZCS_EVENT_NUL, SL_ZCS_EVENT_NUL, SL_ZCS_EVENT_NUL }/* UNK */
+            };
+
+            slZcSignalSignType vLSign = (slZcSignalSignType)((vL[izc]) > 0.0 ?
+            SL_ZCS_SIGN_POS :
+            ((vL[izc]) < 0.0 ? SL_ZCS_SIGN_NEG : SL_ZCS_SIGN_ZERO));
+            slZcSignalSignType vRSign = (slZcSignalSignType)((vR[izc]) > 0.0 ?
+            SL_ZCS_SIGN_POS :
+            ((vR[izc]) < 0.0 ? SL_ZCS_SIGN_NEG : SL_ZCS_SIGN_ZERO));
+
+            slZcEventType currEv = eventMatrix[vLSign][vRSign];
+
+            if (((currEv) & (zcSignalAttributes[izc])) != 0x00) {
+                return %<GET_TYPE_ID_REPLACEMENT("true")>;
+            }
+            /*No Event Found, return false*/
+            return %<GET_TYPE_ID_REPLACEMENT("false")>;
+        }
+
+        %<SLibGetFcnMemSecPragma(fcnName, "MemSecFuncExecute", "Post")>\
+
+        %% rt_zcLocate
+        %assign fcnAbstract = "Simplified version Fixed cost detector, for use with RTW."
+        %if isSolverForDeploymentDiagramTask
+            %assign fcnName = "%<taskName>_rt_ZcLocate"
+        %else
+            %assign fcnName = "rt_ZcLocate"
+        %endif
+        %if !GenerateClassInterface
+            %assign tmpfcnName = fcnName
+        %else
+            %assign tmpfcnName = "%<CPPClassName>::%<fcnName>"
+        %endif
+        %assign fcnReturns = "void"
+
+        %assign reuseArgsZcLocate = SLibModelFcnArgs("ODEUpdateContinuousStates",TLC_FALSE,"")
+        %if ISEQUAL(reuseArgsZcLocate,"void") || ISEMPTY(reuseArgsZcLocate)
+            %assign reuseArgsZcLocate = ""
+            %assign reuseArgsZcLocateCall = ""
+        %else
+            %assign reuseArgsZcLocate = ", " + reuseArgsZcLocate
+            %assign reuseArgsZcLocateCall = ", " + SLibModelFcnArgs("ODEUpdateContinuousStates",2,0)
+        %endif
+
+        %assign fcnParams = ["RTWSolverInfo *si %<reuseArgsZcLocate>"]
+
+        %createrecord fcnRec {Name tmpfcnName; Returns fcnReturns; Params fcnParams; Abstract fcnAbstract; ...
+            Category "model"; GeneratedBy "ertcontstate.tlc"; Type "Utility"}
+        %<SLibDumpFunctionBanner(fcnRec)>
+        %undef fcnRec
+        %<SLibGetFcnMemSecPragma(fcnName, "MemSecFuncExecute", "Pre")>\
+        %<fcnReturns> %<tmpfcnName>(\
+        %foreach idx = SIZE(fcnParams, 1)
+            %<fcnParams[idx]>\
+        %endforeach
+        %assign useLinearInterpolant = ( ISEQUAL(Solver,"ode1") || ISEQUAL(Solver,"ode14x") || ISEQUAL(Solver, "ode1be"))
+        )
+        {
+
+            %<realType> tL;
+            %<realType> tzMin;
+            %<realType> tzMax;
+            %<realType> tZi;
+            %<realType> tZ;
+            %<realType> theta;
+            %<intType> it;
+            %<intType> maxZcBracketingIterations = %<FixedStepOpts.MaxZcBracketingIterations>;
+            %<timeType> h = rtsiGetStepSize(si);
+            %<::CompiledModel.upperSolver>_IntgData *id = (%<::CompiledModel.upperSolver>_IntgData *)rtsiGetSolverData(si);
+            ZcDetectorData *zcData = (ZcDetectorData*) &%<RTMGet("ZcDetectorData")>;
+            %<booleanType> *xdis%<scalarTokens[0]>rtsiGetContStateDisabledPtr(si)%<scalarTokens[1]>;
+            %<realType> *vL = zcData->vL;
+            %<realType> *vR = zcData->vR;
+            %<realType> *vZ = zcData->vZ;
+            %<realType>  t0 = zcData->t0;
+            %<realType> *tR = &(zcData->tR);
+            %<realType> *x0 = zcData->x0;
+            %<realType> *xR = zcData->xR;
+            %<intType>   nZc = %<::CompiledModel.ZCVectorlength>;
+            %assign getNaN = SLibGetNonFiniteFcnCallExpr("getNaN",tSS_VOID,tSS_DOUBLE,"")
+            %<realType> tLPrev = %<getNaN>;
+            %<realType> tRPrev = %<getNaN>;
+            %<realType> vLPrev[%<::CompiledModel.ZCVectorlength>];
+            %<realType> vRPrev[%<::CompiledModel.ZCVectorlength>];
+            %<realType> tTOL;
+            %<realType> EPS = 2.220446049250313E-16;
+            %<realType> absTol = 6.310887241768094E-30; %% 128*EPS(EPS(1))
+            %<realType> relTol;
+            %<realType> vTOL = 128*EPS;
+            %if !useLinearInterpolant
+                %<realType> *f0 = id->f[0];
+                %<realType> *f1 = id->f[1];
+                %<booleanType> f1Evaluated = %<GET_TYPE_ID_REPLACEMENT("false")>;
+            %endif
+            %<realType>  *x   %<scalarTokens[0]>rtsiGetContStates(si)%<scalarTokens[1]>;
+            %<intType>   nXc  %<scalarTokens[0]>%<numContinuousStates>%<scalarTokens[1]>;
+            %<realType> x1[%<numContinuousStates>];
+            %<booleanType> moveRightPost = %<GET_TYPE_ID_REPLACEMENT("false")>;
+            %<intType> ix;
+            %<intType> izc;
+            %<intType> bracketMovement = 0;
+            %<timeType> tnew = rtsiGetSolverStopTime(si);
+
+            for (izc = 0; izc < nZc; ++izc){
+                vLPrev[izc] = %<getNaN>;
+                vRPrev[izc] = %<getNaN>;
+            }
+
+            /* Cache the integrated solver state in x1.  Note that this state value should not
+            be wrapped or projected as it is needed by the interpolant */
+            %assign inputArg = "(%<uintType>)nXc"
+            %assign inputArg = FcnReplaceCCastWithStaticCastForCPP(inputArg)
+            (void) %<LibGenMemFcnCall("memcpy","x1", "x", "%<inputArg>*sizeof(%<realType>)")>;
+
+            /*Copy x into xR */
+            %assign inputArg = "(%<uintType>)nXc"
+            %assign inputArg = FcnReplaceCCastWithStaticCastForCPP(inputArg)
+            (void) %<LibGenMemFcnCall("memcpy","xR", "x", "%<inputArg>*sizeof(%<realType>)")>;
+            %if (hasProjections == "yes")
+                %<LocEmitCallSolverOutputComputed("si", "false")>
+                %<invokeOutput>\
+                %<LocEmitCallSolverFunction(taskName, "Projection")>
+                %<LocEmitCallSolverOutputComputed("si", "true")>
+            %endif
+
+            %if numPeriodicContStates > 0
+                %<stateReductionFcnName>(rtsiGetContStates(si), rtsiGetPeriodicContStateIndices(si), %<numPeriodicContStates>, rtsiGetPeriodicContStateRanges(si));
+            %endif
+            /* Initiate tL at t0 and tR at t1 */
+            tL = t0;
+            *tR = tnew;
+            it = 0;
+            while ((*tR - tL > 128*EPS*tL) && (it < maxZcBracketingIterations) ){
+                /*Compute TZ */
+                relTol = 128.0* EPS *(tL);
+                tTOL = absTol > relTol? absTol:relTol;
+                tzMin =  tL + 0.5*tTOL;
+                tzMax = *tR - 0.5*tTOL;
+                tZ = *tR;
+
+                for (izc = 0; izc < nZc; ++izc){
+
+                    if (!rt_checkForEvent(si, vL, vR, izc)){
+                        continue;
+                    }
+                    tZi = %<getNaN>;
+
+                    if  (%<LibGenMathFcnCall("abs", tSS_DOUBLE, "vR[izc] - vL[izc]", "")> <= vTOL){
+                        tZi = 0.5*(tL + *tR);
+                    }else if (vL[izc] == 0){
+                        if (!%<SLibGetNonFiniteFcnCallExpr("rtIsNaN",tSS_DOUBLE,tSS_BOOLEAN,"tRPrev")>) {
+                            if ( ( (vR[izc] < 0.0 && vRPrev[izc] < vR[izc]) ||
+                            (vR[izc] > 0.0 && vRPrev[izc] > vR[izc]) ) &&
+                            (%<LibGenMathFcnCall("abs", tSS_DOUBLE, "vRPrev[izc] - vR[izc]", "")> > vTOL) ){
+                                tZi = (tRPrev*vR[izc] - *tR*vRPrev[izc])/(vR[izc] - vRPrev[izc]);
+                            }
+                        }
+                        if(%<SLibGetNonFiniteFcnCallExpr("rtIsNaN",tSS_DOUBLE,tSS_BOOLEAN,"tZi")>){
+                            tZi = 0.5*(tL + *tR);
+                        }
+                    }else if (vR[izc] == 0){
+                        if (!%<SLibGetNonFiniteFcnCallExpr("rtIsNaN",tSS_DOUBLE,tSS_BOOLEAN,"tLPrev")>){
+                            if ( ( (vL[izc] < 0.0 && vLPrev[izc] < vL[izc]) ||
+                            (vL[izc] > 0.0 && vLPrev[izc] > vL[izc]) ) &&
+                            (%<LibGenMathFcnCall("abs", tSS_DOUBLE, "vLPrev[izc] - vL[izc]", "")> > vTOL) ){
+                                tZi = (tLPrev*vL[izc] - tL*vLPrev[izc])/(vL[izc] - vLPrev[izc]);
+                            }
+                        }
+                        if(%<SLibGetNonFiniteFcnCallExpr("rtIsNaN",tSS_DOUBLE,tSS_BOOLEAN,"tZi")>){
+                            tZi = 0.5*(tL + *tR);
+                        }
+                    }else{
+                        tZi = (tL * vR[izc] - *tR * vL[izc]) / (vR[izc] - vL[izc]);
+                    }
+
+                    /* Enforce: tL+0.5*tol <= tZ <= tR-0.5*tol*/
+                    if (tZi < tzMin) tZi = tzMin;
+                    if (tZi > tzMax) tZi = tzMax;
+
+                    /* track the earliest event*/
+                    if (tZi < tZ) {
+                        tZ = tZi;
+                    }
+                }
+
+                /*End Compute TZ*/
+
+
+                /*Interpolation Formula*/
+                %if useLinearInterpolant
+                    /* Linear interpolant */
+                    theta = (tnew - tZ)/(tnew - t0);
+
+                    for (ix = 0; ix < nXc; ++ix) {
+                        x[ix] = theta*x0[ix] + (1 - theta)*x1[ix];
+                    }
+
+                %else
+                    /* Two-point Hermite Interpolant */
+                    theta = (tZ - t0)/h;
+                    %% We only need to evaluate f1(tnew,x1) once, since the value should not change
+                    %% during one call to locate ZC.  Note that we update the global cont state
+                    %% vector when interpolating values, so it is important that we do not call f1
+                    %% again after doing so.
+                    if (!f1Evaluated){
+                        rtsiSetT(si, tnew);
+                        rtsiSetdX(si, f1);
+                        %<LocEmitCallSolverOutputComputed("si", "false")>
+                        %<invokeOutput>\
+                        %<LocEmitCallSolverFunction(taskName, "Derivative")>
+                        %<LocEmitCallSolverOutputComputed("si", "true")>
+                        f1Evaluated = %<GET_TYPE_ID_REPLACEMENT("true")>;
+                    }
+
+                    for (ix = 0; ix < nXc; ++ix){
+                        x[ix] = (1.0 - theta) * x0[ix] + theta * x1[ix] + theta * (theta - 1.0)
+                        *((1.0 - 2.0 * theta) * (x1[ix] - x0[ix]) + (theta - 1.0) * h * f0[ix] +
+                        theta * h * f1[ix]);
+                    }
+                %endif
+
+                %% Need to set the state values back to what they were before interpolation if the states are disabled
+                /* Reset Disabled states */
+                for (ix = 0; ix < nXc; ++ix){
+                    if (xdis[ix]){
+                        x[ix] = x0[ix];
+                    }
+                }
+
+                rtsiSetT(si, tZ);
+
+                /* compute zc signal with interpolated state
+                Need to call both projections and wrapped states before hand*/
+                %if (hasProjections == "yes")
+                    %<LocEmitCallSolverOutputComputed("si", "false")>
+                    %<invokeOutput>\
+                    %<LocEmitCallSolverFunction(taskName, "Projection")>
+                    %<LocEmitCallSolverOutputComputed("si", "true")>
+                %endif
+
+                %if numPeriodicContStates > 0
+                    %<stateReductionFcnName>(rtsiGetContStates(si), rtsiGetPeriodicContStateIndices(si),
+                    %<numPeriodicContStates>, rtsiGetPeriodicContStateRanges(si));
+                %endif
+                %<LocEmitCallSolverOutputComputed("si", "false")>
+                %<invokeOutput>\
+                rtsiSetSolverZcSignalVector(si, vZ);
+                %<LocEmitCallSolverFunction(taskName, "ZeroCrossing")>
+                %<LocEmitCallSolverOutputComputed("si", "true")>
+
+                /*Determine bracket movement*/
+                for (izc = 0; izc < nZc; ++izc){
+                    moveRightPost = rt_checkForEvent(si, vL, vZ, izc);
+                    if (moveRightPost){
+                        break;
+                    }
+                }
+
+                /* Movement of the bracket */
+                if (moveRightPost){
+                    /*move the right post leftward*/
+
+                    if (bracketMovement < 0) {
+                        if (bracketMovement < -1) {
+                            for (izc = 0; izc < nZc; ++izc) {
+                                if (%<LibGenMathFcnCall("abs", tSS_DOUBLE, "vL[izc]", "")> > EPS) vL[izc] *= 0.5;
+                            }
+                        }
+                        --bracketMovement;
+                    } else {
+                        bracketMovement = -1;
+                    }
+                    tRPrev = *tR ;
+                    tLPrev = %<getNaN>;
+                    %assign inputArg = "(%<uintType>)nZc"
+                    %assign inputArg = FcnReplaceCCastWithStaticCastForCPP(inputArg)
+                    (void) %<LibGenMemFcnCall("memcpy","vRPrev", "vR", "%<inputArg>*sizeof(%<realType>)")>;
+                    *tR = tZ;
+                    %assign inputArg = "(%<uintType>)nZc"
+                    %assign inputArg = FcnReplaceCCastWithStaticCastForCPP(inputArg)
+                    (void) %<LibGenMemFcnCall("memcpy","vR", "vZ", "%<inputArg>*sizeof(%<realType>)")>;
+                    %assign inputArg = "(%<uintType>)nXc"
+                    %assign inputArg = FcnReplaceCCastWithStaticCastForCPP(inputArg)
+                    (void) %<LibGenMemFcnCall("memcpy","xR", "x", "%<inputArg>*sizeof(%<realType>)")>;
+                }else{
+                    /* move the left post rightward*/
+                    if (bracketMovement > 0) {
+                        if (bracketMovement > 1) {
+
+                            for (izc = 0; izc < nZc; ++izc) {
+                                if ( %<LibGenMathFcnCall("abs", tSS_DOUBLE, "vR[izc]", "")> > EPS) vR[izc] *= 0.5;
+                            }
+                        }
+                        ++bracketMovement;
+                    } else {
+                        bracketMovement = 1;
+                    }
+                    tLPrev = tL ;
+                    tRPrev = %<getNaN>;
+                    %assign inputArg = "(%<uintType>)nZc"
+                    %assign inputArg = FcnReplaceCCastWithStaticCastForCPP(inputArg)
+                    (void) %<LibGenMemFcnCall("memcpy","vLPrev", "vL", "%<inputArg>*sizeof(%<realType>)")>;
+                    tL = tZ;
+                    %assign inputArg = "(%<uintType>)nZc"
+                    %assign inputArg = FcnReplaceCCastWithStaticCastForCPP(inputArg)
+                    (void) %<LibGenMemFcnCall("memcpy","vL", "vZ", "%<inputArg>*sizeof(%<realType>)")>;
+
+                }
+
+                /* End Bracket Movement*/
+
+                it++;
+            }
+
+            %% Here we need to copy x1 back into the model wide state vector x, as we have manipulated
+            %% the global state vector during zc search and it should be restored. g2667292.
+            %assign inputArg = "(%<uintType>)nXc"
+            %assign inputArg = FcnReplaceCCastWithStaticCastForCPP(inputArg)
+            (void) %<LibGenMemFcnCall("memcpy","x", "x1", "%<inputArg>*sizeof(%<realType>)")>;
+
+        } /* end rt_ZcLocate */
+        %<SLibGetFcnMemSecPragma(fcnName, "MemSecFuncExecute", "Post")>\
+
+    %endif %% if using fixed-step zero crossing detection
+
+    %openfile fcnAbstract
+%%}
+This function updates continuous states using the %<upperSolver> fixed-step
+solver algorithm
+%%{
+    %closefile fcnAbstract
+    %if isSolverForDeploymentDiagramTask
+        %assign fcnName = "%<taskName>_%<integrationMethodName>"
+    %else
+        %assign fcnName = "%<integrationMethodName>"
+    %endif
+    %if !GenerateClassInterface
+        %assign tmpfcnName = fcnName
+        %assign fcnReturns = "static void"
+    %else
+        %assign tmpfcnName = "%<CPPClassName>::%<fcnName>"
+        %assign fcnReturns = "void"
+    %endif
+    %assign fcnParams = "RTWSolverInfo *si %<reuseArgs>"
+    %createrecord fcnRec {Name tmpfcnName; Returns fcnReturns; Params fcnParams; Abstract fcnAbstract; ...
+        Category "model"; GeneratedBy "ertcontstate.tlc"; Type "Update"}
+    %<SLibDumpFunctionBanner(fcnRec)>
+    %undef fcnRec
+    %<SLibGetFcnMemSecPragma(fcnName, "MemSecFuncExecute", "Pre")>\
+    %<fcnReturns> %<tmpfcnName>(%<fcnParams>)
+    {
+        %createrecord solverVars {solverName Solver; taskName taskName; numContinuousStates numContinuousStates;...
+            invokeOutput invokeOutput; isLinearlyImplicit isLinearlyImplicit}
+        %if ( ISEQUAL(Solver,"ode14x") || ISEQUAL(Solver, "ode1be") )
+            %addtorecord solverVars reuseArgsNumjacCall reuseArgsNumjacCall
+            %if (isLinearlyImplicit == "yes")
+                %addtorecord solverVars reuseArgsEvalMassMatrixCall reuseArgsEvalMassMatrixCall
+            %endif
+        %endif
+        %<LocDumpCoreSolverAlgorithm(solverVars)>
+        %undef solverVars
+
+        %if (!isFixedStepZcEnabled)
+
+            %if (hasProjections == "yes")
+                %<LocEmitCallSolverOutputComputed("si", "false")>
+                %<invokeOutput>\
+                %<LocEmitCallSolverFunction(taskName, "Projection")>
+                %<LocEmitCallSolverOutputComputed("si", "true")>
+            %endif
+
+            %if numPeriodicContStates > 0
+                %<stateReductionFcnName>(rtsiGetContStates(si), rtsiGetPeriodicContStateIndices(si),          %<numPeriodicContStates>,
+                rtsiGetPeriodicContStateRanges(si));
+            %endif
+
+            rtsiSetSimTimeStep(si,MAJOR_TIME_STEP);
+            %<LocEmitCallSolverOutputComputed("si", "false")>
+        %endif
+
+    }
+    %<SLibGetFcnMemSecPragma(fcnName, "MemSecFuncExecute", "Post")>\
+
+    %% If fixed-step zero crossing is enabled, generate a separate method
+    %% solely for integration
+    %if isFixedStepZcEnabled
+        %assign fcnName = "rt_ertODEUpdateContinuousStates"
+        %if !GenerateClassInterface
+            %assign tmpfcnName = fcnName
+            %assign fcnReturns = "static void"
+        %else
+            %assign tmpfcnName = "%<CPPClassName>::%<fcnName>"
+            %assign fcnReturns = "void"
+        %endif
+        %assign fcnParams = "RTWSolverInfo *si %<reuseArgs>"
+        %createrecord fcnRec {Name tmpfcnName; Returns fcnReturns; Params fcnParams; Abstract fcnAbstract; ...
+            Category "model"; GeneratedBy "ertcontstate.tlc"; Type "Update"}
+        %<SLibDumpFunctionBanner(fcnRec)>
+        %undef fcnRec
+        %<SLibGetFcnMemSecPragma(fcnName, "MemSecFuncExecute", "Pre")>\
+        %<fcnReturns> %<tmpfcnName>(%<fcnParams>)
+        {
+            %<timeType>    tnew %<scalarTokens[0]>rtsiGetSolverStopTime(si)%<scalarTokens[1]>;
+            %<timeType>    h    %<scalarTokens[0]>rtsiGetStepSize(si)%<scalarTokens[1]>;
+            %<realType>    *x   %<scalarTokens[0]>rtsiGetContStates(si)%<scalarTokens[1]>;
+            %<intType>    nXc  %<scalarTokens[0]>%<numContinuousStates>%<scalarTokens[1]>;
+            %if ( (hasProjections == "yes") || (numPeriodicContStates > 0))
+                %<realType>   xtmp[%<numContinuousStates>];
+            %endif
+
+            ZcDetectorData *zcData = (ZcDetectorData*) &%<RTMGet("ZcDetectorData")>;
+            %<realType> *vL = zcData->vL;
+            %<realType> *vR = zcData->vR;
+            %<realType> *vZ = zcData->vZ;
+            %<realType> *x0 = zcData->x0;
+            %<realType> *xR = zcData->xR;
+
+            %<intType> nZc = %<::CompiledModel.ZCVectorlength>;
+            %<intType> numZcEventsFound;
+            %<intType> maxNumZcEventsPerStep = %<::CompiledModel.FixedStepOpts.MaxNumZcPerStep>;
+            %<intType> izc;
+            %<booleanType> hadEvent = %<GET_TYPE_ID_REPLACEMENT("false")>;
+
+            rtsiSetSimTimeStep(si,MINOR_TIME_STEP);
+
+            /*Maintain a copy of the time and state at prior to integration*/
+            zcData->t0 = rtsiGetT(si);
+            %assign inputArg = "(%<uintType>)nXc"
+            %assign inputArg = FcnReplaceCCastWithStaticCastForCPP(inputArg)
+            (void) %<LibGenMemFcnCall("memcpy","x0", "x", "%<inputArg>*sizeof(%<realType>)")>;
+
+            /*Evaluate ZC at beginning of integration interval*/
+            %<LocEmitCallSolverOutputComputed("si", "false")>
+            %<invokeOutput>\
+            rtsiSetSolverZcSignalVector(si, vL);
+            %<LocEmitCallSolverFunction(taskName, "ZeroCrossing")>
+            %<LocEmitCallSolverOutputComputed("si", "true")>
+
+            /*First trial integration */
+            %assign reuseArgs = SLibModelFcnArgs("ODEUpdateContinuousStates",2,0)
+            %if !ISEQUAL(reuseArgs,"")
+                %assign reuseArgs = ", " + reuseArgs
+            %endif
+            rt_ertODEIntegrate(%<RTMGetSolverInfo()>%<reuseArgs>);
+
+
+            /* Evaluate ZC at end of integration interval*/
+            %if (hasProjections == "yes")
+                %assign inputArg = "(%<uintType>)nXc"
+                %assign inputArg = FcnReplaceCCastWithStaticCastForCPP(inputArg)
+                (void) %<LibGenMemFcnCall("memcpy","xtmp", "x", "%<inputArg>*sizeof(%<realType>)")>;
+                %<LocEmitCallSolverOutputComputed("si", "false")>
+                %<invokeOutput>\
+                %<LocEmitCallSolverFunction(taskName, "Projection")>
+                %<LocEmitCallSolverOutputComputed("si", "true")>
+            %endif
+
+            %if numPeriodicContStates > 0
+                %if (hasProjections == "no")
+                    %assign inputArg = "(%<uintType>)nXc"
+                    %assign inputArg = FcnReplaceCCastWithStaticCastForCPP(inputArg)
+                    (void) %<LibGenMemFcnCall("memcpy","xtmp", "x", "%<inputArg>*sizeof(%<realType>)")>;
+                %endif
+                %<stateReductionFcnName>(rtsiGetContStates(si), rtsiGetPeriodicContStateIndices(si), %<numPeriodicContStates>,
+                rtsiGetPeriodicContStateRanges(si));
+            %endif
+            %<LocEmitCallSolverOutputComputed("si", "false")>
+            %<invokeOutput>\
+            rtsiSetSolverZcSignalVector(si, vR);
+            %<LocEmitCallSolverFunction(taskName, "ZeroCrossing")>
+            %<LocEmitCallSolverOutputComputed("si", "true")>
+
+            %if (hasProjections == "yes") || (numPeriodicContStates > 0)
+                %assign inputArg = "(%<uintType>)nXc"
+                %assign inputArg = FcnReplaceCCastWithStaticCastForCPP(inputArg)
+                (void) %<LibGenMemFcnCall("memcpy","x", "xtmp", "%<inputArg>*sizeof(%<realType>)")>;
+            %endif
+
+            /*If zero crossing occurred, react to zero crossing and integrate */
+            numZcEventsFound = 0;
+
+            hadEvent = %<GET_TYPE_ID_REPLACEMENT("false")>;
+            for (izc = 0; izc < nZc; ++izc){
+                hadEvent = rt_checkForEvent(si, vL, vR, izc);
+                if (hadEvent){
+                    break;
+                }
+            }
+
+            while((numZcEventsFound < maxNumZcEventsPerStep) && hadEvent){
+
+                numZcEventsFound++;
+
+                /* Locate the zero Crossing */
+                rt_ZcLocate(%<RTMGetSolverInfo()>%<reuseArgsZcLocateCall>);
+
+
+
+                %% if tR == tnew, then the zc is occuring at the end of the integration interval and
+                %% we don't need to do anything here.  Instead, we will react to it in the block code
+                %% at the next major time step. g2667292.
+                if (!(zcData->tR < tnew)){
+                    /*If tR == tNew, then we don't need to do anything*/
+                    break;
+                }else{
+
+                    /* Reset the current time to tR, xR */
+                    rtsiSetT(si, zcData->tR);
+                    %assign inputArg = "(%<uintType>)nXc"
+                    %assign inputArg = FcnReplaceCCastWithStaticCastForCPP(inputArg)
+                    (void) %<LibGenMemFcnCall("memcpy","x", "xR", "%<inputArg>*sizeof(%<realType>)")>;
+
+                    /* Block react to zc Event*/
+                    rtsiSetIsMinorTimeStepWithModeChange(si, %<GET_TYPE_ID_REPLACEMENT("true")>);
+                    %<invokeOutput>
+                    %if !CombineOutputUpdateFcns
+                        %<invokeUpdate>
+                    %endif
+                    rtsiSetIsMinorTimeStepWithModeChange(si, %<GET_TYPE_ID_REPLACEMENT("false")>);
+
+                    /*Maintain a copy of the state at prior to integration*/
+                    %assign inputArg = "(%<uintType>)nXc"
+                    %assign inputArg = FcnReplaceCCastWithStaticCastForCPP(inputArg)
+                    (void) %<LibGenMemFcnCall("memcpy","x0", "x", "%<inputArg>*sizeof(%<realType>)")>;
+
+                    /*Evaluate ZC at beginning of integration interval*/
+                    %<LocEmitCallSolverOutputComputed("si", "false")>
+                    %<invokeOutput>\
+                    rtsiSetSolverZcSignalVector(si, vL);
+                    %<LocEmitCallSolverFunction(taskName, "ZeroCrossing")>
+                    %<LocEmitCallSolverOutputComputed("si", "true")>
+
+                    /* Integrate from tR to t1 */
+                    zcData->t0 = rtsiGetT(si);
+                    rtsiSetStepSize(si, tnew - zcData->tR);
+                    rt_ertODEIntegrate(%<RTMGetSolverInfo()>%<reuseArgs>);
+
+                    /* Evaluate ZC at end of integration interval*/
+                    %if (hasProjections == "yes")
+                        %assign inputArg = "(%<uintType>)nXc"
+                        %assign inputArg = FcnReplaceCCastWithStaticCastForCPP(inputArg)
+                        (void) %<LibGenMemFcnCall("memcpy","xtmp", "x", "%<inputArg>*sizeof(%<realType>)")>;
+                        %<LocEmitCallSolverOutputComputed("si", "false")>
+                        %<invokeOutput>\
+                        %<LocEmitCallSolverFunction(taskName, "Projection")>
+                        %<LocEmitCallSolverOutputComputed("si", "true")>
+                    %endif
+
+                    %if numPeriodicContStates > 0
+                        %if (hasProjections == "no")
+                            %assign inputArg = "(%<uintType>)nXc"
+                            %assign inputArg = FcnReplaceCCastWithStaticCastForCPP(inputArg)
+                            (void) %<LibGenMemFcnCall("memcpy","xtmp", "x", "%<inputArg>*sizeof(%<realType>)")>;
+                        %endif
+                        %<stateReductionFcnName>(rtsiGetContStates(si), rtsiGetPeriodicContStateIndices(si), %<numPeriodicContStates>,
+                        rtsiGetPeriodicContStateRanges(si));
+                    %endif
+                    %<LocEmitCallSolverOutputComputed("si", "false")>
+                    %<invokeOutput>\
+                    rtsiSetSolverZcSignalVector(si, vR);
+                    %<LocEmitCallSolverFunction(taskName, "ZeroCrossing")>
+                    %<LocEmitCallSolverOutputComputed("si", "true")>
+
+                    %if (hasProjections == "yes") || (numPeriodicContStates > 0)
+                        %assign inputArg = "(%<uintType>)nXc"
+                        %assign inputArg = FcnReplaceCCastWithStaticCastForCPP(inputArg)
+                        (void) %<LibGenMemFcnCall("memcpy","x", "xtmp", "%<inputArg>*sizeof(%<realType>)")>;
+                    %endif
+
+                    hadEvent = %<GET_TYPE_ID_REPLACEMENT("false")>;
+                    for (izc = 0; izc < nZc; ++izc){
+                        hadEvent = rt_checkForEvent(si, vL, vR, izc);
+                        if (hadEvent){
+                            break;
+                        }
+                    }
+
+                }
+
+            }
+
+            /* Restore the step size */
+            rtsiSetStepSize(si, h);
+
+            /* Advance time */
+            rtsiSetT(si, tnew);
+
+
+            %if (hasProjections == "yes")
+                %<LocEmitCallSolverOutputComputed("si", "false")>
+                %<invokeOutput>\
+                %<LocEmitCallSolverFunction(taskName, "Projection")>
+                %<LocEmitCallSolverOutputComputed("si", "true")>
+            %endif
+
+            %if numPeriodicContStates > 0
+                %<stateReductionFcnName>(rtsiGetContStates(si), rtsiGetPeriodicContStateIndices(si), %<numPeriodicContStates>,
+                rtsiGetPeriodicContStateRanges(si));
+            %endif
+
+            rtsiSetSimTimeStep(si,MAJOR_TIME_STEP);
+            %<LocEmitCallSolverOutputComputed("si", "false")>
+
+        }
+        %<SLibGetFcnMemSecPragma(fcnName, "MemSecFuncExecute", "Post")>\
+    %endif
+
+    %<SLibEmitNamespaceCloseForSystem(System[NumSystems-1])>\
+    %closefile buff
+
+    %<SLibCacheCodeToFile("baseMdl_fcn_defn", buff)>
+
+    %%
+    %% Restore rootSystem.CurrentTID
+    %assign rootSystem.CurrentTID = saveCurrentTID
+    %if ISFIELD(rootSystem, "CurrentPID")
+        %assign rootSystem.CurrentPID = saveCurrentPID
+    %endif
+
+%endfunction
+
+%% Function: SLibGenIntgSubStruct ==================================================================
+%% Abstract:
+%%   Generate the substructure in the real-time model rtM.Intg
+%%
+%function SLibGenERTIntgSubStruct() void
+    %assign realType = LibGetDataTypeNameFromId(::CompiledModel.tSS_DOUBLE)
+
+    %openfile retVal
+    struct {
+        %<realType> *y;
+        %<realType> *f[2];
+    } \
+    %closefile retVal
+    %return retVal
+%endfunction
+
+%% Function LocDumpCoreSolverAlgorithm
+%% Abstract: Generates the core code for the input solver algorithm
+%function LocDumpCoreSolverAlgorithm(solverVars) Output
+    %assign intType = LibGetDataTypeNameFromId(::CompiledModel.tSS_INTEGER)
+    %assign uintType = LibGetDataTypeNameFromId(::CompiledModel.tSS_UINTEGER)
+    %assign timeType = LibGetDataTypeNameFromId(::CompiledModel.tSS_TIME)
+    %assign realType = LibGetDataTypeNameFromId(::CompiledModel.tSS_DOUBLE)
+    %assign booleanType = LibGetDataTypeNameFromId(::CompiledModel.tSS_BOOLEAN)
+    %assign equalSign = LibGetDataInitEqualSign()
+    %assign scalarTokens = LibGetScalarDataInitTokens()
+
+    %with solverVars
+
+        %if ISEQUAL(solverName, "ode1")
+            %<timeType>    tnew %<scalarTokens[0]>rtsiGetSolverStopTime(si)%<scalarTokens[1]>;
+            %<timeType>    h    %<scalarTokens[0]>rtsiGetStepSize(si)%<scalarTokens[1]>;
+            %<realType>    *x   %<scalarTokens[0]>rtsiGetContStates(si)%<scalarTokens[1]>;
+            %assign intgDataStr = "(ODE1_IntgData *)rtsiGetSolverData(si)"
+            %assign intgDataStr = FcnReplaceCCastWithStaticCastForCPP(intgDataStr)
+            ODE1_IntgData  *id  %<scalarTokens[0]>%<intgDataStr>%<scalarTokens[1]>;
+            %<realType>    *f0  %<scalarTokens[0]>id->f[0]%<scalarTokens[1]>;
+            %<intType>     i;
+            %<intType>     nXc  %<scalarTokens[0]>%<numContinuousStates>%<scalarTokens[1]>;
+
+            rtsiSetSimTimeStep(si,MINOR_TIME_STEP);
+            %<LocEmitCallSolverOutputComputed("si", "true")>
+
+            rtsiSetdX(si, f0);
+            %<LocEmitCallSolverFunction(taskName, "Derivative")>
+            rtsiSetT(si, tnew);
+
+            for (i = 0; i < nXc; ++i) {
+                x[i] += h * f0[i];
+            }
+        %elseif ISEQUAL(solverName, "ode2")
+            %<timeType>    tnew %<scalarTokens[0]>rtsiGetSolverStopTime(si)%<scalarTokens[1]>;
+            %<timeType>    h    %<scalarTokens[0]>rtsiGetStepSize(si)%<scalarTokens[1]>;
+            %<realType>    *x   %<scalarTokens[0]>rtsiGetContStates(si)%<scalarTokens[1]>;
+            %assign intgDataStr = "(ODE2_IntgData *)rtsiGetSolverData(si)"
+            %assign intgDataStr = FcnReplaceCCastWithStaticCastForCPP(intgDataStr)
+            ODE2_IntgData  *id  %<scalarTokens[0]>%<intgDataStr>%<scalarTokens[1]>;
+            %<realType>    *y   %<scalarTokens[0]>id->y%<scalarTokens[1]>;
+            %<realType>    *f0  %<scalarTokens[0]>id->f[0]%<scalarTokens[1]>;
+            %<realType>    *f1  %<scalarTokens[0]>id->f[1]%<scalarTokens[1]>;
+            %<realType>    temp;
+            %<intType>     i;
+            %<intType>     nXc  %<scalarTokens[0]>%<numContinuousStates>%<scalarTokens[1]>;
+
+
+            rtsiSetSimTimeStep(si,MINOR_TIME_STEP);
+            %<LocEmitCallSolverOutputComputed("si", "true")>
+
+            /* Save the state values at time t in y, we'll use x as ynew. */
+            %assign inputArg = "(%<uintType>)nXc"
+            %assign inputArg = FcnReplaceCCastWithStaticCastForCPP(inputArg)
+            (void) %<LibGenMemFcnCall("memcpy","y", "x", "%<inputArg>*sizeof(%<realType>)")>;
+
+            /* Assumes that rtsiSetT and ModelOutputs are up-to-date */
+            /* f0 = f(t,y) */
+            rtsiSetdX(si, f0);
+            %<LocEmitCallSolverFunction(taskName, "Derivative")>
+            /* f1 = f(t + h, y + h*f0) */
+            for (i = 0; i < nXc; i++) {
+                x[i] = y[i] + (h*f0[i]);
+            }
+            rtsiSetT(si, tnew);
+            rtsiSetdX(si, f1);
+            %<LocEmitCallSolverOutputComputed("si", "false")>
+            %<invokeOutput>\
+            %<LocEmitCallSolverFunction(taskName, "Derivative")>
+            %<LocEmitCallSolverOutputComputed("si", "true")>
+            /* tnew = t + h
+            ynew = y + (h/2)*(f0 + f1) */
+            temp = 0.5*h;
+            for (i = 0; i < nXc; i++) {
+                x[i] = y[i] + temp*(f0[i] + f1[i]);
+            }
+        %elseif ISEQUAL(solverName, "ode3")
+            /* Solver Matrices */
+            static const %<realType> rt_ODE3_A[3]%<equalSign>{
+                1.0/2.0, 3.0/4.0, 1.0
+            };
+            static const %<realType> rt_ODE3_B[3][3]%<equalSign>{
+                { 1.0/2.0,     0.0,     0.0 },
+                {     0.0, 3.0/4.0,     0.0 },
+                { 2.0/9.0, 1.0/3.0, 4.0/9.0 }
+            };
+
+            %<timeType>    t    %<scalarTokens[0]>rtsiGetT(si)%<scalarTokens[1]>;
+            %<timeType>    tnew %<scalarTokens[0]>rtsiGetSolverStopTime(si)%<scalarTokens[1]>;
+            %<timeType>    h    %<scalarTokens[0]>rtsiGetStepSize(si)%<scalarTokens[1]>;
+            %<realType>    *x   %<scalarTokens[0]>rtsiGetContStates(si)%<scalarTokens[1]>;
+            %assign intgDataStr = "(ODE3_IntgData *)rtsiGetSolverData(si)"
+            %assign intgDataStr = FcnReplaceCCastWithStaticCastForCPP(intgDataStr)
+            ODE3_IntgData  *id %<scalarTokens[0]> %<intgDataStr>%<scalarTokens[1]>;
+            %<realType>    *y   %<scalarTokens[0]>id->y%<scalarTokens[1]>;
+            %<realType>    *f0  %<scalarTokens[0]>id->f[0]%<scalarTokens[1]>;
+            %<realType>    *f1  %<scalarTokens[0]>id->f[1]%<scalarTokens[1]>;
+            %<realType>    *f2  %<scalarTokens[0]>id->f[2]%<scalarTokens[1]>;
+            %<realType>    hB[3];
+            %<intType>     i;
+            %<intType>     nXc  %<scalarTokens[0]>%<numContinuousStates>%<scalarTokens[1]>;
+
+
+            rtsiSetSimTimeStep(si,MINOR_TIME_STEP);
+            %<LocEmitCallSolverOutputComputed("si", "true")>
+
+            /* Save the state values at time t in y, we'll use x as ynew. */
+            %assign inputArg = "(%<uintType>)nXc"
+            %assign inputArg = FcnReplaceCCastWithStaticCastForCPP(inputArg)
+            (void) %<LibGenMemFcnCall("memcpy", "y", "x", "%<inputArg>*sizeof(%<realType>)")>;
+
+            /* Assumes that rtsiSetT and ModelOutputs are up-to-date */
+            /* f0 = f(t,y) */
+            rtsiSetdX(si, f0);
+
+            %<LocEmitCallSolverFunction(taskName, "Derivative")>
+            /* f(:,2) = feval(odefile, t + hA(1), y + f*hB(:,1), args(:)(*)); */
+            hB[0] = h * rt_ODE3_B[0][0];
+            for (i = 0; i < nXc; i++) {
+                x[i] = y[i] + (f0[i]*hB[0]);
+            }
+            rtsiSetT(si, t + h*rt_ODE3_A[0]);
+            rtsiSetdX(si, f1);
+            %<LocEmitCallSolverOutputComputed("si", "false")>
+            %<invokeOutput>\
+            %<LocEmitCallSolverFunction(taskName, "Derivative")>
+            %<LocEmitCallSolverOutputComputed("si", "true")>
+
+            /* f(:,3) = feval(odefile, t + hA(2), y + f*hB(:,2), args(:)(*)); */
+            for (i = 0; i <= 1; i++) {
+                hB[i] = h * rt_ODE3_B[1][i];
+            }
+            for (i = 0; i < nXc; i++) {
+                x[i] = y[i] + (f0[i]*hB[0] + f1[i]*hB[1]);
+            }
+            rtsiSetT(si, t + h*rt_ODE3_A[1]);
+            rtsiSetdX(si, f2);
+            %<LocEmitCallSolverOutputComputed("si", "false")>
+            %<invokeOutput>\
+            %<LocEmitCallSolverFunction(taskName, "Derivative")>
+            %<LocEmitCallSolverOutputComputed("si", "true")>
+
+            /* tnew = t + hA(3);
+            ynew = y + f*hB(:,3); */
+            for (i = 0; i <= 2; i++) {
+                hB[i] = h * rt_ODE3_B[2][i];
+            }
+            for (i = 0; i < nXc; i++) {
+                x[i] = y[i] + (f0[i]*hB[0] + f1[i]*hB[1] + f2[i]*hB[2]);
+            }
+            rtsiSetT(si, tnew);
+        %elseif ISEQUAL(solverName, "ode4")
+            %<timeType>    t    %<scalarTokens[0]>rtsiGetT(si)%<scalarTokens[1]>;
+            %<timeType>    tnew %<scalarTokens[0]>rtsiGetSolverStopTime(si)%<scalarTokens[1]>;
+            %<timeType>    h    %<scalarTokens[0]>rtsiGetStepSize(si)%<scalarTokens[1]>;
+            %<realType>    *x   %<scalarTokens[0]>rtsiGetContStates(si)%<scalarTokens[1]>;
+            %assign intgDataStr = "(ODE4_IntgData *)rtsiGetSolverData(si)"
+            %assign intgDataStr = FcnReplaceCCastWithStaticCastForCPP(intgDataStr)
+            ODE4_IntgData  *id  %<scalarTokens[0]>%<intgDataStr>%<scalarTokens[1]>;
+            %<realType>    *y   %<scalarTokens[0]>id->y%<scalarTokens[1]>;
+            %<realType>    *f0  %<scalarTokens[0]>id->f[0]%<scalarTokens[1]>;
+            %<realType>    *f1  %<scalarTokens[0]>id->f[1]%<scalarTokens[1]>;
+            %<realType>    *f2  %<scalarTokens[0]>id->f[2]%<scalarTokens[1]>;
+            %<realType>    *f3  %<scalarTokens[0]>id->f[3]%<scalarTokens[1]>;
+            %<realType>    temp;
+            %<intType>     i;
+            %<intType>     nXc  %<scalarTokens[0]>%<numContinuousStates>%<scalarTokens[1]>;
+
+            rtsiSetSimTimeStep(si,MINOR_TIME_STEP);
+            %<LocEmitCallSolverOutputComputed("si", "true")>
+
+            /* Save the state values at time t in y, we'll use x as ynew. */
+            %assign inputArg = "(%<uintType>)nXc"
+            %assign inputArg = FcnReplaceCCastWithStaticCastForCPP(inputArg)
+            (void) %<LibGenMemFcnCall("memcpy", "y", "x", "%<inputArg>*sizeof(%<realType>)")>;
+
+            /* Assumes that rtsiSetT and ModelOutputs are up-to-date */
+            /* f0 = f(t,y) */
+            rtsiSetdX(si, f0);
+            %<LocEmitCallSolverFunction(taskName, "Derivative")>
+            /* f1 = f(t + (h/2), y + (h/2)*f0) */
+            temp = 0.5 * h;
+            for (i = 0; i < nXc; i++) {
+                x[i] = y[i] + (temp*f0[i]);
+            }
+            rtsiSetT(si, t + temp);
+            rtsiSetdX(si, f1);
+            %<LocEmitCallSolverOutputComputed("si", "false")>
+            %<invokeOutput>\
+            %<LocEmitCallSolverFunction(taskName, "Derivative")>
+            %<LocEmitCallSolverOutputComputed("si", "true")>
+            /* f2 = f(t + (h/2), y + (h/2)*f1) */
+            for (i = 0; i < nXc; i++) {
+                x[i] = y[i] + (temp*f1[i]);
+            }
+            rtsiSetdX(si, f2);
+            %<LocEmitCallSolverOutputComputed("si", "false")>
+            %<invokeOutput>\
+            %<LocEmitCallSolverFunction(taskName, "Derivative")>
+            %<LocEmitCallSolverOutputComputed("si", "true")>
+            /* f3 = f(t + h, y + h*f2) */
+            for (i = 0; i < nXc; i++) {
+                x[i] = y[i] + (h*f2[i]);
+            }
+            rtsiSetT(si, tnew);
+            rtsiSetdX(si, f3);
+            %<LocEmitCallSolverOutputComputed("si", "false")>
+            %<invokeOutput>\
+            %<LocEmitCallSolverFunction(taskName, "Derivative")>
+            %<LocEmitCallSolverOutputComputed("si", "true")>
+            /* tnew = t + h
+            ynew = y + (h/6)*(f0 + 2*f1 + 2*f2 + 2*f3) */
+            temp = h / 6.0;
+            for (i = 0; i < nXc; i++) {
+                x[i] = y[i] + temp*(f0[i] + 2.0*f1[i] + 2.0*f2[i] + f3[i]);
+            }
+        %elseif ISEQUAL(solverName, "ode5")
+            /* Solver Matrices */
+            static const %<realType> rt_ODE5_A[6]%<equalSign>{
+                1.0/5.0, 3.0/10.0, 4.0/5.0, 8.0/9.0, 1.0, 1.0
+            };
+            static const %<realType> rt_ODE5_B[6][6]%<equalSign>{
+                {1.0/5.0, 0.0, 0.0, 0.0, 0.0, 0.0},
+                {3.0/40.0, 9.0/40.0, 0.0, 0.0, 0.0, 0.0},
+                {44.0/45.0, -56.0/15.0, 32.0/9.0, 0.0, 0.0, 0.0},
+                {19372.0/6561.0, -25360.0/2187.0, 64448.0/6561.0, -212.0/729.0, 0.0, 0.0},
+                {9017.0/3168.0,-355.0/33.0,46732.0/5247.0,49.0/176.0,-5103.0/18656.0,0.0},
+                {35.0/384.0, 0.0, 500.0/1113.0, 125.0/192.0, -2187.0/6784.0, 11.0/84.0}
+            };
+
+            %<timeType>    t    %<scalarTokens[0]>rtsiGetT(si)%<scalarTokens[1]>;
+            %<timeType>    tnew %<scalarTokens[0]>rtsiGetSolverStopTime(si)%<scalarTokens[1]>;
+            %<timeType>    h    %<scalarTokens[0]>rtsiGetStepSize(si)%<scalarTokens[1]>;
+            %<realType>    *x   %<scalarTokens[0]>rtsiGetContStates(si)%<scalarTokens[1]>;
+            %assign intgDataStr = "(ODE5_IntgData *)rtsiGetSolverData(si)"
+            %assign intgDataStr = FcnReplaceCCastWithStaticCastForCPP(intgDataStr)
+            ODE5_IntgData  *id  %<scalarTokens[0]>%<intgDataStr>%<scalarTokens[1]>;
+            %<realType>    *y   %<scalarTokens[0]>id->y%<scalarTokens[1]>;
+            %<realType>    *f0  %<scalarTokens[0]>id->f[0]%<scalarTokens[1]>;
+            %<realType>    *f1  %<scalarTokens[0]>id->f[1]%<scalarTokens[1]>;
+            %<realType>    *f2  %<scalarTokens[0]>id->f[2]%<scalarTokens[1]>;
+            %<realType>    *f3  %<scalarTokens[0]>id->f[3]%<scalarTokens[1]>;
+            %<realType>    *f4  %<scalarTokens[0]>id->f[4]%<scalarTokens[1]>;
+            %<realType>    *f5  %<scalarTokens[0]>id->f[5]%<scalarTokens[1]>;
+            %<realType>    hB[6];
+            %<intType>     i;
+            %<intType>     nXc  %<scalarTokens[0]>%<numContinuousStates>%<scalarTokens[1]>;
+
+            rtsiSetSimTimeStep(si,MINOR_TIME_STEP);
+            %<LocEmitCallSolverOutputComputed("si", "true")>
+
+            /* Save the state values at time t in y, we'll use x as ynew. */
+            %assign inputArg = "(%<uintType>)nXc"
+            %assign inputArg = FcnReplaceCCastWithStaticCastForCPP(inputArg)
+            (void) %<LibGenMemFcnCall("memcpy", "y", "x", "%<inputArg>*sizeof(%<realType>)")>;
+
+            /* Assumes that rtsiSetT and ModelOutputs are up-to-date */
+            /* f0 = f(t,y) */
+            rtsiSetdX(si, f0);
+            %<LocEmitCallSolverFunction(taskName, "Derivative")>
+
+            /* f(:,2) = feval(odefile, t + hA(1), y + f*hB(:,1), args(:)(*)); */
+            hB[0] = h * rt_ODE5_B[0][0];
+            for (i = 0; i < nXc; i++) {
+                x[i] = y[i] + (f0[i]*hB[0]);
+            }
+            rtsiSetT(si, t + h*rt_ODE5_A[0]);
+            rtsiSetdX(si, f1);
+            %<LocEmitCallSolverOutputComputed("si", "false")>
+            %<invokeOutput>\
+            %<LocEmitCallSolverFunction(taskName, "Derivative")>
+            %<LocEmitCallSolverOutputComputed("si", "true")>
+
+            /* f(:,3) = feval(odefile, t + hA(2), y + f*hB(:,2), args(:)(*)); */
+            for (i = 0; i <= 1; i++) {
+                hB[i] = h * rt_ODE5_B[1][i];
+            }
+            for (i = 0; i < nXc; i++) {
+                x[i] = y[i] + (f0[i]*hB[0] + f1[i]*hB[1]);
+            }
+            rtsiSetT(si, t + h*rt_ODE5_A[1]);
+            rtsiSetdX(si, f2);
+            %<LocEmitCallSolverOutputComputed("si", "false")>
+            %<invokeOutput>\
+            %<LocEmitCallSolverFunction(taskName, "Derivative")>
+            %<LocEmitCallSolverOutputComputed("si", "true")>
+
+            /* f(:,4) = feval(odefile, t + hA(3), y + f*hB(:,3), args(:)(*)); */
+            for (i = 0; i <= 2; i++) {
+                hB[i] = h * rt_ODE5_B[2][i];
+            }
+            for (i = 0; i < nXc; i++) {
+                x[i] = y[i] + (f0[i]*hB[0] + f1[i]*hB[1] + f2[i]*hB[2]);
+            }
+            rtsiSetT(si, t + h*rt_ODE5_A[2]);
+            rtsiSetdX(si, f3);
+            %<LocEmitCallSolverOutputComputed("si", "false")>
+            %<invokeOutput>\
+            %<LocEmitCallSolverFunction(taskName, "Derivative")>
+            %<LocEmitCallSolverOutputComputed("si", "true")>
+            /* f(:,5) = feval(odefile, t + hA(4), y + f*hB(:,4), args(:)(*)); */
+            for (i = 0; i <= 3; i++) {
+                hB[i] = h * rt_ODE5_B[3][i];
+            }
+            for (i = 0; i < nXc; i++) {
+                x[i] = y[i] + (f0[i]*hB[0] + f1[i]*hB[1] + f2[i]*hB[2] +
+                f3[i]*hB[3]);
+            }
+            rtsiSetT(si, t + h*rt_ODE5_A[3]);
+            rtsiSetdX(si, f4);
+            %<LocEmitCallSolverOutputComputed("si", "false")>
+            %<invokeOutput>\
+            %<LocEmitCallSolverFunction(taskName, "Derivative")>
+            %<LocEmitCallSolverOutputComputed("si", "true")>
+
+            /* f(:,6) = feval(odefile, t + hA(5), y + f*hB(:,5), args(:)(*)); */
+            for (i = 0; i <= 4; i++) {
+                hB[i] = h * rt_ODE5_B[4][i];
+            }
+            for (i = 0; i < nXc; i++) {
+                x[i] = y[i] + (f0[i]*hB[0] + f1[i]*hB[1] + f2[i]*hB[2] +
+                f3[i]*hB[3] + f4[i]*hB[4]);
+            }
+            rtsiSetT(si, tnew);
+            rtsiSetdX(si, f5);
+            %<LocEmitCallSolverOutputComputed("si", "false")>
+            %<invokeOutput>\
+            %<LocEmitCallSolverFunction(taskName, "Derivative")>
+            %<LocEmitCallSolverOutputComputed("si", "true")>
+
+            /* tnew = t + hA(6);
+            ynew = y + f*hB(:,6); */
+            for (i = 0; i <= 5; i++) {
+                hB[i] = h * rt_ODE5_B[5][i];
+            }
+            for (i = 0; i < nXc; i++) {
+                x[i] = y[i] + (f0[i]*hB[0] + f1[i]*hB[1] + f2[i]*hB[2] +
+                f3[i]*hB[3] + f4[i]*hB[4] + f5[i]*hB[5]);
+            }
+        %elseif ISEQUAL(solverName, "ode8")
+            %assign needNamespace = SLibSystemNeedsNamespace(System[NumSystems-1])
+            %if needNamespace
+                %<SLibEmitNamespaceStartForSystem(System[NumSystems-1])>\
+            %endif
+            /* Solver Matrices */
+            #define %<::tODE8Const> 13
+
+            static %<realType> rt_ODE8_B[13]%<equalSign>{
+                4.174749114153025E-2, 0.0,                   0.0,                  0.0,
+                0.0,                  -5.54523286112393E-2,  2.393128072011801E-1, 7.03510669403443E-1,
+                -7.597596138144609E-1, 6.605630309222863E-1, 1.581874825101233E-1, -2.381095387528628E-1, 2.5E-1
+            };
+            static %<realType> rt_ODE8_C[13]%<equalSign>{
+                0.0,                  5.555555555555556E-2, 8.333333333333333E-2, 1.25E-1,
+                3.125E-1,             3.75E-1,              1.475E-1,             4.65E-1,
+                5.648654513822596E-1, 6.5E-1,               9.246562776405044E-1, 1.0,     1.0
+            };
+            static %<realType> rt_ODE8_A[13][13]%<equalSign>{
+                /* rt_ODE8_A[0][] */
+                {0.0,                  0.0,                  0.0,                  0.0,
+                0.0,                  0.0,                  0.0,                  0.0,
+                0.0,                  0.0,                  0.0,                  0.0,                  0.0},
+                /* rt_ODE8_A[1][] */
+                {5.555555555555556E-2, 0.0,                  0.0,                  0.0,
+                0.0,                  0.0,                  0.0,                  0.0,
+                0.0,                  0.0,                  0.0,                  0.0,                  0.0},
+                /* rt_ODE8_A[2][] */
+                {2.083333333333333E-2, 6.25E-2,              0.0,                  0.0,
+                0.0,                  0.0,                  0.0,                  0.0,
+                0.0,                  0.0,                  0.0,                  0.0,                  0.0},
+                /* rt_ODE8_A[3][] */
+                {3.125E-2,             0.0,                  9.375E-2,             0.0,
+                0.0,                  0.0,                  0.0,                  0.0,
+                0.0,                  0.0,                  0.0,                  0.0,                  0.0},
+                /* rt_ODE8_A[4][] */
+                {3.125E-1,             0.0,                  -1.171875,            1.171875,
+                0.0,                  0.0,                  0.0,                  0.0,
+                0.0,                  0.0,                  0.0,                  0.0,                  0.0},
+                /* rt_ODE8_A[5][] */
+                {3.75E-2,              0.0,                  0.0,                  1.875E-1,
+                1.5E-1,               0.0,                  0.0,                  0.0,
+                0.0,                  0.0,                  0.0,                  0.0,                  0.0},
+                /* rt_ODE8_A[6][] */
+                {4.791013711111111E-2, 0.0,                  0.0,                  1.122487127777778E-1,
+                -2.550567377777778E-2,1.284682388888889E-2, 0.0,                  0.0,
+                0.0,                  0.0,                  0.0,                  0.0,                  0.0},
+                /* rt_ODE8_A[7][] */
+                {1.691798978729228E-2, 0.0,                  0.0,                  3.878482784860432E-1,
+                3.597736985150033E-2, 1.969702142156661E-1, -1.727138523405018E-1,0.0,
+                0.0,                  0.0,                  0.0,                  0.0,                  0.0},
+                /* rt_ODE8_A[8][] */
+                {6.90957533591923E-2,  0.0,                  0.0,                  -6.342479767288542E-1,
+                -1.611975752246041E-1,1.386503094588253E-1, 9.409286140357563E-1, 2.11636326481944E-1,
+                0.0,                  0.0,                  0.0,                  0.0,                  0.0},
+                /* rt_ODE8_A[9][] */
+                {1.835569968390454E-1,0.0,                  0.0,                  -2.468768084315592,
+                -2.912868878163005E-1,-2.647302023311738E-2,2.8478387641928,      2.813873314698498E-1,
+                1.237448998633147E-1, 0.0,                  0.0,                  0.0,                  0.0},
+                /* rt_ODE8_A[10][] */
+                {-1.215424817395888,  0.0,                  0.0,                  1.667260866594577E1,
+                9.157418284168179E-1, -6.056605804357471,   -1.600357359415618E1, 1.484930308629766E1,
+                -1.337157573528985E1, 5.134182648179638,    0.0,                  0.0,                  0.0},
+                /* rt_ODE8_A[11][] */
+                {2.588609164382643E-1,0.0,                  0.0,                  -4.774485785489205,
+                -4.350930137770325E-1, -3.049483332072241,  5.577920039936099,    6.155831589861039,
+                -5.062104586736938,   2.193926173180679,    1.346279986593349E-1, 0.0,                  0.0},
+                /* rt_ODE8_A[12][] */
+                {8.224275996265075E-1, 0.0,                 0.0,                  -1.165867325727766E1,
+                -7.576221166909362E-1, 7.139735881595818E-1,1.207577498689006E1,  -2.127659113920403,
+                1.990166207048956,     -2.342864715440405E-1, 1.758985777079423E-1,0.0,                  0.0},
+            };
+
+
+
+            %<timeType>    t         %<scalarTokens[0]>rtsiGetT(si)%<scalarTokens[1]>;
+            %<timeType>    tnew      %<scalarTokens[0]>rtsiGetSolverStopTime(si)%<scalarTokens[1]>;
+            %<timeType>    h         %<scalarTokens[0]>rtsiGetStepSize(si)%<scalarTokens[1]>;
+            %<realType>    *x        %<scalarTokens[0]>rtsiGetContStates(si)%<scalarTokens[1]>;
+            %assign intgDataStr = "(ODE8_IntgData *)rtsiGetSolverData(si)"
+            %assign intgDataStr = FcnReplaceCCastWithStaticCastForCPP(intgDataStr)
+            ODE8_IntgData  *intgData %<scalarTokens[0]>%<intgDataStr>%<scalarTokens[1]>;
+            %<realType>    *deltaY   %<scalarTokens[0]>intgData->deltaY%<scalarTokens[1]>;
+            %<realType>    *x0       %<scalarTokens[0]>intgData->x0%<scalarTokens[1]>;
+            %<realType>*   f[%<::tODE8Const>];
+            %<intType>     idx,stagesIdx,statesIdx;
+            %<realType>    deltaX;
+            %<intType>     nXc  %<scalarTokens[0]>%<numContinuousStates>%<scalarTokens[1]>;
+
+            rtsiSetSimTimeStep(si,MINOR_TIME_STEP);
+            %<LocEmitCallSolverOutputComputed("si", "true")>
+
+            f[0]        = intgData->f[0];
+            f[1]        = intgData->f[1];
+            f[2]        = intgData->f[2];
+            f[3]        = intgData->f[3];
+            f[4]        = intgData->f[4];
+            f[5]        = intgData->f[5];
+            f[6]        = intgData->f[6];
+            f[7]        = intgData->f[7];
+            f[8]        = intgData->f[8];
+            f[9]        = intgData->f[9];
+            f[10]       = intgData->f[10];
+            f[11]       = intgData->f[11];
+            f[12]       = intgData->f[12];
+
+            /* Save the state values at time t in y and x0*/
+            %assign inputArg = "(%<uintType>)nXc"
+            %assign inputArg = FcnReplaceCCastWithStaticCastForCPP(inputArg)
+            (void) %<LibGenMemFcnCall("memset", "deltaY", "0", "%<inputArg>*sizeof(%<realType>)")>;
+            (void) %<LibGenMemFcnCall("memcpy", "x0", "x", "nXc*sizeof(%<realType>)")>;
+
+            for (stagesIdx=0;stagesIdx<%<::tODE8Const>;stagesIdx++) {
+                %assign inputArg = "(%<uintType>)nXc"
+                %assign inputArg = FcnReplaceCCastWithStaticCastForCPP(inputArg)
+                (void) %<LibGenMemFcnCall("memcpy", "x", "x0", "%<inputArg>*sizeof(%<realType>)")>;
+
+                for (statesIdx=0;statesIdx<nXc;statesIdx++) {
+                    deltaX = 0;
+                    for (idx=0;idx<stagesIdx;idx++) {
+                        deltaX = deltaX + h*rt_ODE8_A[stagesIdx][idx]*f[idx][statesIdx];
+                    }
+                    x[statesIdx] = x0[statesIdx] + deltaX;
+                }
+
+                if (stagesIdx==0) {
+                    rtsiSetdX(si, f[stagesIdx]);
+                    %<LocEmitCallSolverFunction(taskName, "Derivative")>
+                }
+                else {
+                    (stagesIdx==%<::tODE8Const>-1)? rtsiSetT(si, tnew) : rtsiSetT(si, t + h*rt_ODE8_C[stagesIdx]);
+                    rtsiSetdX(si, f[stagesIdx]);
+                    %<LocEmitCallSolverOutputComputed("si", "false")>
+                    %<invokeOutput>\
+                    %<LocEmitCallSolverFunction(taskName, "Derivative")>
+                    %<LocEmitCallSolverOutputComputed("si", "true")>
+                }
+
+                for (statesIdx=0;statesIdx<nXc;statesIdx++) {
+                    deltaY[statesIdx]  = deltaY[statesIdx] + h*rt_ODE8_B[stagesIdx]*f[stagesIdx][statesIdx];
+                }
+            }
+
+            for (statesIdx=0;statesIdx<nXc;statesIdx++) {
+                x[statesIdx]  = x0[statesIdx] + deltaY[statesIdx];
+            }
+
+        %elseif ISEQUAL(solverName, "ode14x")
+            /* Solver Matrices */
+            static %<intType> rt_ODE14x_N[4]%<equalSign>{12, 8, 6, 4};
+
+            %<timeType>    t0        %<scalarTokens[0]>rtsiGetT(si)%<scalarTokens[1]>;
+            %<timeType>    t1        %<scalarTokens[0]>t0%<scalarTokens[1]>;
+            %<timeType>    h         %<scalarTokens[0]>rtsiGetStepSize(si)%<scalarTokens[1]>;
+            %<realType>    *x1       %<scalarTokens[0]>rtsiGetContStates(si)%<scalarTokens[1]>;
+            %<intType>     order     %<scalarTokens[0]>rtsiGetSolverExtrapolationOrder(si)%<scalarTokens[1]>;
+            %<intType>     numIter   %<scalarTokens[0]>rtsiGetSolverNumberNewtonIterations(si)%<scalarTokens[1]>;
+
+            %assign intgDataStr = "(ODE14X_IntgData *)rtsiGetSolverData(si)"
+            %assign intgDataStr = FcnReplaceCCastWithStaticCastForCPP(intgDataStr)
+            ODE14X_IntgData  *id%<scalarTokens[0]>%<intgDataStr>%<scalarTokens[1]>;
+            %<realType>    *x0       %<scalarTokens[0]>id->x0%<scalarTokens[1]>;
+            %<realType>    *f0       %<scalarTokens[0]>id->f0%<scalarTokens[1]>;
+            %<realType>    *x1start  %<scalarTokens[0]>id->x1start%<scalarTokens[1]>;
+            %<realType>    *f1       %<scalarTokens[0]>id->f1%<scalarTokens[1]>;
+            %<realType>    *Delta    %<scalarTokens[0]>id->Delta%<scalarTokens[1]>;
+            %<realType>    *E        %<scalarTokens[0]>id->E%<scalarTokens[1]>;
+            %<realType>    *fac      %<scalarTokens[0]>id->fac%<scalarTokens[1]>;
+            %<realType>    *dfdx     %<scalarTokens[0]>id->DFDX%<scalarTokens[1]>;
+            %<realType>    *W        %<scalarTokens[0]>id->W%<scalarTokens[1]>;
+            %<intType>     *pivots   %<scalarTokens[0]>id->pivots%<scalarTokens[1]>;
+            %<realType>    *xtmp     %<scalarTokens[0]>id->xtmp%<scalarTokens[1]>;
+            %<realType>    *ztmp     %<scalarTokens[0]>id->ztmp%<scalarTokens[1]>;
+
+            %if (isLinearlyImplicit == "yes")
+                %<booleanType> *xdis%<scalarTokens[0]>rtsiGetContStateDisabledPtr(si)%<scalarTokens[1]>;
+                %<intType>     *Mpattern_ir%<scalarTokens[0]>rtsiGetSolverMassMatrixIr(si)%<scalarTokens[1]>;
+                %<intType>     *Mpattern_jc%<scalarTokens[0]>rtsiGetSolverMassMatrixJc(si)%<scalarTokens[1]>;
+                %<realType>    *M          %<scalarTokens[0]>id->M%<scalarTokens[1]>;
+                %if (SLibModelMassMatrixType() != "constant")
+                    %<realType>  *M1         %<scalarTokens[0]>id->M1%<scalarTokens[1]>;
+                    %if (SLibModelMassMatrixType() == "statedep")
+                        %<realType>    *xdot       %<scalarTokens[0]>id->xdot%<scalarTokens[1]>;
+                        %<realType>    *Edot       %<scalarTokens[0]>id->Edot%<scalarTokens[1]>;
+                        %<realType>    *fminusMxdot%<scalarTokens[0]>id->fminusMxdot%<scalarTokens[1]>;
+                    %endif
+                %endif
+                %<intType>      col,row,rowidx;
+            %endif
+
+            %<intType>     *N        %<scalarTokens[0]>&(rt_ODE14x_N[0])%<scalarTokens[1]>;
+
+            %<intType>     i,j,k,iter;
+            %<intType>     nx  %<scalarTokens[0]>%<numContinuousStates>%<scalarTokens[1]>;
+
+            rtsiSetSimTimeStep(si,MINOR_TIME_STEP);
+            %<LocEmitCallSolverOutputComputed("si", "true")>
+
+            /* Save the state values at time t in y, we'll use x as ynew. */
+            %assign inputArg = "(%<uintType>)nx"
+            %assign inputArg = FcnReplaceCCastWithStaticCastForCPP(inputArg)
+            (void) %<LibGenMemFcnCall("memcpy", "x0", "x1", "%<inputArg>*sizeof(%<realType>)")>;
+
+            /* Assumes that rtsiSetT and ModelOutputs are up-to-date */
+
+            %if (isLinearlyImplicit == "yes")
+                %if (SLibModelMassMatrixType() == "constant")
+                    if (id->isFirstStep) {
+                        %<LocEmitCallToLocalSolverFunction(taskName, ...
+                            "local_evaluateMassMatrix","si", "M", ...
+                            reuseArgsEvalMassMatrixCall, "", "", "", "")>
+                        id->isFirstStep = %<GET_TYPE_ID_REPLACEMENT("false")>;
+                    }
+                %else  %% non-constant mass matrix
+                    %<LocEmitCallToLocalSolverFunction(taskName, ...
+                        "local_evaluateMassMatrix","si", "M", ...
+                        reuseArgsEvalMassMatrixCall, "", "", "", "")>
+                    %if (SLibModelMassMatrixType() == "statedep")
+                        rtsiSetdX(si, xdot);
+                        %<LocEmitCallSolverFunction(taskName, "Derivative")>
+                    %endif
+                %endif
+            %endif
+
+            /* f0 = f(t,y) */
+            rtsiSetdX(si, f0);
+            %if (isLinearlyImplicit == "yes")
+                %<LocEmitCallSolverFunction(taskName, "ForcingFunction")>
+            %else
+                %<LocEmitCallSolverFunction(taskName, "Derivative")>
+            %endif
+
+            %if (isLinearlyImplicit == "yes") && (SLibModelMassMatrixType() == "statedep")
+                /* Form fminusMxdot = f(x) - M(x)*xdot, d(fminusMxdot)/dx = df/dx - d(Mv)/dx */
+                %assign inputArg = "(%<uintType>)nx"
+                %assign inputArg = FcnReplaceCCastWithStaticCastForCPP(inputArg)
+                (void) %<LibGenMemFcnCall("memcpy","fminusMxdot", "f0", "%<inputArg>*sizeof(%<realType>)")>;
+                for (col = 0; col < nx; col++) {
+                    for (rowidx = Mpattern_jc[col]; rowidx < Mpattern_jc[col+1]; rowidx++) {
+                        %<realType> m_row_col%<scalarTokens[0]>M[rowidx]%<scalarTokens[1]>;
+                        row = Mpattern_ir[rowidx];
+                        fminusMxdot[row] -= m_row_col*xdot[col];
+                    }
+                }
+                %<LocEmitCallToLocalSolverFunction(taskName, ...
+                    "local_numjac_linearModel","si", "x0", "xdot", "fminusMxdot","fac", ...
+                    "dfdx", reuseArgsNumjacCall)>
+            %else
+                %<LocEmitCallToLocalSolverFunction(taskName, "local_numjac","si", ...
+                    "x0", "f0", "fac","dfdx", reuseArgsNumjacCall, "")>
+            %endif
+
+            for (j = 0; j < order; j++) {
+
+                %<realType> *p;
+                %<realType> hN%<scalarTokens[0]>h/N[j]%<scalarTokens[1]>;
+
+                /* Get the iteration matrix and solution at t0 */
+
+                /* [L,U] = lu(M - hN*J) */
+                %assign inputArg = "(%<uintType>)nx"
+                %assign inputArg = FcnReplaceCCastWithStaticCastForCPP(inputArg)
+                (void) %<LibGenMemFcnCall("memcpy", "W", "dfdx", "%<inputArg>*nx*sizeof(%<realType>)")>;
+                for (p = W, i = 0; i < nx*nx; i++, p++) {
+                    *p *= (-hN);
+                }
+
+                %if (isLinearlyImplicit == "yes")
+                    for (col = 0, p = W; col < nx; col++, p += nx) {
+                        if (xdis[col]){
+                            (void) %<LibGenMemFcnCall("memset", "p", "0", "%<inputArg>*sizeof(p[0])")>;
+                            p[col] = 1.0;
+                        }else{
+                            for (rowidx = Mpattern_jc[col]; rowidx < Mpattern_jc[col+1]; rowidx++) {
+                                %<realType> m_row_col%<scalarTokens[0]>M[rowidx]%<scalarTokens[1]>;
+                                row = Mpattern_ir[rowidx];
+                                p[row] += m_row_col;
+                            }
+                        }
+                    }
+                %else
+                    for (p = W, i = 0; i < nx; i++, p += (nx+1)) {
+                        *p += 1.0;
+                    }
+                %endif
+
+                %% call TFL query to generate proper rt_ function
+                %% rt_lu_real(W,nx,pivots);
+                %createrecord FcnRec{Name "rt_lu"; NumArgs 3}
+                %addtorecord FcnRec ArgList{Expr "W"; TypeId tSS_DOUBLE; IsPtr 1; IsCplx 0; IsConst 0}
+                %addtorecord FcnRec ArgList{Expr " nx"; TypeId tSS_INTEGER; IsPtr 0; IsCplx 0; IsConst 0}
+                %addtorecord FcnRec ArgList{Expr " pivots"; TypeId tSS_INT32; IsPtr 1; IsCplx 0; IsConst 0}
+                %<LibGenFcnCall(FcnRec)>;
+
+                /* First Newton's iteration at t0. */
+                /* rhs = hN*f0 */
+                for (i = 0; i < nx; i++) {
+                    Delta[i] = hN*f0[i];
+                }
+                /* Delta = (U \ (L \ rhs)) */
+
+                %<LocDumpRTUtilityFunctions()>
+
+                /* ytmp = y0 + Delta
+                ztmp = (ytmp-y0)/h
+                */
+                %assign inputArg = "(%<uintType>)nx"
+                %assign inputArg = FcnReplaceCCastWithStaticCastForCPP(inputArg)
+                (void) %<LibGenMemFcnCall("memcpy", "x1", "x0", "%<inputArg>*sizeof(%<realType>)")>;
+                for (i = 0; i < nx; i++) {
+                    x1[i] += Delta[i];
+                    ztmp[i] = Delta[i]/hN;
+                }
+
+                /* Additional Newton's iterations, if desired.
+                for iter = 2:NewtIter
+                rhs = hN*feval(odefun,tn,ytmp,extraArgs{:}) - M*(ytmp - yn);
+                if statedepM   % only for state dep. Mdel ~= 0
+                Mdel = M - feval(massfun,tn,ytmp);
+                rhs = rhs + Mdel*ztmp*h;
+                end
+                Delta = ( U \ ( L \ rhs ) );
+                ytmp = ytmp + Delta;
+                ztmp = (ytmp - yn)/h
+                end
+                */
+                rtsiSetT(si, t0);
+                rtsiSetdX(si, f1);
+                for (iter = 1; iter < numIter; iter++) {
+                    %<LocEmitCallSolverOutputComputed("si", "false")>
+                    %<invokeOutput>\
+                    %if (isLinearlyImplicit == "yes")
+                        %<LocEmitCallSolverFunction(taskName, "ForcingFunction")>
+                    %else
+                        %<LocEmitCallSolverFunction(taskName, "Derivative")>
+                    %endif
+                    %<LocEmitCallSolverOutputComputed("si", "true")>
+
+                    for (i = 0; i < nx; i++) {
+                        Delta[i] = hN*f1[i];
+                        xtmp[i] = x1[i] - x0[i];
+                    }
+
+                    %if (isLinearlyImplicit == "yes")
+                        /* rhs = hN*f(tn,ytmp) - M*(ytmp-yn) */
+                        for (col = 0; col < nx; col++) {
+                            for (rowidx = Mpattern_jc[col]; rowidx < Mpattern_jc[col+1]; rowidx++) {
+                                %<realType> m_row_col%<scalarTokens[0]>M[rowidx]%<scalarTokens[1]>;
+                                row = Mpattern_ir[rowidx];
+                                Delta[row] -= m_row_col*xtmp[col];
+                            }
+                        }
+                        %if (SLibModelMassMatrixType() == "statedep")
+                            /* rhs = rhs - (Mtmp - M)*ztmp*h */
+                            %<LocEmitCallToLocalSolverFunction(taskName, ...
+                                "local_evaluateMassMatrix","si", "M1", ...
+                                reuseArgsEvalMassMatrixCall, "", "", "", "")>
+                            for (i = 0; i < rtsiGetSolverMassMatrixNzMax(si); i++) {
+                                M1[i] -= M[i];
+                            }
+                            for (col = 0; col < nx; col++) {
+                                for (rowidx = Mpattern_jc[col]; rowidx < Mpattern_jc[col+1]; rowidx++) {
+                                    %<realType> m_row_col%<scalarTokens[0]>M1[rowidx]%<scalarTokens[1]>;
+                                    row = Mpattern_ir[rowidx];
+                                    Delta[row] -= hN*m_row_col*ztmp[col];
+                                }
+                            }
+                        %endif
+                    %else
+                        /* rhs = hN*f(tn,ytmp) - (ytmp-yn) */
+                        for (i = 0; i < nx; i++) {
+                            Delta[i] -= xtmp[i];
+                        }
+                    %endif
+
+                    %<LocDumpRTUtilityFunctions()>
+
+                    /* ytmp = ytmp + delta
+                    ztmp = (ytmp - yn)/h
+                    */
+                    for (i = 0; i < nx; i++) {
+                        x1[i] += Delta[i];
+                        ztmp[i] = (x1[i] - x0[i])/hN;
+                    }
+                }
+
+                /* Steps from t0+hN to t1 -- subintegration of N(j) steps for extrapolation
+                ttmp = t0;
+                for i = 2:N(j)
+                ttmp = ttmp + hN
+                ytmp0 = ytmp;
+                for iter = 1:NewtIter
+                rhs = (ytmp0 - ytmp) + hN*feval(odefun,ttmp,ytmp,extraArgs{:});
+                Delta = ( U \ ( L \ rhs ) );
+                ytmp = ytmp + Delta;
+                end
+                end
+                */
+                for (k = 1; k < N[j]; k++) {
+                    t1 = t0 + k*hN;
+                    %assign inputArg = "(%<uintType>)nx"
+                    %assign inputArg = FcnReplaceCCastWithStaticCastForCPP(inputArg)
+                    (void) %<LibGenMemFcnCall("memcpy", "x1start", "x1", "%<inputArg>*sizeof(%<realType>)")>;
+                    rtsiSetT(si, t1);
+                    rtsiSetdX(si, f1);
+
+                    %if (isLinearlyImplicit == "yes") && (SLibModelMassMatrixType() == "timedep")
+                        /* For time-dep.,  Mdel = M(ttmp) - M */
+                        %<LocEmitCallSolverOutputComputed("si", "false")>
+                        %<invokeOutput>\
+                        %<LocEmitCallToLocalSolverFunction(taskName, ...
+                            "local_evaluateMassMatrix","si", "M1", ...
+                            reuseArgsEvalMassMatrixCall, "", "", "", "")>
+                        %<LocEmitCallSolverOutputComputed("si", "true")>
+                        for (i = 0; i < rtsiGetSolverMassMatrixNzMax(si); i++) {
+                            M1[i] -= M[i];
+                        }
+                    %endif
+
+                    for (iter = 0; iter < numIter; iter++) {
+                        %<LocEmitCallSolverOutputComputed("si", "false")>
+                        %<invokeOutput>\
+                        %if (isLinearlyImplicit == "yes")
+                            %<LocEmitCallSolverFunction(taskName, "ForcingFunction")>
+                        %else
+                            %<LocEmitCallSolverFunction(taskName, "Derivative")>
+                        %endif
+                        %<LocEmitCallSolverOutputComputed("si", "true")>
+
+                        if (iter == 0) {
+                            for (i = 0; i < nx; i++) {
+                                Delta[i] = hN*f1[i];
+                            }
+                        } else {
+                            for (i = 0; i < nx; i++) {
+                                Delta[i] = hN*f1[i];
+                                xtmp[i] = (x1[i]-x1start[i]);
+                            }
+
+                            /* rhs = hN*f(tn,ytmp) - M*(ytmp-yn) */
+                            %if (isLinearlyImplicit == "yes")
+                                for (col = 0; col < nx; col++) {
+                                    for (rowidx = Mpattern_jc[col]; rowidx < Mpattern_jc[col+1]; rowidx++) {
+                                        %<realType> m_row_col%<scalarTokens[0]>M[rowidx]%<scalarTokens[1]>;
+                                        row = Mpattern_ir[rowidx];
+                                        Delta[row] -= m_row_col*xtmp[col];
+                                    }
+                                }
+                            %else
+                                for (i = 0; i < nx; i++) {
+                                    Delta[i] -= xtmp[i];
+                                }
+                            %endif
+                        }
+
+                        %if (isLinearlyImplicit == "yes") && (SLibModelMassMatrixType() != "constant")
+                            %if (SLibModelMassMatrixType() == "statedep")
+                                /* For state-dep.,  Mdel = M(ttmp,ytmp) - M */
+                                %<LocEmitCallSolverOutputComputed("si", "false")>
+                                %<invokeOutput>\
+                                %<LocEmitCallToLocalSolverFunction(taskName, ...
+                                    "local_evaluateMassMatrix","si", "M1", ...
+                                    reuseArgsEvalMassMatrixCall, "", "", "", "")>
+                                %<LocEmitCallSolverOutputComputed("si", "true")>
+                                for (i = 0; i < rtsiGetSolverMassMatrixNzMax(si); i++) {
+                                    M1[i] -= M[i];
+                                }
+                            %else
+                                /* For time-dep.,  Mdel = M(ttmp) - M */
+                            %endif
+                            /* rhs = rhs - Mdel*ztmp*h */
+                            for (col = 0; col < nx; col++) {
+                                for (rowidx = Mpattern_jc[col]; rowidx < Mpattern_jc[col+1]; rowidx++) {
+                                    %<realType> m_row_col%<scalarTokens[0]>M1[rowidx]%<scalarTokens[1]>;
+                                    row = Mpattern_ir[rowidx];
+                                    Delta[row] -= hN*m_row_col*ztmp[col];
+                                }
+                            }
+                        %endif
+
+                        %<LocDumpRTUtilityFunctions()>
+
+                        /* ytmp = ytmp + Delta
+                        ztmp = (ytmp - ytmp0)/h
+                        */
+                        for (i = 0; i < nx; i++) {
+                            x1[i] += Delta[i];
+                            ztmp[i] = (x1[i] - x1start[i])/hN;
+                        }
+                    }
+                }
+
+                /* Extrapolate to order j
+                E(:,j) = ytmp
+                for k = j:-1:2
+                coef = N(k-1)/(N(j) - N(k-1))
+                E(:,k-1) = E(:,k) + coef*( E(:,k) - E(:,k-1) )
+                end
+                */
+                %assign inputArg = "(%<uintType>)nx"
+                %assign inputArg = FcnReplaceCCastWithStaticCastForCPP(inputArg)
+                (void) %<LibGenMemFcnCall("memcpy", "&(E[nx*j])", "x1", "%<inputArg>*sizeof(%<realType>)")>;
+                for (k = j; k > 0; k--) {
+                    %assign inputArg = "(%<realType>)(N[k-1])"
+                    %assign inputArg = FcnReplaceCCastWithStaticCastForCPP(inputArg)
+                    %<realType> coef%<scalarTokens[0]>%<inputArg> / (N[j]-N[k-1])%<scalarTokens[1]>;
+
+                    for (i = 0; i < nx; i++) {
+                        x1[i] = E[nx*k+i] + coef*(E[nx*k+i] - E[nx*(k-1)+i]);
+                    }
+                    %assign inputArg = "(%<uintType>)nx"
+                    %assign inputArg = FcnReplaceCCastWithStaticCastForCPP(inputArg)
+                    (void) %<LibGenMemFcnCall("memcpy", "&(E[nx*(k-1)])", "x1", "%<inputArg>*sizeof(%<realType>)")>;
+                }
+
+                %if (isLinearlyImplicit == "yes") && (SLibModelMassMatrixType() == "statedep")
+                    /* Extrapolate the derivative */
+                    for (i = 0; i < nx; i++) {
+                        xdot[i] = (x1[i] - x1start[i])/hN;
+                    }
+                    %assign inputArg = "(%<uintType>)nx"
+                    %assign inputArg = FcnReplaceCCastWithStaticCastForCPP(inputArg)
+                    (void) %<LibGenMemFcnCall("memcpy", "&(Edot[nx*j])", "xdot", "%<inputArg>*sizeof(%<realType>)")>;
+                    for (k = j; k > 0; k--) {
+                        %assign inputArg = "(%<realType>)(N[k-1])"
+                        %assign inputArg = FcnReplaceCCastWithStaticCastForCPP(inputArg)
+                        %<realType> coef%<scalarTokens[0]>%<inputArg> / (N[j]-N[k-1])%<scalarTokens[1]>;
+
+                        for (i = 0; i < nx; i++) {
+                            xdot[i] = Edot[nx*k+i] + coef*(Edot[nx*k+i] - Edot[nx*(k-1)+i]);
+                        }
+
+                        (void) %<LibGenMemFcnCall("memcpy", "&(Edot[nx*(k-1)])", "xdot", "nx*sizeof(%<realType>)")>;
+                    }
+                %endif
+
+            }
+
+            /* x1 = E(:,1); */
+            %assign inputArg = "(%<uintType>)nx"
+            %assign inputArg = FcnReplaceCCastWithStaticCastForCPP(inputArg)
+            (void) %<LibGenMemFcnCall("memcpy", "x1", "E", "%<inputArg>*sizeof(%<realType>)")>;
+
+            %if (isLinearlyImplicit == "yes") && (SLibModelMassMatrixType() == "statedep")
+                /* Extrapolated xdot */
+                (void) %<LibGenMemFcnCall("memcpy", "xdot", "Edot", "nx*sizeof(%<realType>)")>;
+            %endif
+
+            /* t1 = t0 + h; */
+            rtsiSetT(si,rtsiGetSolverStopTime(si));
+        %elseif ISEQUAL(solverName, "ode1be")
+            %<timeType>    t0        %<scalarTokens[0]>rtsiGetT(si)%<scalarTokens[1]>;
+            %<timeType>    t1        %<scalarTokens[0]>t0%<scalarTokens[1]>;
+            %<timeType>    h         %<scalarTokens[0]>rtsiGetStepSize(si)%<scalarTokens[1]>;
+            %<realType>    *x1       %<scalarTokens[0]>rtsiGetContStates(si)%<scalarTokens[1]>;
+            %<intType>     order     %<scalarTokens[0]>rtsiGetSolverExtrapolationOrder(si)%<scalarTokens[1]>;
+            %<intType>     numIter   %<scalarTokens[0]>rtsiGetSolverNumberNewtonIterations(si)%<scalarTokens[1]>;
+
+            %assign intgDataStr = "(ODE1BE_IntgData *)rtsiGetSolverData(si)"
+            %assign intgDataStr = FcnReplaceCCastWithStaticCastForCPP(intgDataStr)
+            ODE1BE_IntgData  *id%<scalarTokens[0]>%<intgDataStr>%<scalarTokens[1]>;
+            %<realType>    *x0       %<scalarTokens[0]>id->x0%<scalarTokens[1]>;
+            %<realType>    *f0       %<scalarTokens[0]>id->f0%<scalarTokens[1]>;
+            %<realType>    *f1       %<scalarTokens[0]>id->f1%<scalarTokens[1]>;
+            %<realType>    *Delta    %<scalarTokens[0]>id->Delta%<scalarTokens[1]>;
+            %<realType>    *fac      %<scalarTokens[0]>id->fac%<scalarTokens[1]>;
+            %<realType>    *dfdx     %<scalarTokens[0]>id->DFDX%<scalarTokens[1]>;
+            %<realType>    *W        %<scalarTokens[0]>id->W%<scalarTokens[1]>;
+            %<intType>     *pivots   %<scalarTokens[0]>id->pivots%<scalarTokens[1]>;
+            %<realType>    *z        %<scalarTokens[0]>id->z%<scalarTokens[1]>;
+
+            %if (isLinearlyImplicit == "yes")
+                %<booleanType> *xdis%<scalarTokens[0]>rtsiGetContStateDisabledPtr(si)%<scalarTokens[1]>;
+                %<intType>     *Mpattern_ir%<scalarTokens[0]>rtsiGetSolverMassMatrixIr(si)%<scalarTokens[1]>;
+                %<intType>     *Mpattern_jc%<scalarTokens[0]>rtsiGetSolverMassMatrixJc(si)%<scalarTokens[1]>;
+                %<realType>    *M          %<scalarTokens[0]>id->M%<scalarTokens[1]>;
+
+                %<intType>      col,row,rowidx;
+            %endif
+
+            %<intType>     i,iter;
+            %<intType>     nx  %<scalarTokens[0]>%<numContinuousStates>%<scalarTokens[1]>;
+
+            rtsiSetSimTimeStep(si,MINOR_TIME_STEP);
+            %<LocEmitCallSolverOutputComputed("si", "true")>
+
+            /* Save the state values at time t in x0, we'll use x1 as ynew. */
+            %assign inputArg = "(%<uintType>)nx"
+            %assign inputArg = FcnReplaceCCastWithStaticCastForCPP(inputArg)
+            (void) %<LibGenMemFcnCall("memcpy", "x0", "x1", "%<inputArg>*sizeof(%<realType>)")>;
+
+            %if (isLinearlyImplicit == "yes")
+                %if (SLibModelMassMatrixType() == "constant")
+                    if (id->isFirstStep) {
+                        %<LocEmitCallToLocalSolverFunction(taskName, ...
+                            "local_evaluateMassMatrix","si", "M", ...
+                            reuseArgsEvalMassMatrixCall, "", "", "", "")>
+                        id->isFirstStep = %<GET_TYPE_ID_REPLACEMENT("false")>;
+                    }
+                %else  %% non-constant mass matrix
+                    %<LocEmitCallToLocalSolverFunction(taskName, ...
+                        "local_evaluateMassMatrix","si", "M", ...
+                        reuseArgsEvalMassMatrixCall, "", "", "", "")>
+                %endif
+            %endif
+
+            /* f0 = f(t,y) */
+            rtsiSetdX(si, f0);
+            %if (isLinearlyImplicit == "yes")
+                %<LocEmitCallSolverFunction(taskName, "ForcingFunction")>
+            %else
+                %<LocEmitCallSolverFunction(taskName, "Derivative")>
+            %endif
+
+            %<LocEmitCallToLocalSolverFunction(taskName, "local_numjac","si", ...
+                "x0", "f0", "fac","dfdx", reuseArgsNumjacCall, "")>
+            %if (isLinearlyImplicit == "yes")
+                %if ( (SLibModelMassMatrixType() == "timedep") || (SLibModelMassMatrixType() == "statedep") )
+                    %<LocEmitCallSolverOutputComputed("si", "false")>
+                    %<invokeOutput>\
+                    %<LocEmitCallToLocalSolverFunction(taskName, ...
+                        "local_evaluateMassMatrix","si", "M", ...
+                        reuseArgsEvalMassMatrixCall, "", "", "", "")>
+                    %<LocEmitCallSolverOutputComputed("si", "true")>
+                %endif
+            %endif
+
+            for (i = 0;i < nx; i++){
+                z[i] = 0;
+            }
+
+            t1 = t0 + h;
+            rtsiSetT(si, t1);
+
+            /* Newton iteration Loop */
+            for (iter = 0; iter < numIter; iter++) {
+
+                %<realType> *p;
+
+                /* Compute f(t1,x1) */
+                rtsiSetdX(si, f1);
+                %<LocEmitCallSolverOutputComputed("si", "false")>
+                %<invokeOutput>\
+                %if (isLinearlyImplicit == "yes")
+                    %<LocEmitCallSolverFunction(taskName, "ForcingFunction")>
+                %else
+                    %<LocEmitCallSolverFunction(taskName, "Derivative")>
+                %endif
+                %<LocEmitCallSolverOutputComputed("si", "true")>
+
+                %if (isLinearlyImplicit == "yes")
+                    %if (SLibModelMassMatrixType() == "statedep")
+                        /* Evaluate state dependent mass matrix if
+                        this is not the first Newton Iteration*/
+                        if (iter > 0){
+                            %<LocEmitCallSolverOutputComputed("si", "false")>
+                            %<invokeOutput>\
+                            %<LocEmitCallToLocalSolverFunction(taskName, ...
+                                "local_evaluateMassMatrix","si", "M", ...
+                                reuseArgsEvalMassMatrixCall, "", "", "", "")>
+                            %<LocEmitCallSolverOutputComputed("si", "true")>
+                        }
+                    %endif
+                %endif
+
+                /* Compute Newton RHS Delta = h*Delta - M*z =
+                h*f1 - M*(xn - x0)*/
+                for (i = 0; i < nx; i++) {
+                    Delta[i] = h*f1[i];
+                }
+                if (iter >= 1) {
+                    %if (isLinearlyImplicit == "yes")
+                        for (col = 0; col < nx; col++) {
+                            for (rowidx = Mpattern_jc[col]; rowidx < Mpattern_jc[col+1]; rowidx++) {
+                                %<realType> m_row_col%<scalarTokens[0]>M[rowidx]%<scalarTokens[1]>;
+                                row = Mpattern_ir[rowidx];
+                                Delta[row] -= m_row_col*z[col];
+                            }
+                        }
+                    %else
+                        for (i = 0; i < nx; i++) {
+                            Delta[i] -= z[i];
+                        }
+                    %endif
+                }
+
+
+                /* LU = (M - hJ) */
+                %assign inputArg = "(%<uintType>)nx"
+                %assign inputArg = FcnReplaceCCastWithStaticCastForCPP(inputArg)
+                (void) %<LibGenMemFcnCall("memcpy", "W", "dfdx", "%<inputArg>*nx*sizeof(%<realType>)")>;
+                for (p = W, i = 0; i < nx*nx; i++, p++) {
+                    *p *= (-h);
+                }
+
+                %if (isLinearlyImplicit == "yes")
+                    for (col = 0, p = W; col < nx; col++, p += nx) {
+                        if (xdis[col]){
+                            (void) %<LibGenMemFcnCall("memset", "p", "0", "%<inputArg>*sizeof(p[0])")>;
+                            p[col] = 1.0;
+                        }else{
+                            for (rowidx = Mpattern_jc[col]; rowidx < Mpattern_jc[col+1]; rowidx++) {
+                                %<realType> m_row_col%<scalarTokens[0]>M[rowidx]%<scalarTokens[1]>;
+                                row = Mpattern_ir[rowidx];
+                                p[row] += m_row_col;
+                            }
+                        }
+                    }
+                %else
+                    for (p = W, i = 0; i < nx; i++, p += (nx+1)) {
+                        *p += 1.0;
+                    }
+                %endif
+
+                %% call TFL query to generate proper rt_ function
+                %% rt_lu_real(W,nx,pivots);
+                %createrecord FcnRec{Name "rt_lu"; NumArgs 3}
+                %addtorecord FcnRec ArgList{Expr "W"; TypeId tSS_DOUBLE; IsPtr 1; IsCplx 0; IsConst 0}
+                %addtorecord FcnRec ArgList{Expr " nx"; TypeId tSS_INTEGER; IsPtr 0; IsCplx 0; IsConst 0}
+                %addtorecord FcnRec ArgList{Expr " pivots"; TypeId tSS_INT32; IsPtr 1; IsCplx 0; IsConst 0}
+                %<LibGenFcnCall(FcnRec)>;
+
+                /* Delta = inv(U)*inv(L)*z */
+                %<LocDumpRTUtilityFunctions()>
+
+                /* Update x1 and z = x - x0 */
+                for (i = 0; i < nx; i++) {
+                    x1[i]   += Delta[i];
+                    z[i] += Delta[i]; /*x1[i] - x0[i];*/
+                }
+
+            }
+
+            /* t1 = t0 + h; */
+            rtsiSetT(si,rtsiGetSolverStopTime(si));
+        %endif
+    %endwith
+%endfunction
+
+%endif %% _ERT_CONT_STATES_
+
+%% [EOF] ertcontstate.tlc

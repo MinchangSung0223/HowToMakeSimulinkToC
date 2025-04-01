@@ -1,0 +1,1086 @@
+%%
+%%
+%%
+%% Copyright 2018-2022 The MathWorks, Inc.
+%%
+%% Abstract:
+%%      IntrusiveAccessor block target file.
+%%
+
+%implements IntrusiveAccessor "C"
+
+%include "logging_sup.tlc"
+
+%% Function: BlockInstanceSetup ====================================================================
+%% Abstract:
+%%   Set expression folding compliance
+%%
+%function BlockInstanceSetup(block, system) void
+    %<LibBlockSetIsExpressionCompliant(block)>
+%endfunction %% BlockInstanceSetup
+
+%% Function: CreateDimsArray =======================================================================
+%% Abstract:
+%%   Generate code that defines a dimensions array.
+%%
+%function CreateDimsArray(nDims, dims, prefix, idx) Output
+    %assign dimsArrayName = prefix + "%<idx>"
+    %<CreateDims(nDims, dims, dimsArrayName)>
+    %return dimsArrayName
+%endfunction %% CreateDimsArray
+
+%% Function: CreateOffsets =========================================================================
+%% Abstract:
+%%   The main part of CreateDimsArray processing.
+%%
+%function CreateOffsets(parentDatatypeId, numChildren) Output
+    %assign uintType = LibGetDataTypeNameFromId(::CompiledModel.tSS_UINTEGER)
+    %assign offsets = "%<uintType> offsets[%<numChildren>]%<LibGetDataInitEqualSign()>{"
+    %foreach childNo = numChildren
+        %assign offVal = LibDataTypeElementOffset(parentDatatypeId, childNo)
+        %assign offsets = offsets + "%<offVal>"
+        %if childNo != numChildren-1
+            %assign offsets = offsets + ", "
+        %endif
+    %endforeach
+    %assign offsets = offsets + "};"
+    %<offsets>
+%endfunction %% CreateDims
+
+%% Function: CreateDims ============================================================================
+%% Abstract:
+%%   The main part of CreateDimsArray processing.
+%%
+%function CreateDims(nDims, dims, dimsArrayName) Output
+    %assign uintType = LibGetDataTypeNameFromId(::CompiledModel.tSS_UINTEGER)
+    %assign equalSign = LibGetDataInitEqualSign()
+    %if nDims == 1
+        %<uintType> %<dimsArrayName>[1]%<equalSign>{%<dims[0]>};
+    %else
+        %assign dimsInit = "%<uintType> %<dimsArrayName>[%<nDims>]%<equalSign>{"
+        %foreach dimsIdx = nDims
+            %assign dimsInit = dimsInit + "%<dims[dimsIdx]>"
+            %if dimsIdx != nDims-1
+                %assign dimsInit = dimsInit + ", "
+            %endif
+        %endforeach
+        %assign dimsInit = dimsInit + "};"
+        %<dimsInit>
+    %endif
+%endfunction %% CreateDims
+
+%% Function: Start =================================================================================
+%% Abstract:
+%%      Start function for IntrusiveAccessor
+%%
+%function Start(block, system) Output
+    %assign pworkAddress = LibBlockPWork(SignalProbe, "", "", 0)
+    %assign dTypeId = LibBlockInputSignalDataTypeId(0)
+    %assign isNvBus = LibDataTypeIsBus(dTypeId)
+    %assign hierInfoIdx = ParamSettings.HierInfoIndex[0]
+    %if hierInfoIdx == -1
+        %% hierInfoIdx == -1 means this is a non-bus signal
+        %<StartSlioSignalDef(block, system, pworkAddress)>
+    %elseif isNvBus
+        %<StartSlioNVBusSignalDef(block, system, pworkAddress)>
+    %else
+        %<StartSlioVirtualBusSignalDef(block, system, pworkAddress)>
+    %endif
+
+%endfunction %% Start
+
+%% Prepare Signal descriptor, the root node, and calls function to
+%% construct the node tree.
+%function StartSlioNonVirtualBus(block, system, treeVector) Output
+    {
+        %assign dTypeId = LibBlockInputSignalDataTypeId(0)
+        %if block.ParamSettings.BusDatatypeIdSpecifiedAtOutport > 0
+            %assign dTypeId = block.ParamSettings.BusDatatypeIdSpecifiedAtOutport
+        %endif
+
+        %assign signalName = STRING(ParamSettings.ElementNames[0])
+        %assign nChildren = LibDataTypeNumElements(dTypeId)
+        %assign nDims = LibBlockInputSignalNumDimensions(0)
+        %assign dims = LibBlockInputSignalDimensions(0)
+        %assign dimsArrayName = "aobDims"
+        %<CreateDims(nDims, dims, dimsArrayName)>
+        %assign hierInfoIdx = ParamSettings.HierInfoIndex[0]
+        %with ::CompiledModel.BlockHierarchyMap
+            %assign nChildren = SignalHierLoggingInfo[hierInfoIdx].NumChildren
+        %endwith
+        %assign root = "root"
+
+        %assign isLinearInterp = ParamSettings.LinearInterpolation[0]
+
+        %% Interpolation
+        %assign interpMethod = ""
+        %if isLinearInterp
+            %assign interpolationMethod = "linear"
+        %else
+            %assign interpolationMethod = "zoh"
+        %endif
+
+        %% Sample Time
+        %assign sampleTime = ParamSettings.SampleTimeLabels[0]
+        %if IsModelReferenceSimTarget() && !MdlRefDisallowSampleTimeInheritance()
+            %assign discreteInterval = 0
+        %else
+            %assign discreteInterval = ParamSettings.DiscreteInterval[0]
+        %endif
+        %assign stopTime = RTMGet("TFinal")
+
+        %assign parentSignalName =  ...
+            STRING(ParamSettings.ElementNames[0])
+
+        %assign busSize = LibGetDataTypeSLSizeFromId(dTypeId)
+        {
+            %<CreateOffsets(dTypeId, nChildren)>
+            rtwAddTopNVBusNode(...
+                %<dTypeId>, ...
+                "%<parentSignalName>", ...
+                %<nChildren>, ...
+                %<dimsArrayName>, ...
+                %<nDims>, ...
+                %<busSize>, ...
+                offsets, ...
+                "%<sampleTime>", ...
+                %<discreteInterval>, ...
+                %<stopTime>, ...
+                treeVector);
+        }
+        %<getNVBusNodeLeaves(block, system, dTypeId, ...
+            hierInfoIdx, interpolationMethod, sampleTime, ...
+            discreteInterval, stopTime, treeVector)>
+    }
+%endfunction
+
+%function addEnumLeafNode(...
+    dTypeId, ...
+    signalLabel, ...
+    interpolationMethod, ...
+    dimsArrayName, ...
+    nDims, ...
+    datatypeName, ...
+    units, ...
+    resolvedDatatypeName, ...
+    sampleTime, ...
+    discreteInterval, ...
+    stopTime, ...
+    treeVector) Output
+    %assign charType = LibGetDataTypeNameFromId(::CompiledModel.tSS_CHAR)
+    %assign uintType = LibGetDataTypeNameFromId(::CompiledModel.tSS_UINTEGER)
+    %assign charType = LibGetDataTypeNameFromId(::CompiledModel.tSS_CHAR)
+    %assign intType = LibGetDataTypeNameFromId(::CompiledModel.tSS_INTEGER)
+
+    %assign nEnums = FcnGetEnumTypeNumEnums(dTypeId)
+    %assign allEnumValues = Vector(%<nEnums>) [0@%<nEnums>]
+    %assign allEnumLabels = Vector(%<nEnums>) [""@%<nEnums>]
+
+    %foreach enumIdx = nEnums
+        %assign allEnumValues[enumIdx] = SLibGetEnumTypeValueFromIndex(dTypeId, enumIdx)
+        %assign allEnumLabels[enumIdx] = SLibGetEnumTypeStringFromIndex(dTypeId, enumIdx)
+    %endforeach
+
+    %<OutputTypedVectorForDatasetVariable(nEnums, allEnumValues, intType, "enumValues")>
+    %<OutputTypedVectorForDatasetVariable(nEnums, allEnumLabels, "%<charType>*",  "enumLabels")>
+
+    rtwAddEnumLeafNode(...
+        %<dTypeId>, ...
+        "%<signalLabel>", ...
+        "%<interpolationMethod>", ...
+        %<dimsArrayName>, ...
+        %<nDims>, ...
+        "%<datatypeName>", ...
+        "%<units>", ...
+        "%<resolvedDatatypeName>", ...
+        "%<sampleTime>", ...
+        %<discreteInterval>, ...
+        %<stopTime>, ...
+        (const %<uintType>*)enumValues, ...
+        (const %<charType>**)enumLabels, ...
+        %<nEnums>, ...
+        %<treeVector>);
+%endfunction  %%addEnumLeafNode
+
+%% Adds nodes until gets to the leaves.
+%function getNVBusNodeLeaves(...
+    block, system, parentDatatypeId, ...
+    parentHierinfoidx, ...
+    interpolationMethod, sampleTime, discreteInterval, ...
+    stopTime, treeVector) Output
+
+    %assign nChildren = LibDataTypeNumElements(parentDatatypeId)
+    %foreach childNo = nChildren
+
+        %% Child datatype id
+        %assign childDTypeId = LibDataTypeElementDataTypeId(...
+            parentDatatypeId, childNo)
+
+        %% Child signal/label name
+        %with ::CompiledModel.BlockHierarchyMap
+            %assign childHierInfoIdx = ...
+                SignalHierLoggingInfo[parentHierinfoidx].Children[childNo]
+            %assign childSignalLabel = ...
+                SignalHierLoggingInfo[childHierInfoIdx].SignalName
+        %endwith
+        %% Child dimensions
+        %assign childNDims = LibDataTypeElementNumDimensions(...
+            parentDatatypeId, childNo)
+        %assign childDims = LibDataTypeElementDimensions(...
+            parentDatatypeId, childNo)
+        %assign childDimsArrayName = "dims"
+        %assign isChildNvBus = LibDataTypeIsBus(childDTypeId)
+
+        %if isChildNvBus
+            %% Child number of children
+            %assign childNumberOfChildren = ...
+                LibDataTypeNumElements(childDTypeId)
+            {
+                %<CreateDims(childNDims, childDims, childDimsArrayName)>
+                %<CreateOffsets(childDTypeId, childNumberOfChildren)>
+                %assign busSize = LibGetDataTypeSLSizeFromId(childDTypeId)
+                rtwAddNVBusNode(...
+                    %<childDTypeId>, ...
+                    "%<childSignalLabel>", ...
+                    %<childNumberOfChildren>, ...
+                    %<childDimsArrayName>, ...
+                    %<childNDims>, ...
+                    %<busSize>, ...
+                    offsets, ...
+                    %<treeVector>);
+            }
+            %<getNVBusNodeLeaves(block, system, childDTypeId, ...
+                childHierInfoIdx, interpolationMethod, sampleTime, ...
+                discreteInterval, stopTime, treeVector)>
+
+        %else
+            %% Is the signal complex number
+            %assign childComplex = LibDataTypeElementIsComplex(...
+                parentDatatypeId, childNo)
+
+            %% Datatype Name
+            %assign datatypeName = getDatatypeNameFromId(childDTypeId)
+
+            %% Signal unit
+            %assign childUnits = LibDataTypeElementASCIIEscapedUnits(parentDatatypeId, childNo)
+
+            {
+                %<CreateDims(childNDims, childDims, childDimsArrayName)>
+                %if LibIsBuiltInDataType(childDTypeId)
+                    rtwAddLeafNode(...
+                        %<childDTypeId>, ...
+                        "%<childSignalLabel>", ...
+                        "%<interpolationMethod>", ...
+                        %<childComplex>, ...
+                        %<childDimsArrayName>, ...
+                        %<childNDims>, ...
+                        "%<datatypeName>", ...
+                        "%<childUnits>", ...
+                        "%<sampleTime>", ...
+                        %<discreteInterval>, ...
+                        %<stopTime>, ...
+                        %<treeVector>);
+
+                %elseif LibIsDataTypeFixpt(childDTypeId)
+                    %assign curDT = FixPt_GetDataTypeFromIndex(childDTypeId)
+                    %assign fxp_isSigned = curDT.IsSigned
+                    %assign fxp_wordLen = curDT.RequiredBits
+                    %assign fxp_slope = curDT.FracSlope
+                    %assign fxp_fixedExp = curDT.FixedExp
+                    %assign fxp_bias = curDT.Bias
+                    rtwAddFixedPointLeafNode(...
+                        %<childDTypeId>, ...
+                        "%<childSignalLabel>", ...
+                        "%<interpolationMethod>", ...
+                        %<childComplex>, ...
+                        %<childDimsArrayName>, ...
+                        %<childNDims>, ...
+                        "%<datatypeName>", ...
+                        "%<childUnits>", ...
+                        %<fxp_isSigned>, ...
+                        %<fxp_wordLen>, ...
+                        %<fxp_slope>, ...
+                        %<fxp_fixedExp>, ...
+                        %<fxp_bias>, ...
+                        "%<sampleTime>", ...
+                        %<discreteInterval>, ...
+                        %<stopTime>, ...
+                        %<treeVector>);
+
+                    %% enum parameters
+                %elseif LibIsEnumDataType(childDTypeId)
+                    %assign storageID = -1
+                    %if LibIsEnumTypeStoredAsInt(childDTypeId)
+                        %assign storageID = 6 %% int32
+                    %else
+                        %assign storageID = LibGetEnumTypeStorageType(childDTypeId)
+                    %endif
+                    %assign resolvedDatatypeName = SLibGetMLDataTypeFromId(storageID)
+                    %assign nEnums = FcnGetEnumTypeNumEnums(childDTypeId)
+                    %assign allEnumValues = Vector(%<nEnums>) [0@%<nEnums>]
+                    %assign allEnumLabels = Vector(%<nEnums>) [""@%<nEnums>]
+
+                    %<addEnumLeafNode(...
+                        childDTypeId, ...
+                        childSignalLabel, ...
+                        interpolationMethod, ...
+                        childDimsArrayName, ...
+                        childNDims, ...
+                        datatypeName, ...
+                        childUnits, ...
+                        resolvedDatatypeName, ...
+                        sampleTime, ...
+                        discreteInterval, ...
+                        stopTime, ...
+                        treeVector)>
+
+                    %% UNKNOWN types
+                %else
+                    %assert TLC_FALSE
+                %endif
+            }
+        %endif
+    %endforeach
+    rtwPopNVBusNode(%<treeVector>);
+%endfunction
+
+%function StartSlioNVBusSignalDef(block, system, pworkAddress) Output
+    %assign charType = LibGetDataTypeNameFromId(::CompiledModel.tSS_CHAR)
+    %assign intType = LibGetDataTypeNameFromId(::CompiledModel.tSS_INTEGER)
+    %assign uintType = LibGetDataTypeNameFromId(::CompiledModel.tSS_UINTEGER)
+    %% Port type
+    %assign porttype = 1 %% Outport
+    %assign clientType = ParamSettings.ClientType[0]
+    %assign portOrder = 0
+    %assign datasetName = "tmp_raccel_ia_output"
+    {
+        %assign nulldef = SLibGetNullDefinitionFromTfl()
+        %% root
+        %assign treeVector = "treeVector"
+        void * treeVector = rtwGetTreeVector();
+
+        %% ForEach dimensions
+        %if 0 < block.NumForEachLevels
+            %<uintType> numForEachLevels = %<block.NumForEachLevels>;
+            %<CreateDims(block.NumForEachLevels,block.ForEachDims,"forEachDims")>
+            %assign foreachSubDims = "forEachDims, " + STRING(block.NumForEachLevels)
+        %else
+            %assign foreachSubDims = nulldef + ", 0"
+        %endif
+        %if IsModelReferenceSimTarget()
+            %<intType> forEachMdlRefDimsArray[32];
+            %<intType> forEachMdlRefDimsArraySize = 0;
+            %% Get the dimensions of the foreach subsystem which contains the model block
+            if(!slIsRapidAcceleratorSimulating()) {
+                forEachMdlRefDimsArraySize = slSigLogGetForEachDimsForRefModel(...
+                    %<RTMsGet(system, "MdlRefSfcnS")>, ...
+                    forEachMdlRefDimsArray);
+            }
+            %assign foreachTopDims = "forEachMdlRefDimsArraySize ? (const %<uintType>*)forEachMdlRefDimsArray : " + nulldef + ", forEachMdlRefDimsArraySize"
+        %else
+            %assign foreachTopDims = nulldef + ", 0"
+        %endif
+
+        %<StartSlioNonVirtualBus(block, system, treeVector)>
+
+        %% number of inport ports
+        %assign numberOfInputPorts = 1
+
+        %% Max points
+        %assign maxpoints = 0
+
+        %% Decimation
+        %assign decimation = 1
+
+        %% Propagated name
+        %assign propagatedName = STRING(ParamSettings.PropagatedName)
+
+        %% Logged name
+        %assign loggedName = STRING(ParamSettings.ElementNames[0])
+
+        {
+            %% Block path
+            %assign blockPath = STRING(ParamSettings.LogBlockPath)
+            %if IsModelReferenceTarget()
+                %assign mapInfo = RTMsGet(system, "DataMapInfo")
+                %<charType>* pathToTopModel = %<mapInfo>.mmi.InstanceMap.fullPath;
+            %else
+                %<charType>* pathToTopModel = "";
+            %endif
+
+            %% Port index
+            %assign logPortIdx = ParamSettings.ConnectedPortIdx[0]
+
+            const void * signalDescriptor = rtwGetSignalDescriptor (...
+                treeVector, ...
+                %<numberOfInputPorts>, ...
+                %<porttype>,
+            %<maxpoints>, ...
+                %<decimation>, ...
+                "%<loggedName>", ...
+                "%<propagatedName>", ...
+                pathToTopModel, ...
+                "%<blockPath>", ...
+                %<logPortIdx>, ...
+                %<portOrder>, ...
+                rtwGetPointerFromUniquePtr(rt_slioCatalogue()), ...
+                %<foreachTopDims>, ...
+                %<foreachSubDims>);
+
+            %if IsModelReferenceTarget()
+                void * loggingInterval = ...
+                    rtliGetLoggingInterval(%<RTMGet("MdlRefSfcnS")>->mdlInfo->rtwLogInfo);
+            %else
+                void * loggingInterval = ...
+                    rtliGetLoggingInterval(%<RTMsGet(system, "RootSS")>->mdlInfo->rtwLogInfo);
+            %endif
+            void * accessor = %<nulldef>;
+            accessor = rtwGetAccessor(signalDescriptor, loggingInterval);
+
+            rtwAddIntrusiveClient(accessor, signalDescriptor, ...
+                rtwGetPointerFromUniquePtr(rt_slioCatalogue()),"%<datasetName>", %<clientType>);
+
+            %<pworkAddress> = accessor;
+        }
+    }
+
+%endfunction
+
+%function StartSlioVirtualBusSignalDef(block, system, pworkAddress) Output
+    %assign charType = LibGetDataTypeNameFromId(::CompiledModel.tSS_CHAR)
+    %assign intType = LibGetDataTypeNameFromId(::CompiledModel.tSS_INTEGER)
+    %assign uintType = LibGetDataTypeNameFromId(::CompiledModel.tSS_UINTEGER)
+
+    %% Port type
+    %assign porttype = 1 %% Outport
+    %assign clientType = ParamSettings.ClientType[0]
+    %assign datasetName = "tmp_raccel_ia_output"
+    %assign portOrder = 0
+    {
+        %assign nulldef = SLibGetNullDefinitionFromTfl()
+        %% root
+        %assign treeVector = "treeVector"
+        %assign dTypeId = block.ParamSettings.BusDatatypeIdSpecifiedAtOutport
+
+        void * treeVector = rtwGetTreeVector();
+
+        %% ForEach dimensions
+        %if 0 < block.NumForEachLevels
+            %<uintType> numForEachLevels = %<block.NumForEachLevels>;
+            %<CreateDims(block.NumForEachLevels,block.ForEachDims,"forEachDims")>
+            %assign foreachSubDims = "forEachDims, " + STRING(block.NumForEachLevels)
+        %else
+            %assign foreachSubDims = nulldef + ", 0"
+        %endif
+        %if IsModelReferenceSimTarget()
+            %<intType> forEachMdlRefDimsArray[32];
+            %<intType> forEachMdlRefDimsArraySize = 0;
+            %% Get the dimensions of the foreach subsystem which contains the model block
+            if(!slIsRapidAcceleratorSimulating()) {
+                forEachMdlRefDimsArraySize = slSigLogGetForEachDimsForRefModel(...
+                    %<RTMsGet(system, "MdlRefSfcnS")>, ...
+                    forEachMdlRefDimsArray);
+            }
+            %assign foreachTopDims = "forEachMdlRefDimsArraySize ? (const %<uintType>*)forEachMdlRefDimsArray : " + nulldef + ", forEachMdlRefDimsArraySize"
+        %else
+            %assign foreachTopDims = nulldef + ", 0"
+        %endif
+
+        %<StartSlioVirtualBus(block, system, dTypeId, treeVector)>
+
+        %% number of inport ports
+        %assign numberOfInputPorts = block.NumDataInputPorts
+
+        %% Max points
+        %assign maxpoints = 0
+
+        %% Decimation
+        %assign decimation = 1
+
+        %% Propagated name
+        %assign propagatedName = STRING(ParamSettings.PropagatedName)
+
+        %% Logged name
+        %assign loggedName = STRING(ParamSettings.ElementNames[0])
+
+        {
+            %% Block path
+            %assign blockPath = STRING(ParamSettings.LogBlockPath)
+            %if IsModelReferenceTarget()
+                %assign mapInfo = RTMsGet(system, "DataMapInfo")
+                %<charType>* pathToTopModel = %<mapInfo>.mmi.InstanceMap.fullPath;
+            %else
+                %<charType>* pathToTopModel = "";
+            %endif
+
+            %% Port index
+            %assign logPortIdx = ParamSettings.ConnectedPortIdx[0]
+
+            const void * signalDescriptor = rtwGetSignalDescriptor(...
+                treeVector, ...
+                %<numberOfInputPorts>, ...
+                %<porttype>,
+            %<maxpoints>, ...
+                %<decimation>, ...
+                "%<loggedName>", ...
+                "%<propagatedName>", ...
+                pathToTopModel, ...
+                "%<blockPath>", ...
+                %<logPortIdx>, ...
+                %<portOrder>, ...
+                rtwGetPointerFromUniquePtr(rt_slioCatalogue()), ...
+                %<foreachTopDims>, ...
+                %<foreachSubDims>);
+
+            %if IsModelReferenceTarget()
+                void * loggingInterval = ...
+                    rtliGetLoggingInterval(%<RTMGet("MdlRefSfcnS")>->mdlInfo->rtwLogInfo);
+            %else
+                void * loggingInterval = ...
+                    rtliGetLoggingInterval(%<RTMsGet(system, "RootSS")>->mdlInfo->rtwLogInfo);
+            %endif
+            void * accessor = %<nulldef>;
+
+
+            accessor = rtwGetAccessor(signalDescriptor, loggingInterval);
+
+            rtwAddIntrusiveClient(accessor, signalDescriptor, ...
+                rtwGetPointerFromUniquePtr(rt_slioCatalogue()),"%<datasetName>", %<clientType>);
+
+            if (rtwIsLoggingToFile(rtwGetPointerFromUniquePtr(rt_slioCatalogue()))){
+                rtwAddR2Client(accessor, signalDescriptor, ...
+                    rtwGetPointerFromUniquePtr(rt_slioCatalogue()),"%<datasetName>", %<clientType>);
+            } else {
+                rtwAddMemoryClient(accessor, signalDescriptor, ...
+                    rtwGetPointerFromUniquePtr(rt_slioCatalogue()),"%<datasetName>", %<clientType>);
+            }
+
+            %<pworkAddress> = accessor;
+        }
+    }
+%endfunction
+
+%% Prepare Signal descriptor, the root node, and calls function to
+%% construct the node tree.
+%function StartSlioVirtualBus(block, system, parentDatatypeId, treeVector) Output
+    {
+        %assign signalName = STRING(ParamSettings.ElementNames[0])
+        %assign hierInfoIdx = ParamSettings.HierInfoIndex[0]
+        %with ::CompiledModel.BlockHierarchyMap
+            %assign nChildren = SignalHierLoggingInfo[hierInfoIdx].NumChildren
+        %endwith
+        %assign isLinearInterp = ParamSettings.LinearInterpolation[0]
+
+        %% Interpolation
+        %assign interpMethod = ""
+        %if isLinearInterp
+            %assign interpolationMethod = "linear"
+        %else
+            %assign interpolationMethod = "zoh"
+        %endif
+
+        rtwAddTopBusNode(...
+            "%<signalName>", ...
+            %<nChildren>, ...
+            treeVector);
+        %assign portIdx = 0
+        %with ::CompiledModel.BlockHierarchyMap
+            %foreach childNo = nChildren
+                %assign childHierInfoIdx = SignalHierLoggingInfo[hierInfoIdx].Children[childNo]
+                %assign portIdx = getBusNodeLeaves(block, system, childHierInfoIdx, ...
+                    portIdx, parentDatatypeId, childNo, treeVector)
+            %endforeach
+        %endwith
+        rtwPopNVBusNode(%<treeVector>);
+    }
+%endfunction
+
+%% Adds nodes until gets to the leaves.
+%function getBusNodeLeaves(...
+    block, system, hierInfoIdx, ...
+    portIdx, parentDatatypeId, currentChildNo, treeVector) Output
+
+    %with ::CompiledModel.BlockHierarchyMap
+        %assign sigName = SignalHierLoggingInfo[hierInfoIdx].SignalName
+        %assign nChildren = SignalHierLoggingInfo[hierInfoIdx].NumChildren
+        %if nChildren > 0
+            rtwAddBusNode(...
+                "%<sigName>", ...
+                %<nChildren>, ...
+                treeVector);
+
+            %if parentDatatypeId != -1
+                %assign currentDatatypeId = LibDataTypeElementDataTypeId(...
+                    parentDatatypeId, currentChildNo)
+            %else
+                %assign currentDatatypeId = -1
+            %endif
+
+            %foreach childNo = nChildren
+                %assign childHierInfoIdx = SignalHierLoggingInfo[hierInfoIdx].Children[childNo]
+                %assign portIdx = getBusNodeLeaves(block, system, childHierInfoIdx, ...
+                    portIdx, currentDatatypeId, childNo, treeVector)
+            %endforeach
+            rtwPopNVBusNode(%<treeVector>);
+            %return portIdx
+        %else
+            %% Signal unit
+            %if parentDatatypeId != -1
+                %assign units = LibDataTypeElementASCIIEscapedUnits(parentDatatypeId, currentChildNo)
+            %else
+                %assign units = LibBlockInputSignalASCIIEscapedUnitExpr(portIdx)
+            %endif
+            %<getLeafNode(block, system, portIdx, sigName, units, treeVector)>
+            %return portIdx + 1
+        %endif
+    %endwith
+%endfunction
+
+
+%function getLeafNode(block, system, portIdx, sigName, units, treeVector) Output
+    {
+        %% Data type registration
+        %assign portDT = LibBlockInputSignalDataTypeId(portIdx)
+        %assign dtID = LibGetDataTypeIdAliasedThruToFromId(portDT)
+
+        %% Complexity
+        %assign complexity = LibBlockInputSignalIsComplex(portIdx)
+
+        %% Interpolation
+        %assign isLinearInterp = ParamSettings.LinearInterpolation[portIdx]
+        %% Interpolation
+        %assign interpMethod = ""
+        %if isLinearInterp
+            %assign interpMethod = "linear"
+        %else
+            %assign interpMethod = "zoh"
+        %endif
+
+        %% Dimensions
+        %assign nDims = LibBlockInputSignalNumDimensions(portIdx)
+        %assign dims = LibBlockInputSignalDimensions(portIdx)
+
+        %% Sample Time
+        %assign sampleTime = ParamSettings.SampleTimeLabels[portIdx]
+        %if IsModelReferenceSimTarget() && !MdlRefDisallowSampleTimeInheritance()
+            %assign discreteInterval = 0
+        %else
+            %assign discreteInterval = ParamSettings.DiscreteInterval[portIdx]
+        %endif
+        %assign stopTime = RTMGet("TFinal")
+
+        %<addLeafNode(...
+            dtID,...
+            dims, ...
+            nDims, ...
+            complexity, ...
+            interpMethod, ...
+            sigName, ...
+            units, ...
+            sampleTime, ...
+            discreteInterval, ...
+            stopTime, ...
+            treeVector)>
+    }
+%endfunction
+
+%function addLeafNode(...
+    dtID, dims, nDims, complexity, ...
+    interpMethod, sigName, sigUnits, ...
+    sampleTime, discreteInterval, stopTime, treeVector) Output
+    %assign uintType = LibGetDataTypeNameFromId(::CompiledModel.tSS_UINTEGER)
+    %assign datatypeName = getDatatypeNameFromId(dtID)
+
+    %assign arrayName = "dims"
+    %<CreateDims(nDims, dims, arrayName)>
+
+    %if LibIsBuiltInDataType(dtID)
+        rtwAddLeafNode(...
+            %<dtID>, ...
+            "%<sigName>", ...
+            "%<interpMethod>", ...
+            %<complexity>, ...
+            (%<uintType>*)dims,  ...
+            %<nDims>, ...
+            "%<datatypeName>", ...
+            "%<sigUnits>", ...
+            "%<sampleTime>", ...
+            %<discreteInterval>, ...
+            %<stopTime>, ...
+            %<treeVector>);
+
+    %elseif LibIsDataTypeFixpt(dtID)
+        %assign curDT = FixPt_GetDataTypeFromIndex(dtID)
+        %assign fxp_isSigned = curDT.IsSigned
+        %assign fxp_wordLen = curDT.RequiredBits
+        %assign fxp_slope = curDT.FracSlope
+        %assign fxp_fixedExp = curDT.FixedExp
+        %assign fxp_bias = curDT.Bias
+        rtwAddFixedPointLeafNode(...
+            %<dtID>, ...
+            "%<sigName>", ...
+            "%<interpMethod>", ...
+            %<complexity>, ...
+            (%<uintType>*)dims,  ...
+            %<nDims>, ...
+            "%<datatypeName>", ...
+            "%<sigUnits>", ...
+            %<fxp_isSigned>, ...
+            %<fxp_wordLen>, ...
+            %<fxp_slope>, ...
+            %<fxp_fixedExp>, ...
+            %<fxp_bias>, ...
+            "%<sampleTime>", ...
+            %<discreteInterval>, ...
+            %<stopTime>, ...
+            %<treeVector>);
+
+        %% enum parameters
+    %elseif LibIsEnumDataType(dtID)
+        %assign storageID = -1
+        %if LibIsEnumTypeStoredAsInt(dtID)
+            %assign storageID = 6 %% int32
+        %else
+            %assign storageID = LibGetEnumTypeStorageType(dtID)
+        %endif
+        %assign resolvedDatatypeName = SLibGetMLDataTypeFromId(storageID)
+        %<addEnumLeafNode(...
+            dtID, ...
+            sigName, ...
+            interpMethod, ...
+            "(%<uintType>*)dims",  ...
+            nDims, ...
+            datatypeName, ...
+            sigUnits, ...
+            resolvedDatatypeName, ...
+            sampleTime, ...
+            discreteInterval, ...
+            stopTime, ...
+            treeVector)>
+
+        %% UNKNOWN types
+    %else
+        %assign warnTxt = "User-defined data types not supported for logging to mat-file."
+        %<LibBlockReportWarning(block, warnTxt)>
+    %endif
+%endfunction %%addLeafNode
+
+%function StartSlioSignalDef(block, system, pworkAddress) Output
+    %assign charType = LibGetDataTypeNameFromId(::CompiledModel.tSS_CHAR)
+    %assign intType = LibGetDataTypeNameFromId(::CompiledModel.tSS_INTEGER)
+    %assign uintType = LibGetDataTypeNameFromId(::CompiledModel.tSS_UINTEGER)
+    %% Port type
+    %assign porttype = 2 %% Outport
+    %assign clientType = ParamSettings.ClientType[0]
+    %assign datasetName = "tmp_raccel_ia_output"
+    %assign portOrder = -1
+    {
+        %assign elementName = STRING(ParamSettings.ElementNames[0])
+        %assign isLinearInterp = ParamSettings.LinearInterpolation[0]
+
+        %% Interpolation
+        %assign interpMethod = ""
+        %if isLinearInterp
+            %assign interpMethod = "linear"
+        %else
+            %assign interpMethod = "zoh"
+        %endif
+
+        %% Signal Dimensions
+        %assign dimsArrayPrefix = "signalDimensions"
+        %assign nDims = LibBlockInputSignalNumDimensions(0)
+        %assign dims = LibBlockInputSignalDimensions(0)
+        %% also creates the dimsarray
+        %assign dimsArrayName = ...
+            "%<CreateDimsArray(nDims, dims, dimsArrayPrefix, 0)>"
+
+        %% Data is complex
+        %assign complexity = LibBlockInputSignalIsComplex(0)
+
+        %% Units
+        %assign units = LibBlockInputSignalASCIIEscapedUnitExpr(0)
+
+        %% Datatype Name
+        %assign datatypeName = getDatatypeNameFromId(LibBlockInputSignalDataTypeId(0))
+
+        %% Max points
+        %assign maxpoints = 0
+
+        %% Decimation
+        %assign decimation = 1
+
+        %% Port index
+        %assign logPortIdx = ParamSettings.ConnectedPortIdx[0]
+
+        %% Propagated name
+        %assign propagatedName = STRING(ParamSettings.PropagatedName)
+
+        %% Logged Name
+        %assign loggedName = STRING(ParamSettings.ElementNames[0])
+        %assign sigName = STRING(ParamSettings.SignalNames[0])
+
+        %% Block path
+        %assign blockPath = STRING(ParamSettings.LogBlockPath)
+        %if IsModelReferenceTarget()
+            %assign mapInfo = RTMsGet(system, "DataMapInfo")
+            %<charType>* pathToTopModel = %<mapInfo>.mmi.InstanceMap.fullPath;
+        %else
+            %<charType>* pathToTopModel = "";
+        %endif
+
+        %% number of inport ports
+        %assign numberOfInputPorts = 1
+
+        %% Sample Time
+        %assign sampleTime = ParamSettings.SampleTimeLabels[0]
+        %if IsModelReferenceSimTarget() && !MdlRefDisallowSampleTimeInheritance()
+            %assign discreteInterval = 0
+        %else
+            %assign discreteInterval = ParamSettings.DiscreteInterval[0]
+        %endif
+
+        %assign dTypeId = LibBlockInputSignalDataTypeId(0)
+        %assign nulldef = SLibGetNullDefinitionFromTfl()
+        %assign treeVector = "treeVector"
+        void * treeVector = rtwGetTreeVector();
+        void * loggingInterval = %<nulldef>;
+        void * accessor = %<nulldef>;
+
+        %% ForEach dimensions
+        %%if 0 < block.NumForEachLevels
+        %%  %<uintType> numForEachLevels = %<block.NumForEachLevels>;
+        %%  %<CreateDims(block.NumForEachLevels,block.ForEachDims,"forEachDims")>
+        %%  %assign foreachSubDims = "forEachDims, " + STRING(block.NumForEachLevels)
+        %%%else
+        %assign foreachSubDims = nulldef + ", 0"
+        %%%endif
+        %if IsModelReferenceSimTarget()
+            %<intType> forEachMdlRefDimsArray[32];
+            %<intType> forEachMdlRefDimsArraySize = 0;
+            %% Get the dimensions of the foreach subsystem which contains the model block
+            if(!slIsRapidAcceleratorSimulating()) {
+                forEachMdlRefDimsArraySize = slSigLogGetForEachDimsForRefModel(...
+                    %<RTMsGet(system, "MdlRefSfcnS")>, ...
+                    forEachMdlRefDimsArray);
+            }
+            %assign foreachTopDims = "forEachMdlRefDimsArraySize ? (const %<uintType>*)forEachMdlRefDimsArray : " + nulldef + ", forEachMdlRefDimsArraySize"
+        %else
+            %assign foreachTopDims = nulldef + ", 0"
+        %endif
+
+        %if LibIsBuiltInDataType(dTypeId)
+            rtwAddLeafNode(...
+                %<dTypeId>, ...
+                "%<sigName>", ...
+                "%<interpMethod>", ...
+                %<complexity>, ...
+                %<dimsArrayName>, ...
+                %<nDims>, ...
+                "%<datatypeName>", ...
+                "%<units>", ...
+                "%<sampleTime>", ...
+                %<discreteInterval>, ...
+                %<RTMGet("TFinal")>, ...
+                %<treeVector>);
+
+        %elseif LibIsDataTypeFixpt(dTypeId)
+            %assign curDT = FixPt_GetDataTypeFromIndex(dTypeId)
+            %assign fxp_isSigned = curDT.IsSigned
+            %assign fxp_wordLen = curDT.RequiredBits
+            %assign fxp_slope = curDT.FracSlope
+            %assign fxp_fixedExp = curDT.FixedExp
+            %assign fxp_bias = curDT.Bias
+            rtwAddFixedPointLeafNode(...
+                %<dTypeId>, ...
+                "%<elementName>", ...
+                "%<interpMethod>", ...
+                %<complexity>, ...
+                %<dimsArrayName>, ...
+                %<nDims>, ...
+                "%<datatypeName>", ...
+                "%<units>", ...
+                %<fxp_isSigned>, ...
+                %<fxp_wordLen>, ...
+                %<fxp_slope>, ...
+                %<fxp_fixedExp>, ...
+                %<fxp_bias>, ...
+                "%<sampleTime>", ...
+                %<discreteInterval>, ...
+                %<RTMGet("TFinal")>, ...
+                %<treeVector>);
+
+            %% enum parameters
+        %elseif LibIsEnumDataType(dTypeId)
+            %assign storageID = -1
+            %if LibIsEnumTypeStoredAsInt(dTypeId)
+                %assign storageID = 6 %% int32
+            %else
+                %assign storageID = LibGetEnumTypeStorageType(dTypeId)
+            %endif
+            %assign resolvedDatatypeName = SLibGetMLDataTypeFromId(storageID)
+            %<addEnumLeafNode(...
+                dTypeId, ...
+                elementName, ...
+                interpMethod, ...
+                dimsArrayName, ...
+                nDims, ...
+                datatypeName, ...
+                units, ...
+                resolvedDatatypeName, ...
+                sampleTime, ...
+                discreteInterval, ...
+                RTMGet("TFinal"), ...
+                treeVector)>
+
+            %% UNKNOWN types
+        %else
+            %assert TLC_FALSE
+        %endif
+
+        {
+            const void * signalDescriptor = ...
+                rtwGetSignalDescriptor (...
+                treeVector, ...
+                %<numberOfInputPorts>, ...
+                %<porttype>,
+            %<maxpoints>, ...
+                %<decimation>, ...
+                "%<loggedName>", ...
+                "%<propagatedName>", ...
+                pathToTopModel, ...
+                "%<blockPath>", ...
+                %<logPortIdx>,
+            %<portOrder>, ...
+                rtwGetPointerFromUniquePtr(rt_slioCatalogue()), ...
+                %<foreachTopDims>, ...
+                %<foreachSubDims>);
+
+            %if IsModelReferenceTarget()
+                loggingInterval = ...
+                    rtliGetLoggingInterval(%<RTMGet("MdlRefSfcnS")>->mdlInfo->rtwLogInfo);
+            %else
+                loggingInterval = ...
+                    rtliGetLoggingInterval(%<RTMsGet(system, "RootSS")>->mdlInfo->rtwLogInfo);
+            %endif
+
+            accessor = rtwGetAccessor(signalDescriptor, loggingInterval);
+
+            rtwAddIntrusiveClient(accessor, signalDescriptor, ...
+                rtwGetPointerFromUniquePtr(rt_slioCatalogue()),"%<datasetName>", %<clientType>);
+
+            %<pworkAddress> = accessor;
+        }
+    }
+
+%endfunction
+
+%% Function: get the datatype name form datatype id.
+%function getDatatypeNameFromId(datatypeId)
+
+    %if LibIsBuiltInDataType(datatypeId)
+        %assign typeName = SLibGetMLDataTypeFromId(datatypeId)
+        %if typeName == "boolean"
+            %assign typeName = "logical"
+        %endif
+        %assign isFxp = TLC_FALSE
+        %% fixpt parameters
+    %elseif LibIsDataTypeFixpt(datatypeId)
+        %assign curDT = FixPt_GetDataTypeFromIndex(datatypeId)
+        %if fxpIsDataTypeFixPt(curDT)
+            %assign typeName = "fixed-point"
+            %assign isFxp    = TLC_TRUE
+        %elseif fxpIsDataTypeScaledDouble(curDT)
+            %assign typeName = "scaled-double" %% sbcheck:ok:tlctypes
+            %assign isFxp    = TLC_TRUE
+        %elseif FixPt_DataTypeIsDouble(curDT)
+            %assign typeName = "double" %% sbcheck:ok:tlctypes
+            %assign isFxp = TLC_FALSE
+        %elseif FixPt_DatatTypeIsSingle(curDT)
+            %assign typeName = "single"
+            %assign isFxp = TLC_FALSE
+        %elseif FixPt_DatatTypeIsBoolean(curDT)
+            %assign typeName = "logical"
+            %assign isFxp = TLC_FALSE
+        %else
+            %assert TLC_FALSE
+        %endif
+        %assign fxp_isSigned = curDT.IsSigned
+        %assign fxp_wordLen = curDT.RequiredBits
+        %assign fxp_slope = curDT.FracSlope
+        %assign fxp_fixedExp = curDT.FixedExp
+        %assign fxp_bias = curDT.Bias
+        %% enum parameters
+    %elseif LibIsEnumDataType(datatypeId)
+        %assign typeName = LibGetDataTypeNameFromId(datatypeId)
+        %assign isFxp = TLC_FALSE
+        %% UNKNOWN types
+    %else
+        %assert TLC_FALSE
+    %endif
+    %return typeName
+%endfunction
+
+%% Function: Outputs ===============================================================================
+%% Abstract:
+%%      Output method for intrusive accessor slio
+%%
+%function Outputs(block, system) Output
+    %if Accelerator
+        %<SLibCallBlockInSimulink(system, block, "SS_CALL_MDL_OUTPUTS")>
+    %else
+        %foreach idx = SIZE(TID, 1)
+            %foreach portIdx = block.NumDataInputPorts
+                %assign tid = block.TID[idx]
+                %assign tt = tid2time(block, system, tid)
+                %<slioUpdateAccessor(block, system, portIdx, tt)>
+            %endforeach
+        %endforeach
+    %endif
+%endfunction %% Outputs
+
+%% Function: OutputsForTID =========================================================================
+%% Abstract:
+%%      Update accessed data for multitasking.
+%%
+%function OutputsForTID(block, system, tid) Output
+    %<logMultitasking(block, system, tid)>
+%endfunction %% OutputsForTID
+
+%% Function: OutputTypedVectorForDatasetVariable ===================================================
+%% Abstract:
+%%   Output the dimension vector for creating a dataset variable
+%%
+%function OutputTypedVectorForDatasetVariable(nValues, values, valueType, varname) Output
+    %assign charType = LibGetDataTypeNameFromId(::CompiledModel.tSS_CHAR)
+    %assign equalSign = SLibDataInitEqualSign()
+    %if nValues == 1
+        %if valueType == "%<charType>*"
+            %<valueType> %<varname>[1]%<equalSign>{"%<values[0]>"};
+        %else
+            %<valueType> %<varname>[1]%<equalSign>{%<values[0]>};
+        %endif
+    %else
+        %assign valuesInit = "%<valueType> %<varname>[%<nValues>]%<equalSign>{"
+        %foreach valuesIdx = nValues
+            %if valueType == "%<charType>*"
+                %assign valuesInit = valuesInit + "\"%<values[valuesIdx]>\""
+            %else
+                %assign valuesInit = valuesInit + "%<values[valuesIdx]>"
+            %endif
+            %if valuesIdx != nValues-1
+                %assign valuesInit = valuesInit + ", "
+            %endif
+        %endforeach
+        %assign valuesInit = valuesInit + "};"
+        %<valuesInit>
+    %endif
+%endfunction %% OutputTypedVectorForDatasetVariable
+
+%% Function: Terminate =============================================================================
+%% Abstract:
+%%      Terminate callback
+%%
+%function Terminate(block, system) Output
+%endfunction %% Terminate
+
+%% [EOF] intrusive_accessor.tlc

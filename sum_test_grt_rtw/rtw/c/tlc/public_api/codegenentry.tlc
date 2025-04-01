@@ -1,0 +1,20 @@
+%% ============================================================================
+%% Abstract:
+%%   This file dispatches to the main entry file.
+%%
+%% Copyright 2018-2022 The MathWorks, Inc.
+%%
+%selectfile NULL_FILE
+
+%if EXISTS(::_CODEGENENTRY_) == 0
+%assign ::_CODEGENENTRY_ = 1
+%if EXISTS(::CompiledModel)
+    %% Library functions supporting the common entry file
+    %include "codegenentrylib.tlc"
+    %include "%<SLibGetCodegenentryFileName()>"
+    %if 0 == TLC_ERROR_COUNT
+        %<SLibSetCodeGenSucceeded()>
+    %endif
+%endif
+%endif  %% ::_CODEGENENTRY_
+%% [EOF] codegenentry.tlc

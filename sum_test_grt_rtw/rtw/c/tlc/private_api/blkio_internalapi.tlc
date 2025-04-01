@@ -1,0 +1,130 @@
+/* Copyright 2019-2023 The MathWorks, Inc. */
+%if EXISTS(_BLKIO_INTERNALAPI_) == 0
+%assign _BLKIO_INTERNALAPI_ = 1
+
+%% Function: FcnCheckForValidPortRecord ============================================================
+%% Abstract:
+%%      If the portIdx is a string, the function throws an error. The
+%%      portIdx has to always be a number.
+%%
+%function FcnCheckForValidPortRecord(portIdx) void
+    %if TYPE(portIdx) == "String"
+        %assign errTxt = "portIdx cannot be a string"
+        %<LibBlockReportError([],errTxt)>
+    %endif
+%endfunction
+
+
+%% Function{Block Functions}: SLibBlockTypeSetupName
+%% Abstract:
+%%      Return the BlockTypeSetup method's name
+%%
+%function SLibBlockTypeSetupName(sysIdx, blkIdx) void
+    %assign BlockTypeSetupName = ""
+    %if Type == "Opaque"
+        %assign BlockTypeSetupName = "BlockTypeSetupForBlockType_Opaque"
+    %else
+        %assign BlockTypeSetupName = CGMODEL_ACCESS("Block.BlockTypeSetupName", sysIdx, blkIdx)
+    %endif
+
+    %return BlockTypeSetupName
+%endfunction
+
+%% Function{Input Signal Functions}: SLibBlockInputAllowScalarsExpandedExpr
+%% Abstract:
+%%   Allows the input signal to be an expression, even when any of the
+%%   output signals are wide. Is called in BlockSetupAndCompatiblityCheck.
+%%
+%function SLibBlockInputSignalAllowScalarExpandedExpr(block, ipIdx) void
+    %return CGMODEL_ACCESS("Block.GetInputAllowScalarExpandedExpr", ...
+        block.BlockIdx[0], block.BlockIdx[2], ipIdx)
+%endfunction
+
+%% Function{Output Signal Functions}: SLibSetBlockOutputSignalsAreNotExpr
+%% Abstract:
+%%   Force each block output into a variable.
+%%   This routine is used to turn off output expressions in TLC
+%%   when the TLC implementation of this block doesn't support output
+%%   expressions, or ultimately when the TLC implementation of a
+%%   destination block does not accept output expressions
+%%
+%function SLibSetBlockOutputSignalsAreNotExpr(block) void
+    %% NOTICE: Constant expressions are predetermined in the Simulink
+    %%         engine and can not be switched off using TLC. This is due to
+    %%         significant code generation speed penalty if the constant
+    %%         expressions would be configurable in TLC.
+    %%
+    %<CGMODEL_ACCESS("Block.SetNonConstOutputSignalsAreNotExpr", ...
+        block.BlockIdx[0], block.BlockIdx[2])>
+%endfunction
+
+%% Function{Input Signal Functions}: SLibSetBlockInputSignalIsNotExpr
+%% Abstract:
+%%   Force this block input signal into a variable, and update its source
+%%   block accordingly; the source can no longer be a nonconst output
+%%   expression (const is of course always allowed)
+%%
+%function SLibSetBlockInputSignalIsNotExpr(block, portIdx) void
+    %if LibBlockInputSignalIsExpr(portIdx)
+        %<CGMODEL_ACCESS("Block.SetNonConstInputSignalIsNotExpr", block.BlockIdx[0], block.BlockIdx[2], portIdx)>
+    %endif
+%endfunction
+
+%% Function{Input Signal Functions}: SLibBlockInputSignalDimensions ==========
+%% Abstract:
+%%   Returns the dimensions vector of specified block input port, e.g. [2,3]
+%%
+%function SLibBlockInputSignalDimensions(portIdx) void
+    %% See Also:
+    %%   LibBlockInputSignalNumDimensions
+    %%
+    %return CGMODEL_ACCESS("Block.SLibInputSignalDimensions", BlockIdx[0], BlockIdx[2], portIdx)
+%endfunction %% SLibBlockInputSignalDimensions
+
+%% Function: LibGetOutputPortRecordIsValid =========================================================
+%% Abstract:
+%%      If the portIdx is a string, the function throws an error. The
+%%      portIdx has to always be a number.
+%%
+%function LibGetOutputPortRecordIsValid(portIdx) void
+    %% See Also:
+    %%   LibGetInputPortRecordIsValid
+    %%
+    %<FcnCheckForValidPortRecord(portIdx)>
+%endfunction
+
+%% Function: LibGetInputPortRecordIsValid ==========================================================
+%% Abstract:
+%%      If the portIdx is a string, the function throws an error. The
+%%      portIdx has to always be a number.
+%%
+%function LibGetInputPortRecordIsValid(portIdx) void
+    %% See Also:
+    %%   LibGetOutputPortRecordIsValid
+    %%
+    %<FcnCheckForValidPortRecord(portIdx)>
+%endfunction
+
+%% Function: SLibBlockInputPortContainerCGTypeIdx ==================================================
+%% Abstract:
+%%      A helper function to get the Container CGType for the current block's
+%%      specified input port.
+%%      portIdx has to always be a number.
+%%
+%function SLibBlockInputPortContainerCGTypeIdx(portIdx) void
+    %return CGMODEL_ACCESS("Block.InputPortContainerCGTypeIdx",...
+        BlockIdx[0], BlockIdx[2], portIdx)
+%endfunction
+
+%% Function: SLibBlockOutputPortContainerCGTypeIdx =================================================
+%% Abstract:
+%%      A helper function to get the Container CGType for the current block's
+%%      specified output port.
+%%      portIdx has to always be a number.
+%%
+%function SLibBlockOutputPortContainerCGTypeIdx(portIdx) void
+    %return CGMODEL_ACCESS("Block.OutputPortContainerCGTypeIdx",...
+        BlockIdx[0], BlockIdx[2], portIdx)
+%endfunction
+
+%endif %% _BLKIO_INTERNALAPI_

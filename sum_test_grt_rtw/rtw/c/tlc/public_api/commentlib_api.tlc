@@ -1,0 +1,18 @@
+%% Copyright 2022 The MathWorks, Inc.
+
+%if EXISTS(::_COMMENTLIB_API_) == 0
+%assign ::_COMMENTLIB_API_ = 1
+
+%function LibCacheBlockComment(block, buf) void
+    %assign blockCommentNeeded =  !CGMODEL_ACCESS("Block.HaveBlockComment", ...
+        block.BlockIdx[0], block.BlockIdx[2]) && (!CGMODEL_ACCESS("CGModel.AllowExprFolding") || GenerateComments)
+    %if blockCommentNeeded
+        %<CGMODEL_ACCESS("Block.SetBlockComment",block.BlockIdx[0], block.BlockIdx[2], buf)>
+        %if ISFIELD(block,"HaveBlockComment")
+            %<SETFIELD(block,"HaveBlockComment",1)>
+        %endif
+        %<CGMODEL_ACCESS("Block.SetHaveBlockComment",block.BlockIdx[0], block.BlockIdx[2], TLC_TRUE)>
+    %endif
+%endfunction
+
+%endif %% _COMMENTLIB_API_

@@ -1,0 +1,47 @@
+%%
+%% Copyright 2020-2023 The MathWorks, Inc.
+%%
+
+%if !EXISTS(::_CACHE_SHAREDUTILS_PRIVATE_API_)
+%assign ::_CACHE_SHAREDUTILS_PRIVATE_API_ = 1
+
+%% Function: SLibDumpUtilsMacro ====================================================================
+%% Abstract:
+%%   Write shared utils macro into disk as ".h" head file, as well as add this
+%%   head file into shared utils general include header file.
+%%
+%%   Example:
+%%        %openfile buffer
+%%        #define mymacro xyz(int x)
+%%        %closefile buffer
+%%        %<SLibDumpUtilsMacro("mymacro",buffer)>
+%%
+%function SLibDumpUtilsMacro(fcnName,buffer) void
+    %if ::CompiledModel.GenUtilsSrcInSharedLocation == 1
+        %assign sharedDir = CGMODEL_ACCESS("CGModel.GetClientSharedUtilsDir")
+        %assign filesep         = FEVAL("filesep")
+        %assign fileName = "%<sharedDir>%<filesep>%<fcnName>_MACRO.h"
+        %if FILE_EXISTS("%<fileName>") == 0
+            %openfile  filebuffer = "%<fileName>"
+            %<buffer>
+            %closefile filebuffer
+            %<SLibIndentFile(fileName,::CompiledModel.OrigName)>
+        %endif
+        %<SLibAddGeneratedFileToList(fileName,"utility","header","")>
+    %else
+        %% add into <model>_private.h
+        %<LibCacheDefine(buffer)>
+    %endif
+%endfunction
+
+%% Function: SLibAddMathIncludeForUtilsSourceCode ==================================================
+%% Abstract:
+%%   Add include of math.h when the utility calls one or more math functions used by
+%%   FixedPt utilities.
+%%
+%function SLibAddMathIncludeForUtilsSourceCode(buffer) void
+    %if (CONTAINS(buffer, "(ldexp|fmod|ceil|floor)"))
+    %endif
+%endfunction
+
+%endif %% _CACHE_SHAREDUTILS_PRIVATE_API_

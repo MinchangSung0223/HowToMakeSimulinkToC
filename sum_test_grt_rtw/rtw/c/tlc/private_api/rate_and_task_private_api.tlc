@@ -1,0 +1,23 @@
+%if EXISTS(_RATE_AND_TASK_PRIVATE_API_) == 0
+%assign _RATE_AND_TASK_PRIVATE_API_ = 1
+%%
+%% Copyright 2021-2022 The MathWorks, Inc.
+%%
+
+%% Function: SLibSingleTasking =====================================================================
+%% Abstract:
+%%   Return true for fixed-step singletasking solver.  Otherwise, return false.
+%%
+%function SLibSingleTasking() void
+    %return CGMODEL_ACCESS("CGModel.IsSingleTasking")
+%endfunction
+
+%% Function: SLibGetNumExplictTasksInUnion =========================================================
+%% Abstract:
+%%   Get Number of Explicit Tasks.
+%%
+%function SLibGetNumExplictTasksInUnion()
+    %return CGMODEL_ACCESS("CGModel.NumExplicitTasksInUnionSampleTimes")
+%endfunction
+
+%endif %% _RATE_AND_TASK_PRIVATE_API_

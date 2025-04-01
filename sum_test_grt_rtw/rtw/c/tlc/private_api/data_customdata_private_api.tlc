@@ -1,0 +1,18 @@
+%% Copyright 2020-2023 The MathWorks, Inc.
+
+%if EXISTS(_DATA_CUSTOMDATA_PRIVATE_API_) == 0
+%assign ::_DATA_CUSTOMDATA_PRIVATE_API_ = 1
+
+%% Function: FcnDontAllowSharedDataAndTypeInSameFile ===============================================
+%%Function to check if Shared Data and Param can be placed in same header file
+%%so that when 'AllowSharedDataAndTypesInSameFile' feature flag is on this
+%%feature will allow same file storage
+%function FcnDontAllowSharedDataAndTypeInSameFile(mf)
+    %if TYPE(mf) == "Scope" && !ISEMPTY(mf)
+        %return (!SLibDirectAccessGetFileAttribute(mf, "SharedType") || !CGMODEL_ACCESS("CGModel.getAllowSharedDataAndTypesInSameFile"))
+    %else
+        %return TLC_TRUE
+    %endif
+%endfunction %% FcnDontAllowSharedDataAndTypeInSameFile
+
+%endif

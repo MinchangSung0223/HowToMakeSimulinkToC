@@ -1,0 +1,2396 @@
+%%
+%%
+%%
+%% Copyright 2018-2023 The MathWorks, Inc.
+%%
+%% Abstract:
+%%   This TLC library file contains the general purpose utility functions for service ports.
+%%
+
+%if EXISTS(_SERVICELIB_) == 0
+%assign _SERVICELIB_ = 1
+
+%include "utillib.tlc"
+
+%function SLibServicePortsExist() void
+    %return !(CGMODEL_ACCESS("ServicePorts.NumServicePorts") == 0)
+%endfunction
+
+%function SLibInitServicePortInfoMap() void
+    %if EXISTS(::ServicePortInfoMap)
+        %return
+    %endif
+
+    %assign ::NumServicePorts = CGMODEL_ACCESS("ServicePorts.NumServicePorts")
+
+    %createrecord ::ServicePortInfoMap {}
+    %assign numPorts = CGMODEL_ACCESS("ServicePorts.NumServicePorts")
+    %foreach portIdx = numPorts
+        %assign blockPath = CGMODEL_ACCESS("ServicePorts.getBlockPath", portIdx)
+        %assign sid = CGMODEL_ACCESS("ServicePorts.getBlockSID", portIdx)
+        %assign portType = CGMODEL_ACCESS("ServicePorts.getPortType", portIdx)
+        %assign aPortIdx = CGMODEL_ACCESS("ServicePorts.getPortIdx", portIdx)
+        %assign externalPortIdx = CGMODEL_ACCESS("ServicePorts.getExternalPortIdx", portIdx)
+        %assign isTopMdlRootSP = CGMODEL_ACCESS("ServicePorts.getIsTopMdlRootSP", portIdx)
+        %assign accessorName = CGMODEL_ACCESS("ServicePorts.getAccessorName", portIdx)
+        %assign modelConstructorArgIdx = CGMODEL_ACCESS("ServicePorts.getModelConstructorArgIdx", portIdx)
+        %assign kind = CGMODEL_ACCESS("ServicePorts.getKind", portIdx)
+        %assign cgName = CGMODEL_ACCESS("ServicePorts.getCGName", portIdx)
+        %assign isDelegating = CGMODEL_ACCESS("ServicePorts.getIsDelegating", portIdx)
+        %assign delegatedFcnSvcPortHost = ""
+        %assign delegatedFcnSvcPortName = ""
+        %addtorecord ::ServicePortInfoMap ServicePort { \
+            BlockPath blockPath \
+            SID sid \
+            ServicePortType portType \
+            ServicePortIdx aPortIdx \
+            ExternalPortIdx externalPortIdx \
+            IsTopMdlRootSP isTopMdlRootSP \
+            AccessorName accessorName \
+            ModelConstructorArgIdx modelConstructorArgIdx \
+            Kind kind \
+            CGName cgName \
+            IsDelegating isDelegating \
+            DelegatedFcnSvcPortHost delegatedFcnSvcPortHost \
+            DelegatedFcnSvcPortName delegatedFcnSvcPortName \
+        }
+
+        %createrecord requestingSvcs {}
+        %assign numServices = CGMODEL_ACCESS("ServicePorts.getNumRequestingServices", portIdx)
+        %foreach svcIdx = numServices
+            %assign name = CGMODEL_ACCESS("ServicePorts.getRequestingServiceName", portIdx, svcIdx)
+            %assign numInArgs = CGMODEL_ACCESS("ServicePorts.getRequestingServiceNumInArgs", portIdx, svcIdx)
+            %assign numOutArgs = CGMODEL_ACCESS("ServicePorts.getRequestingServiceNumOutArgs", portIdx, svcIdx)
+            %assign arginCGTypeIdx = CGMODEL_ACCESS("ServicePorts.getRequestingServiceArginCGTypeIdx", portIdx, svcIdx)
+            %assign arginCGTypeIdxFlat = CGMODEL_ACCESS("ServicePorts.getRequestingServiceArginCGTypeIdxFlat", portIdx, svcIdx)
+            %assign argTypeIds = CGMODEL_ACCESS("ServicePorts.getRequestingServiceArgTypeIds", portIdx, svcIdx)
+            %assign arginPassByType = CGMODEL_ACCESS("ServicePorts.getRequestingServiceArginPassByType", portIdx, svcIdx)
+            %assign arginIsComplex = CGMODEL_ACCESS("ServicePorts.getRequestingServiceArginIsComplex", portIdx, svcIdx)
+            %assign dworkIdx = CGMODEL_ACCESS("ServicePorts.getRequestingServiceDworkIdx", portIdx, svcIdx)
+            %assign delegatedPortIdx = CGMODEL_ACCESS("ServicePorts.getRequestingServiceDelegatedPortIdx", portIdx, svcIdx)
+            %assign delegatedDworkIdx = CGMODEL_ACCESS("ServicePorts.getRequestingServiceDelegatedDworkIdx", portIdx, svcIdx)
+            %assign delegatedSID = CGMODEL_ACCESS("ServicePorts.getRequestingServiceDelegatedSID", portIdx, svcIdx)
+            %assign pairedBlockSID = CGMODEL_ACCESS("ServicePorts.getRequestingServicePairedBlockSID", portIdx, svcIdx)
+            %assign pairedPortIdx = CGMODEL_ACCESS("ServicePorts.getRequestingServicePairedPortIdx", portIdx, svcIdx)
+            %assign cgFcnName = CGMODEL_ACCESS("ServicePorts.getRequestingServiceCGFcnName", portIdx, svcIdx)
+            %assign cgVarName = CGMODEL_ACCESS("ServicePorts.getRequestingServiceCGVarName", portIdx, svcIdx)
+            %assign accessorFcnName = CGMODEL_ACCESS("ServicePorts.getRequestingServiceAccessorFcnName", portIdx, svcIdx)
+            %% Codegen name of the callee function that is invoked by the service interface method, only used for function ports
+            %assign calleeName = CGMODEL_ACCESS("ServicePorts.getRequestingServiceCalleeName", portIdx, svcIdx)
+            %assign modelConstructorArgIdx = CGMODEL_ACCESS("ServicePorts.getRequestingServiceModelConstructorArgIdx", portIdx, svcIdx)
+
+            %addtorecord requestingSvcs RequestingService { \
+                Name name \
+                NumInArgs numInArgs \
+                NumOutArgs numOutArgs \
+                DworkIdx dworkIdx \
+                ArginCGTypeIdx arginCGTypeIdx \
+                ArginCGTypeIdxFlat arginCGTypeIdxFlat \
+                ArgTypeIds argTypeIds \
+                ArginPassByType arginPassByType \
+                ArginIsComplex arginIsComplex \
+                DelegatedPortIdx delegatedPortIdx \
+                DelegatedDworkIdx delegatedDworkIdx \
+                DelegatedSID delegatedSID \
+                DelegatedServiceName "" \
+                PairedBlockSID pairedBlockSID \
+                PairedPortIdx pairedPortIdx \
+                CGFcnName cgFcnName \
+                CGVarName cgVarName \
+                AccessorFcnName accessorFcnName \
+                CalleeName calleeName \
+                ModelConstructorArgIdx modelConstructorArgIdx \
+            }
+        %endforeach
+        %addtorecord ::ServicePortInfoMap.ServicePort[portIdx] RequestingServices %<requestingSvcs>
+
+        %createrecord providingSvcs {}
+        %assign numServices = CGMODEL_ACCESS("ServicePorts.getNumProvidingServices", portIdx)
+        %foreach svcIdx = numServices
+            %assign name = CGMODEL_ACCESS("ServicePorts.getProvidingServiceName", portIdx, svcIdx)
+            %assign numInArgs = CGMODEL_ACCESS("ServicePorts.getProvidingServiceNumInArgs", portIdx, svcIdx)
+            %assign numOutArgs = CGMODEL_ACCESS("ServicePorts.getProvidingServiceNumOutArgs", portIdx, svcIdx)
+            %assign arginCGTypeIdx = CGMODEL_ACCESS("ServicePorts.getProvidingServiceArginCGTypeIdx", portIdx, svcIdx)
+            %assign arginCGTypeIdxFlat = CGMODEL_ACCESS("ServicePorts.getProvidingServiceArginCGTypeIdxFlat", portIdx, svcIdx)
+            %assign argTypeIds = CGMODEL_ACCESS("ServicePorts.getProvidingServiceArgTypeIds", portIdx, svcIdx)
+            %assign arginPassByType = CGMODEL_ACCESS("ServicePorts.getProvidingServiceArginPassByType", portIdx, svcIdx)
+            %assign arginIsComplex = CGMODEL_ACCESS("ServicePorts.getProvidingServiceArginIsComplex", portIdx, svcIdx)
+            %assign dworkIdx = CGMODEL_ACCESS("ServicePorts.getProvidingServiceDworkIdx", portIdx, svcIdx)
+            %assign delegatedPortIdx = CGMODEL_ACCESS("ServicePorts.getProvidingServiceDelegatedPortIdx", portIdx, svcIdx)
+            %assign delegatedDworkIdx = CGMODEL_ACCESS("ServicePorts.getProvidingServiceDelegatedDworkIdx", portIdx, svcIdx)
+            %assign delegatedSID = CGMODEL_ACCESS("ServicePorts.getProvidingServiceDelegatedSID", portIdx, svcIdx)
+            %assign pairedBlockSID = CGMODEL_ACCESS("ServicePorts.getProvidingServicePairedBlockSID", portIdx, svcIdx)
+            %assign pairedPortIdx = CGMODEL_ACCESS("ServicePorts.getProvidingServicePairedPortIdx", portIdx, svcIdx)
+            %assign cgFcnName = CGMODEL_ACCESS("ServicePorts.getProvidingServiceCGFcnName", portIdx, svcIdx)
+            %assign cgVarName = CGMODEL_ACCESS("ServicePorts.getProvidingServiceCGVarName", portIdx, svcIdx)
+            %assign accessorFcnName = CGMODEL_ACCESS("ServicePorts.getProvidingServiceAccessorFcnName", portIdx, svcIdx)
+            %% Codegen name of the callee function that is invoked by the service interface method, only used for function ports
+            %assign calleeName = CGMODEL_ACCESS("ServicePorts.getProvidingServiceCalleeName", portIdx, svcIdx)
+            %assign modelConstructorArgIdx = CGMODEL_ACCESS("ServicePorts.getProvidingServiceModelConstructorArgIdx", portIdx, svcIdx)
+
+            %addtorecord providingSvcs ProvidingService { \
+                Name name \
+                NumInArgs numInArgs \
+                NumOutArgs numOutArgs \
+                DworkIdx dworkIdx \
+                ArginCGTypeIdx arginCGTypeIdx \
+                ArginCGTypeIdxFlat arginCGTypeIdxFlat \
+                ArgTypeIds argTypeIds \
+                ArginPassByType arginPassByType \
+                ArginIsComplex arginIsComplex \
+                DelegatedPortIdx delegatedPortIdx \
+                DelegatedDworkIdx delegatedDworkIdx \
+                DelegatedSID delegatedSID \
+                DelegatedServiceName "" \
+                PairedBlockSID pairedBlockSID \
+                PairedPortIdx pairedPortIdx \
+                CGFcnName cgFcnName \
+                CGVarName cgVarName \
+                AccessorFcnName accessorFcnName \
+                CalleeName calleeName \
+                ModelConstructorArgIdx modelConstructorArgIdx \
+            }
+        %endforeach
+        %addtorecord ::ServicePortInfoMap.ServicePort[portIdx] ProvidingServices %<providingSvcs>
+    %endforeach
+%endfunction
+
+%function SLibDeclareServiceGlobalVarForCPPClassHelper(aSvc, argName,  argTypeName) void
+    %assign int32Type = LibGetDataTypeNameFromId(::CompiledModel.tSS_INT32)
+    %if !EXISTS(CPPClassTypeNames)
+        %assign ::CPPClassTypeNames = []
+    %endif
+
+    %assign classTypeName = CPPClassName + argTypeName
+    %assign classAlreadyEmitted = TLC_FALSE
+    %assign numClassTypeNames = SIZE(::CPPClassTypeNames)[1]
+    %foreach clsIdx = numClassTypeNames
+        %if ::CPPClassTypeNames[clsIdx] == classTypeName
+            %assign classAlreadyEmitted = TLC_TRUE
+            %break
+        %endif
+    %endforeach
+
+    %assign tmpBuf = ""
+    %if classAlreadyEmitted
+        %assign tmpBuf = tmpBuf + ...
+            "static %<classTypeName> %<argName>; "
+    %else
+        %assign typeIdx = LibCGTypeToSLType(aSvc.ArginCGTypeIdx[0])
+        %assign typeNamespace = LibCGTypeNamespace(aSvc.ArginCGTypeIdx[0])
+        %if (aSvc.ArginIsComplex[0])
+            %assign typeName = LibAddNamespaceToTypeName(LibGetDataTypeComplexNameFromId(typeIdx), typeNamespace)
+        %else
+            %assign typeName = LibAddNamespaceToTypeName(LibGetDataTypeNameFromId(typeIdx), typeNamespace)
+        %endif
+        %assign ::CPPClassTypeNames = ::CPPClassTypeNames + classTypeName
+        %assign initTermBuf = ""
+        %if aSvc.Name == "SendData"
+            %if aSvc.NumInArgs == 2
+                %assign fcnArgs = "const %<typeName>* data, %<int32Type> length, %<int32Type>* status"
+            %else
+                %assign fcnArgs = "const %<typeName>* data, %<int32Type>* status"
+            %endif
+            %assign fcnBody = "/* Add send data logic here */"
+        %elseif aSvc.Name == "RecvData"
+            %if aSvc.NumInArgs == 2
+                %assign fcnArgs = "%<typeName>* data, %<int32Type> length, %<int32Type>* status"
+            %else
+                %assign fcnArgs = "%<typeName>* data, %<int32Type>* status"
+            %endif
+            %assign fcnBody = "/* Add receive data logic here */"
+        %elseif aSvc.Name == "TakeData"
+            %assign fcnBody = ""
+            %assign initTermBuf = ...
+                "void init() {}" + ...
+                "void term() {}"
+        %else
+            %return ""
+        %endif
+        %assign svcFcnDecl = ""
+        %if !ISEMPTY(fcnBody)
+            %assign svcFcnDecl =  ...
+                "void %<aSvc.Name>(%<fcnArgs>) { \n" + ...
+                "%<fcnBody> " + ...
+                "}"
+        %endif
+
+        %assign tmpBuf = tmpBuf + ...
+            "class %<classTypeName> : public %<argTypeName>" + ...
+            "{ " + ...
+            "public: " + ...
+            "%<svcFcnDecl>" + ...
+            "%<initTermBuf>" + ...
+            "};" + ...
+            "static %<classTypeName> %<argName>; "
+    %endif
+    %return tmpBuf
+%endfunction
+
+%function SLibGetServiceFcnDecl(aSvc) void
+    %if ISSUBSTRING(aSvc.Name,"@")
+        %return ""
+    %endif
+    %assign fcnArgs = ""
+    %assign commaStr = ""
+    %foreach argIdx = aSvc.NumInArgs + aSvc.NumOutArgs
+        %assign cgTypeIdx = aSvc.ArginCGTypeIdx[argIdx]
+        %assign typeIdx = LibCGTypeToSLType(cgTypeIdx)
+        %if aSvc.ArginIsComplex[argIdx]
+            %assign typeName = LibGetDataTypeComplexNameFromId(typeIdx)
+        %else
+            %assign typeName = LibGetDataTypeNameFromId(typeIdx)
+        %endif
+        %assign isMatrix = LibCGTypeIsMatrix(cgTypeIdx) && (LibCGTypeWidth(cgTypeIdx) > 1)
+        %assign isStruct = LibIsStructDataType(typeIdx) && ...
+            !LibCGTypeIsComplex(cgTypeIdx) && !LibIsDataTypeMultiWordFixpt(typeIdx)
+        %assign passbyStr  = ""
+        %% If an input argument is of matrix type or pointer type add the "*"
+        %% If an input argument is of matrix type, add "const" to match what IR does
+        %if aSvc.ArginPassByType[argIdx] > 3 || ...
+            isMatrix || isStruct || ...
+            LibCGTypeIsPointer(cgTypeIdx)
+            %assign passbyStr = "*"
+        %endif
+        %assign constStr = ""
+        %if argIdx < aSvc.NumInArgs && (isMatrix || isStruct)
+            %assign constStr = "const "
+        %endif
+        %assign fcnArgs = "%<fcnArgs>%<commaStr> %<constStr>%<typeName>%<passbyStr> arg%<argIdx>"
+        %assign commaStr = ","
+    %endforeach %% aProvidingService.NumInArgs
+    %assign fcnBody = "/* Add logic here */"
+    %assign svcFcnDecl =  ...
+        "void %<aSvc.Name>(%<fcnArgs>) override { \n" + ...
+        "%<fcnBody> " + ...
+        "}"
+    %return svcFcnDecl
+%endfunction
+
+%function SLibDeclareServicePortGlobalVarForCPPClassHelper(aSvcPortIdx, argName,  argTypeName) void
+    %if !EXISTS(CPPClassTypeNames)
+        %assign ::CPPClassTypeNames = []
+    %endif
+
+    %assign classTypeName = CPPClassName + ServicePort[aSvcPortIdx].CGName + "T"
+    %assign classAlreadyEmitted = TLC_FALSE
+    %assign numClassTypeNames = SIZE(::CPPClassTypeNames)[1]
+    %foreach clsIdx = numClassTypeNames
+        %if ::CPPClassTypeNames[clsIdx] == classTypeName
+            %assign classAlreadyEmitted = TLC_TRUE
+            %break
+        %endif
+    %endforeach
+
+    %assign tmpBuf = ""
+    %if classAlreadyEmitted
+        %assign tmpBuf = tmpBuf + ...
+            "static %<classTypeName> %<argName>; "
+    %else
+        %with ServicePortInfoMap
+            %assign constructorArgIdx = ServicePort[aSvcPortIdx].ModelConstructorArgIdx
+            %assign svcPortKind = ServicePort[aSvcPortIdx].Kind
+            %assign svcPortExternalPortIdx = ServicePort[aSvcPortIdx].ExternalPortIdx
+            %assign svcPortType = ServicePort[aSvcPortIdx].ServicePortType
+            %assign svcFcnDecls = ""
+            %assign methodNames = []
+            %foreach portIdx = NumServicePorts
+                %if portIdx < aSvcPortIdx
+                    %continue
+                %endif
+                %assign thisPort = ServicePort[portIdx]
+                %if thisPort.ModelConstructorArgIdx != constructorArgIdx
+                    %continue
+                %endif
+                %% If the model constructor arg index matches it does not necessarily
+                %% mean the services are part of this service port. For example,
+                %% message ports will have the constructorArgIdx set to 0 at the port
+                %% level but set to some other value at the service level (both the port
+                %% and the services associated with that port have constructorArgIdxs).
+                %% We need to check that the port kind and type also match. We have to
+                %% check ExternalPortIdx is not set to -1 to deal with service ports
+                %% on model blocks (which will match on constructorArgIdx, Kind, and Type
+                %% but not on ExternalPortIdx).
+                %if thisPort.Kind != svcPortKind
+                    %continue
+                %endif
+                %if thisPort.ServicePortType != svcPortType
+                    %continue
+                %endif
+                %if thisPort.ExternalPortIdx == -1
+                    %% Cannot check that ExternalPortIdx is the same since for function ports
+                    %% two ports scoped to the same name will have different ExternalPortIdxs.
+                    %% We can check that it is not -1 though to omit ports on model blocks from
+                    %% adding functions to this port class
+                    %continue
+                %endif
+                %% First accumulate all the providing services for
+                %% all the service ports with the same constructor arg index
+                %% Note: For bus element ports, we have one service port per
+                %% bus element. So if a BEP has three elements, we will have
+                %% three service ports each of which will have one service
+                %% rather than having one service port which has three services
+                %% (this is because of the way BEPs are modeled - each element
+                %% is modeled as an input or output port)
+                %assign providingServices = thisPort.ProvidingServices
+                %if !ISEMPTY(providingServices)
+                    %assign numProvidingSvc = SIZE(providingServices.ProvidingService)[1]
+                    %foreach i=numProvidingSvc
+                        %assign aSvc = providingServices.ProvidingService[i]
+                        %assign numMethodNames = SIZE(methodNames)[1]
+                        %assign methodAreadyEmitted = TLC_FALSE
+                        %foreach mthIdx = numMethodNames
+                            %if methodNames[mthIdx] == aSvc.CGFcnName
+                                %assign methodAreadyEmitted = TLC_TRUE
+                                %break
+                            %endif
+                        %endforeach
+                        %if !methodAreadyEmitted
+                            %assign svcFcnDecls = "%<svcFcnDecls>\n" + SLibGetServiceFcnDecl(aSvc)
+                            %assign methodNames = methodNames + aSvc.CGFcnName
+                        %endif
+                    %endforeach %% numProvidingSvc
+                %endif %% !ISEMPTY(aProvidingService)
+
+                %assign requestingServices = thisPort.RequestingServices
+                %if !ISEMPTY(requestingServices)
+                    %assign numRequestingSvc = SIZE(requestingServices.RequestingService)[1]
+                    %foreach i=numRequestingSvc
+                        %assign aSvc = requestingServices.RequestingService[i]
+                        %assign numMethodNames = SIZE(methodNames)[1]
+                        %assign methodAreadyEmitted = TLC_FALSE
+                        %foreach mthIdx = numMethodNames
+                            %if methodNames[mthIdx] == aSvc.CGFcnName
+                                %assign methodAreadyEmitted = TLC_TRUE
+                                %break
+                            %endif
+                        %endforeach
+                        %if !methodAreadyEmitted
+                            %assign svcFcnDecls = "%<svcFcnDecls>\n" + SLibGetServiceFcnDecl(aSvc)
+                            %assign methodNames = methodNames + aSvc.CGFcnName
+                        %endif
+                    %endforeach %% numRequestingSvc
+                %endif %% !ISEMPTY(aRequestingService)
+            %endforeach
+
+            %assign tmpBuf = tmpBuf + ...
+                "class %<classTypeName> : public %<argTypeName>" + ...
+                "{ " + ...
+                "public: " + ...
+                "%<svcFcnDecls>" + ...
+                "};" + ...
+                "static %<classTypeName> %<argName>; "
+        %endwith
+    %endif %%classAlreadyEmitted
+    %return tmpBuf
+%endfunction
+
+%function SLibDeclareServicePortGlobalVarForCPPClass(constrFcn, argIdx) void
+    %if !SLibServicePortsExist()
+        %return
+    %endif
+    %assign tmpBuf = ""
+    %assign argName = constrFcn.ArgNames[argIdx]
+    %assign argType = constrFcn.ArgTypes[argIdx]
+    %if argType < 0
+        %return tmpBuf
+    %endif
+    %assign argTypeName = SLibGetTypeNameFromCGType(argType)
+    %assign argTypeName = STRNREP(argTypeName, "&", "", 1)
+    %assign argTypeName = STRREP(argTypeName, " ", "")
+    %with ServicePortInfoMap
+        %foreach portIdx = NumServicePorts
+            %assign thisPort = ServicePort[portIdx]
+
+            %if thisPort.ModelConstructorArgIdx == argIdx && thisPort.Kind == "function"
+                %return SLibDeclareServicePortGlobalVarForCPPClassHelper(portIdx, argName, argTypeName)
+            %endif
+
+            %assign providingServices = thisPort.ProvidingServices
+            %if !ISEMPTY(providingServices)
+                %assign numProvidingSvc = SIZE(providingServices.ProvidingService)[1]
+                %foreach i=numProvidingSvc
+                    %assign aProvidingService = providingServices.ProvidingService[i]
+                    %if aProvidingService.ModelConstructorArgIdx == argIdx
+                        %return SLibDeclareServiceGlobalVarForCPPClassHelper(aProvidingService, argName, argTypeName)
+                    %endif
+                %endforeach %% numProvidingSvc
+            %endif %% !ISEMPTY(aProvidingService)
+
+            %assign requestingServices = thisPort.RequestingServices
+            %if !ISEMPTY(requestingServices)
+                %assign numRequestingSvc = SIZE(requestingServices.RequestingService)[1]
+                %foreach i=numRequestingSvc
+                    %assign aRequestingService = requestingServices.RequestingService[i]
+                    %if aRequestingService.ModelConstructorArgIdx == argIdx
+                        %return SLibDeclareServiceGlobalVarForCPPClassHelper(aRequestingService, argName, argTypeName)
+                    %endif
+                %endforeach %% numRequestingSvc
+            %endif %% !ISEMPTY(aRequestingService)
+        %endforeach %% NumServicePorts
+    %endwith %%ServicePortInfoMap
+    %return tmpBuf
+%endfunction
+
+%function SLibEmitMessageQueueFunctions() Output
+    %% Currently C code gen is not supported. This function is being
+    %% kept for when C is supported
+    %if GenerateClassInterface
+        %return
+    %endif
+
+    %if !SLibServicePortsExist()
+        %return
+    %endif
+    %with ServicePortInfoMap
+        %foreach portIdx = NumServicePorts
+            %assign thisPort = ServicePort[portIdx]
+            %assign aSID = thisPort.SID
+            %assign providingServices = thisPort.ProvidingServices
+            %if !ISEMPTY(providingServices) && thisPort.IsTopMdlRootSP
+                %assign numProvidingSvc = SIZE(providingServices.ProvidingService)[1]
+                %foreach i=numProvidingSvc
+                    %assign aProvidingService = providingServices.ProvidingService[i]
+                    %if aProvidingService.DworkIdx >= 0
+                        %if aProvidingService.Name == "RecvData"
+                            %<SLibEmitReadMessage(aProvidingService)>
+                        %elseif aProvidingService.Name == "SendData"
+                            %<SLibEmitSendMessage(aProvidingService)>
+                        %endif
+                    %endif
+                %endforeach
+            %endif
+        %endforeach
+    %endwith
+%endfunction
+
+%function SLibEmitReadMessage(aService) Output
+    %assign int32Type = LibGetDataTypeNameFromId(::CompiledModel.tSS_INT32)
+    %% Currently C code gen is not supported. This function is being
+    %% kept for when C is supported
+    %if SLibRecvDataForSampleMainNeeded()
+        %assign typeIdx = LibCGTypeToSLType(aService.ArginCGTypeIdx[1])
+        %assign typeName = LibCGTypeName(aService.ArginCGTypeIdx[1])
+        %assign cTypeName = ::CompiledModel.DataTypes.DataType[typeIdx].DataTypeName
+        void receiveData_%<cTypeName>(void* host, %<typeName>* data, %<int32Type> length, %<int32Type>* status)
+        {
+            /* Add receive data logic here */
+        }
+    %endif
+%endfunction
+
+%function SLibEmitSendMessage(aService) Output
+    %assign int32Type = LibGetDataTypeNameFromId(::CompiledModel.tSS_INT32)
+    %% Currently C code gen is not supported. This function is being
+    %% kept for when C is supported
+    %if SLibSendDataForSampleMainNeeded()
+        %assign typeIdx = LibCGTypeToSLType(aService.ArginCGTypeIdx[1])
+        %assign typeName = LibCGTypeName(aService.ArginCGTypeIdx[1])
+        %assign cTypeName = ::CompiledModel.DataTypes.DataType[typeIdx].DataTypeName
+        void sendData_%<cTypeName>(void* host, const %<typeName>* data, %<int32Type> length, %<int32Type>* status)
+        {
+            /* Add send data logic here */
+        }
+    %endif
+%endfunction
+
+%function SLibRecvDataForSampleMainNeeded() void
+    %if SLibModelHasServicePortDWork() && ...
+        !IsModelReferenceTarget() && ...
+        !GenerateClassInterface
+        %with ServicePortInfoMap
+            %foreach portIdx = NumServicePorts
+                %assign thisPort = ServicePort[portIdx]
+                %assign aSID = thisPort.SID
+                %assign providingServices = thisPort.ProvidingServices
+                %if !ISEMPTY(providingServices)
+                    %assign numProvidingSvc = SIZE(providingServices.ProvidingService)[1]
+                    %foreach i=numProvidingSvc
+                        %assign aProvidingService = providingServices.ProvidingService[i]
+                        %if aProvidingService.DworkIdx >= 0 && aProvidingService.Name == "RecvData"
+                            %return TLC_TRUE
+                        %endif
+                    %endforeach %% numProvidingSvc
+                %endif %% !ISEMPTY(aProvidingService)
+            %endforeach %% NumServicePorts
+        %endwith %%ServicePortInfoMap
+    %endif
+    %return TLC_FALSE
+%endfunction
+
+%function SLibSendDataForSampleMainNeeded() void
+    %if SLibModelHasServicePortDWork() && ...
+        !IsModelReferenceTarget() && ...
+        !GenerateClassInterface
+        %with ServicePortInfoMap
+            %foreach portIdx = NumServicePorts
+                %assign thisPort = ServicePort[portIdx]
+                %assign aSID = thisPort.SID
+                %assign providingServices = thisPort.ProvidingServices
+                %if !ISEMPTY(providingServices)
+                    %assign numProvidingSvc = SIZE(providingServices.ProvidingService)[1]
+                    %foreach i=numProvidingSvc
+                        %assign aProvidingService = providingServices.ProvidingService[i]
+                        %if aProvidingService.DworkIdx >= 0 && aProvidingService.Name == "SendData"
+                            %return TLC_TRUE
+                        %endif
+                    %endforeach %% numProvidingSvc
+                %endif %% !ISEMPTY(aProvidingService)
+            %endforeach %% NumServicePorts
+        %endwith %%ServicePortInfoMap
+    %endif
+    %return TLC_FALSE
+%endfunction
+
+%function SLibEmitRootPortServiceInitForSampleMain() Output
+    %if !SLibServicePortsExist()
+        %return
+    %endif
+    %% Currently C code gen is not supported. This function is being
+    %% kept for when C is supported
+    %if GenerateClassInterface
+        %return
+    %endif
+
+    %if SLibModelHasServicePortDWork() && !IsModelReferenceTarget()
+        %with ServicePortInfoMap
+            %openfile serviceBuf
+            %foreach portIdx = NumServicePorts
+                %assign thisPort = ServicePort[portIdx]
+
+                %assign providingServices = thisPort.ProvidingServices
+                %if !ISEMPTY(providingServices)
+                    %assign numProvidingSvc = SIZE(providingServices.ProvidingService)[1]
+                    %foreach i=numProvidingSvc
+                        %assign aProvidingService = providingServices.ProvidingService[i]
+                        %if aProvidingService.DworkIdx >= 0
+                            %assign typeIdx = LibCGTypeToSLType(aProvidingService.ArginCGTypeIdx[1])
+                            %assign cTypeName = ::CompiledModel.DataTypes.DataType[typeIdx].DataTypeName
+                            %assign dwRec = ::CompiledModel.DWorks.DWork[aProvidingService.DworkIdx]
+                            %if dwRec.IsRemovedInIR
+                                %continue
+                            %endif
+
+                            %assign providerBlk = System[dwRec.SigSrc[0]].Block[dwRec.SigSrc[2]]
+                            %if (TYPE(providerBlk.Type) == "Identifier" && ...
+                                (providerBlk.Type == "Inport" || providerBlk.Type == "Outport" || providerBlk.Type == "Opaque"))
+                                %assign dworkvar = providerBlk.Identifier + "_" + dwRec.Name
+                                %assign serviceFcnPtr = LibGetDWorkStruct() + "." + dworkvar + "." + aProvidingService.Name
+                                %if aProvidingService.Name == "RecvData"
+                                    %assign serviceFcnPtrRHS = "receiveData_%<cTypeName>"
+                                %elseif aProvidingService.Name == "SendData"
+                                    %assign serviceFcnPtrRHS = "sendData_%<cTypeName>"
+                                %endif
+                                %assign nulldef = SLibGetNullDefinitionFromTfl()
+                                %assign hostPtr = LibGetDWorkStruct() + "." + dworkvar + ".host"
+                                %assign ppIf = SLibIfVariantConditionForm(dwRec.VariantCondition)
+                                %assign ppEndif = SLibEndIfVariantConditionForm(dwRec.VariantCondition)
+                                %<ppIf>
+                                %<serviceFcnPtr> = %<serviceFcnPtrRHS>;
+                                %<hostPtr> = %<nulldef>;
+                                %<ppEndif>
+                            %endif
+                        %endif
+                    %endforeach %% numProvidingSvc
+                %endif %% !ISEMPTY(aProvidingService)
+            %endforeach %% NumServicePorts
+            %closefile serviceBuf
+        %endwith %%ServicePortInfoMap
+        %if !ISEMPTY(serviceBuf)
+            /* Initialize message service DWork */
+            %<serviceBuf>
+        %endif
+    %endif
+%endfunction
+
+%function SLibModelHasServicePortDWork() void
+    %return CGMODEL_ACCESS("CGModel.hasServicePortDWork")
+%endfunction
+
+%function SLibGetModelBlockStructDWorkArgIfExists(aBlock, fcnType) void
+    %assign modelBlkDWork = ""
+    %assign blkInterface =  GetModelrefInterface(aBlock)
+    %if SLibGetStructDWorkIdxForModelRefBlk(aBlock) >= 0 || ...
+        blkInterface.rtmAllocateInParent %% Even though the API says RTM but this should work for model self in general
+        %assign aInstanceIdx = 0
+        %assign modelBlkDWork = SLibGetModelBlockStructDWorkArg([],GetBaseSystemIdx(),aBlock,fcnType,aInstanceIdx)
+    %endif
+    %return modelBlkDWork
+%endfunction
+
+%function SLibGetCompleteServiceDWorkPath(varGroupElemId, isCoderData) void
+    %if isCoderData
+        %assign selfAccess = ""
+    %else
+        %assign selfAccess = "dwork."
+    %endif
+    %if ::CompiledModel.ModelRefSimpInterface
+        %assign dworkPath = selfAccess + varGroupElemId
+    %elseif SLibSimTargetUsesModelSelf()
+        %assign dworkPath = "rtm.dwork." + varGroupElemId
+    %elseif ModelrefBlockNeedsDwork()
+        %if isCoderData
+            %assign dworkPath = "rtm." + varGroupElemId
+        %else
+            %assign dworkPath = "rtdw." + varGroupElemId
+        %endif
+    %else
+        %assign dworkPath = FcnSysVarGroupNonreusedName(System[NumSystems-2],"DWork") + "." + varGroupElemId
+    %endif
+    %return dworkPath
+%endfunction
+
+%function SLibGetServiceDWorkPathFromModelSelfIfNecessary(varGroupElemId, isCoderData) void
+    %if isCoderData
+        %assign selfAccess = ""
+    %else
+        %assign selfAccess = "dwork."
+    %endif
+    %if OkToMultiInstanceModelref && SLibGetSelfCoderDataGroupVarGroupIndex() > -1
+        %% This is to deal with the SimTarget case for model self:
+        %% Within the model, dwork is accessed through MdlrefDW's rtm field. But MdlrefDW is not
+        %% added to a parent model.
+        %assign dworkPathFromModelSelf =  selfAccess + varGroupElemId
+    %else
+        %assign dworkPathFromModelSelf = ""
+    %endif
+    %return dworkPathFromModelSelf
+%endfunction
+
+%function SLibGetChildModelServiceDWorkPath(childSvc)
+    %if !ISEMPTY(childSvc.DWorkPathFromModelSelf)
+        %return childSvc.DWorkPathFromModelSelf
+    %else
+        %return childSvc.DWorkPath
+    %endif
+%endfunction
+
+%function SLibCallServiceFunctionCpp(sid, serviceName, portIdx, portType, dworkIdx, payload, length, outVar) Output
+    %% This function is valid only for non-CPP encap codegen
+    %assert GenerateClassInterface
+    %assign sysIdx = GetBaseSystemIdx()
+    %assign blkIdx = SLibGetBlockIdxFromSID(System[sysIdx], sid)
+    %assert blkIdx > -1
+    %assign aBlock = System[sysIdx].Block[blkIdx]
+    %if aBlock.Type == "ModelReference"
+        %assign pairedService = SLibGetPairedServiceHelper(portIdx, serviceName, TLC_FALSE, portType, aBlock)
+        %assert !ISEMPTY(pairedService)
+        %assign modelBlkVarName = SLibGetCPPMdlRefObjName(sysIdx, blkIdx)
+        %if !ISEMPTY(modelBlkVarName)
+            %assign serviceDWorkPath = modelBlkVarName +  "." + pairedService.AccessorFcnName + "()"
+            %assign serviceFcn =  serviceDWorkPath + "." + serviceName
+        %else
+            %assign serviceDWorkPath = dworkPath
+            %assign serviceFcn =  serviceDWorkPath + "." + serviceName
+        %endif
+    %endif
+    %if !ISEMPTY(payload)
+        %if !ISEMPTY(outVar)
+            %if !ISEMPTY(length)
+                %<serviceFcn>(%<payload>, %<length>, %<outVar>);
+            %else
+                %<serviceFcn>(%<payload>, %<outVar>);
+            %endif
+        %else
+            %if !ISEMPTY(length)
+                %<serviceFcn>(%<payload>, %<length>);
+            %else
+                %<serviceFcn>(%<payload>);
+            %endif
+        %endif
+    %else
+        %if !ISEMPTY(outVar)
+            %<serviceFcn>(%<outVar>);
+        %else
+            %<serviceFcn>();
+        %endif
+    %endif
+%endfunction
+
+%function SLibCallServiceFunction(sid, serviceName, portIdx, portType, dworkIdx, payload, length, outVar) Output
+    %assign aPortType = "SVC_INVALID_PORT"
+    %if portType == 0
+        %assign aPortType = "SVC_IN_PORT"
+    %elseif portType == 1
+        %assign aPortType = "SVC_OUT_PORT"
+    %endif
+    %% This function is valid only for non-CPP encap codegen
+    %if GenerateClassInterface
+        %<SLibCallServiceFunctionCpp(sid, serviceName, portIdx, aPortType, dworkIdx, payload, length, outVar)>
+        %return
+    %endif
+
+    %assign sysIdx = GetBaseSystemIdx()
+    %assign blkIdx = SLibGetBlockIdxFromSID(System[sysIdx], sid)
+    %if blkIdx == -1 && NumSystems > 1
+        %% Models with bus element ports generate a hidden root subsystem like modelref but
+        %% without marking the subsystem as a hidden root subsystem. So if we don't find
+        %% the block we need at root, look one subsystem down (possibly the hidden root subsystem).
+        %% We could verify the name of the subsystem is "TmpModelReferenceSubsystem" but I'm not
+        %% sure it really matters
+        %assign sysIdx = sysIdx - 1
+        %assign blkIdx = SLibGetBlockIdxFromSID(System[sysIdx], sid)
+        %if blkIdx == -1
+            %assign errTxt = "Error: Did not find block for given SID"
+            %<LibReportFatalError(errTxt)>
+        %endif
+    %endif
+
+    %assign aBlock = System[sysIdx].Block[blkIdx]
+    %if aBlock.Type == "ModelReference"
+        %assign pairedService = SLibGetPairedServiceHelper(portIdx, serviceName, TLC_FALSE, aPortType, aBlock)
+        %assert !ISEMPTY(pairedService)
+        %assign dworkPath = SLibGetChildModelServiceDWorkPath(pairedService)
+        %assert !ISEMPTY(dworkPath)
+        %assign modelBlkDWork = SLibGetModelBlockStructDWorkArgIfExists(aBlock,::BlockFcn)
+        %if !ISEMPTY(modelBlkDWork)
+            %assign serviceDWorkPath = modelBlkDWork +  "." + dworkPath
+            %assign serviceFcn =  serviceDWorkPath + "." + serviceName
+            %assign host = serviceDWorkPath + ".host"
+        %else
+            %assign serviceDWorkPath = dworkPath
+            %assign serviceFcn =  serviceDWorkPath + "." + serviceName
+            %assign host = serviceDWorkPath + ".host"
+        %endif
+    %else
+        %assign dwRec = System[sysIdx].Block[blkIdx].DWork[dworkIdx]
+        %assign dworkvar = System[sysIdx].Block[blkIdx].Identifier + "_" + dwRec.Name
+        %assign serviceFcn = LibGetDWorkStruct() + "." + dworkvar + "." + serviceName
+        %assign host = LibGetDWorkStruct() + "." + dworkvar + "." + "host"
+    %endif
+
+    %assign nulldef = SLibGetNullDefinitionFromTfl()
+    if (%<serviceFcn> != %<nulldef>)
+    {
+        %if !ISEMPTY(payload)
+            %if !ISEMPTY(outVar)
+                %if !ISEMPTY(length)
+                    %<serviceFcn>(%<host>, %<payload>, %<length>, %<outVar>);
+                %else
+                    %<serviceFcn>(%<host>, %<payload>, %<outVar>);
+                %endif
+            %else
+                %if !ISEMPTY(length)
+                    %<serviceFcn>(%<host>, %<payload>, %<length>);
+                %else
+                    %<serviceFcn>(%<host>, %<payload>);
+                %endif
+            %endif
+        %else
+            %if !ISEMPTY(outVar)
+                %<serviceFcn>(%<host>, %<outVar>);
+            %else
+                %<serviceFcn>(%<host>);
+            %endif
+        %endif
+    }
+%endfunction
+
+%function FcnCacheServiceFcnLocalVars(thisSystem, sysFcn, cTID, isRG) void
+    %assign isCPPEncapMdlRef = GenerateClassInterface && ...
+        IsModelReferenceBaseSys(thisSystem)
+    %assign hostUnused = TLC_TRUE
+    %with thisSystem.Interface
+        %% Handle the casting of the "host" argument of a service function
+        %if SysFcnArgNeeded(sysFcn, RTMArgDef, cTID, isRG)
+            %openfile localRTMVar
+            %if ::CompiledModel.RTWCGModules.RTWCGModule[thisSystem.CGIRModuleIdx].SimplifiedInterface
+                %<::tSimStructType> *%<::tSimStruct> = (%<FcnGetSFcnDWorkType(thisSystem)>*) host;
+            %else
+                %<::tSimStructType> *%<::tSimStruct> = &((%<FcnGetSFcnDWorkType(thisSystem)>*)host)->rtm;
+            %endif
+            %closefile localRTMVar
+            %<FcnCacheModelRefLocalVars(thisSystem, sysFcn, cTID, localRTMVar)>
+            %assign hostUnused = TLC_FALSE
+        %endif
+        %if SysFcnArgNeeded(sysFcn, DWorkArgDef, cTID, isRG)
+            %if !GenerateClassInterface && !SLibGetUseRTMcgType()
+                %assign varGroupIdx = FcnSysVarGroupIndex(thisSystem, "DWork", 0)
+                %assign varGroup = ::CompiledModel.VarGroups.VarGroup[varGroupIdx]
+                %assign varGroupLocalName = varGroup.LocalName
+                %assign varGroupType = FcnSysVarGroupType(thisSystem,"DWork")
+                %openfile localDWorkVar
+                %<varGroupType> *%<varGroupLocalName> = &((%<FcnGetSFcnDWorkType(thisSystem)>*)host)->rtdw;
+                %closefile localDWorkVar
+                %<FcnCacheModelRefLocalVars(thisSystem, sysFcn, cTID, localDWorkVar)>
+                %assign hostUnused = TLC_FALSE
+            %endif
+        %endif
+        %if !isCPPEncapMdlRef && SysFcnArgNeeded(sysFcn, BlockIOArgDef, cTID, isRG)
+            %assign varGroupIdx = FcnSysVarGroupIndex(thisSystem, "BlockIO", 0)
+            %assign varGroup = ::CompiledModel.VarGroups.VarGroup[varGroupIdx]
+            %assign varGroupLocalName = varGroup.LocalName
+            %assign varGroupType = FcnSysVarGroupType(thisSystem,"BlockIO")
+            %openfile localBlockIOVar
+            %<varGroupType> *%<varGroupLocalName> = &((%<FcnGetSFcnDWorkType(thisSystem)>*)host)->rtb;
+            %closefile localBlockIOVar
+            %<FcnCacheModelRefLocalVars(thisSystem, sysFcn, cTID, localBlockIOVar)>
+            %assign hostUnused = TLC_FALSE
+        %endif
+        %if hostUnused
+            %openfile localUnused
+            %<SLibUnusedParameter("host")>
+            %closefile localUnused
+            %<FcnCacheModelRefLocalVars(thisSystem, sysFcn, cTID, localUnused)>
+        %endif
+    %endwith
+%endfunction
+
+%function SLibGetPairedServiceAtMdlBoundary(aPort, aService, aBlk) void
+    %assign isDelegation = aService.DelegatedPortIdx >= 0
+    %assign portIdx = aPort.ServicePortIdx
+    %if isDelegation
+        %assign portIdx = aService.DelegatedPortIdx
+    %endif
+    %return SLibGetPairedServiceHelper(portIdx, aService.Name, isDelegation, aPort.ServicePortType, aBlk)
+%endfunction
+
+%function SLibPortTypesAreInOutPair(aPortType1, aPortType2) void
+    %if aPortType1 == "SVC_IN_PORT" && aPortType2 == "SVC_OUT_PORT"
+        %return TLC_TRUE
+    %endif
+    %if aPortType2 == "SVC_IN_PORT" && aPortType1 == "SVC_OUT_PORT"
+        %return TLC_TRUE
+    %endif
+    %return TLC_FALSE
+%endfunction
+
+%function SLibGetPairedServicePort(aServicePortIdx, isDelegation, aPortType, aBlk) void
+    %if aBlk.Type == "ModelReference"
+        %assign interface = GetModelrefInterface(aBlk)
+        %foreach portIdx = interface.NumServicePorts
+            %assign thisPort = interface.ServicePort[portIdx]
+            %assign portTypesAreInOutPair = SLibPortTypesAreInOutPair(thisPort.ServicePortType, aPortType)
+            %assign portTypesAreTheSame = thisPort.ServicePortType == aPortType
+            %assign portTypesOk = (!isDelegation && portTypesAreInOutPair) || (isDelegation && portTypesAreTheSame)
+            %if portTypesOk && thisPort.ExternalPortIdx == aServicePortIdx
+                %return thisPort
+            %endif
+        %endforeach
+    %endif
+    %return ""
+%endfunction
+
+%function SLibGetPairedServiceHelper(aServicePortIdx, aServiceName, isDelegation, aPortType, aBlk) void
+    %if aBlk.Type == "ModelReference"
+        %assign interface = GetModelrefInterface(aBlk)
+        %foreach portIdx = interface.NumServicePorts
+            %assign thisPort = interface.ServicePort[portIdx]
+            %assign portTypesAreInOutPair = SLibPortTypesAreInOutPair(thisPort.ServicePortType, aPortType)
+            %assign portTypesAreTheSame = thisPort.ServicePortType == aPortType
+            %assign portTypesOk = (!isDelegation && portTypesAreInOutPair) || (isDelegation && portTypesAreTheSame)
+            %if ISFIELD(thisPort, "RequestingService")
+                %assign requestingServices = thisPort.RequestingService
+                %assign numRequestingSvc = SIZE(requestingServices)[1]
+                %if numRequestingSvc > 0 && ...
+                    thisPort.ExternalPortIdx == aServicePortIdx && ...
+                    portTypesOk
+                    %if numRequestingSvc == 1
+                        %if requestingServices.Name == aServiceName
+                            %return requestingServices
+                        %endif
+                    %else
+                        %foreach svcIdx=numRequestingSvc
+                            %assign thisService = requestingServices[svcIdx]
+                            %if thisService.Name == aServiceName
+                                %return thisService
+                            %endif
+                        %endforeach
+                    %endif
+                %endif
+            %endif
+            %if ISFIELD(thisPort, "ProvidingService")
+                %assign providingServices = thisPort.ProvidingService
+                %assign numProvidingSvc = SIZE(providingServices)[1]
+                %if numProvidingSvc > 0 && ...
+                    thisPort.ExternalPortIdx == aServicePortIdx && ...
+                    portTypesOk
+                    %if numProvidingSvc == 1
+                        %if providingServices.Name == aServiceName
+                            %return providingServices
+                        %endif
+                    %else
+                        %foreach svcIdx=numProvidingSvc
+                            %assign thisService = providingServices[svcIdx]
+                            %if thisService.Name == aServiceName
+                                %return thisService
+                            %endif
+                        %endforeach
+                    %endif
+                %endif
+            %endif
+        %endforeach
+    %endif
+    %return ""
+%endfunction
+
+%function SLibGetPairedServiceAndPort(aPort, aService) void
+    %% This returns a service port and service directly
+    %% connected to a given service port and service
+    %% ---\       /---
+    %%    |       |
+    %%    |======>|    Give p1 and a service in p1
+    %%    |p1   p2|    Return p2 and the matching service in p2
+    %% ---/       \---
+    %%
+    %createrecord aRecord { port ""; service ""}
+    %if SLibServicePortsExist() && !ISEMPTY(aService.PairedBlockSID)
+        %with ServicePortInfoMap
+            %foreach portIdx = NumServicePorts
+                %assign thisPort = ServicePort[portIdx]
+                %if thisPort.ServicePortType == aPort.ServicePortType || ...
+                    thisPort.ServicePortIdx!= aService.PairedPortIdx
+                    %continue
+                %endif
+                %assign aSID = thisPort.SID
+                %if aSID == aService.PairedBlockSID
+                    %assign providingServices = thisPort.ProvidingServices
+                    %if !ISEMPTY(providingServices)
+                        %assign numProvidingSvc = SIZE(providingServices.ProvidingService)[1]
+                        %foreach i=numProvidingSvc
+                            %assign aProvidingService = providingServices.ProvidingService[i]
+                            %if aProvidingService.Name == aService.Name
+                                %assign aRecord.port = thisPort
+                                %assign aRecord.service = aProvidingService
+                                %return aRecord
+                            %endif
+                        %endforeach
+                    %endif
+                    %assign requestingServices = thisPort.RequestingServices
+                    %if !ISEMPTY(requestingServices)
+                        %assign numRequestingSvc = SIZE(requestingServices.RequestingService)[1]
+                        %foreach i=numRequestingSvc
+                            %assign aRequestingService = requestingServices.RequestingService[i]
+                            %if aRequestingService.Name == aService.Name
+                                %assign aRecord.port = thisPort
+                                %assign aRecord.service = aRequestingService
+                                %return aRecord
+                            %endif
+                        %endforeach
+                    %endif
+                %endif
+            %endforeach
+        %endwith
+    %endif
+    %return aRecord
+%endfunction
+
+%function SLibGetModelBlockDwork(aMdlBlk) void
+    %% Helper function to return the DWork element for the given model block
+    %assign modelBlkDWork = []
+    %assign sysIdx = GetBaseSystemIdx()
+    %with System[sysIdx]
+        %assign dworkIdx = SLibGetStructDWorkIdxForModelRefBlk(aMdlBlk)
+        %if dworkIdx < 0
+            %assign blkInterface = GetModelrefInterface(aMdlBlk)
+            %if blkInterface.rtmAllocateInParent
+                %assign modelBlkDWork = SLibGetPathToModelBlockSelf(aMdlBlk)
+            %elseif ModelrefBlockNeedsDwork()
+                %% return empty (assert?)
+                %return modelBlkDWork
+            %else
+                %% single instance model block
+                %assign modelBlkDWork = FcnSysVarGroupNonreusedName(System[NumSystems-2],"DWork")
+            %endif
+        %else
+            %assign dwRec = ...
+                ::CompiledModel.DWorks.DWork[aMdlBlk.DWork[dworkIdx].FirstRootIdx]
+            %assign modelBlkDWork = LibGetRecordIdentifier(dwRec)
+        %endif
+    %endwith
+    %return modelBlkDWork
+%endfunction
+
+%function SLibGetDelegatedServiceInfoForFunctionPort(aPort, aService) void
+    %% Helper function to return DelegatedServiceName for the given port and service.
+    %% Elements of the returned record need to be the same as those return by
+    %% SLibGetDelegatedServiceInfo even if they are left unset here
+    %createrecord aRecord { path ""; host ""; serviceName ""; variantCondition ""}
+    %if aPort.Kind == "function"
+        %assign paired = SLibGetPairedServiceAndPort(aPort, aService)
+        %if !ISEMPTY(paired.port)
+            %if !ISEMPTY(aService.PairedBlockSID)
+                %assign mdlBlk = SLibGetMdlBlockFromSID(aService.PairedBlockSID)
+                %if !ISEMPTY(mdlBlk)
+                    %assign pairedServiceInMdlBlk = SLibGetPairedServiceAtMdlBoundary(paired.port, paired.service, mdlBlk)
+                    %if !ISEMPTY(pairedServiceInMdlBlk)
+                        %assign aRecord.serviceName = pairedServiceInMdlBlk.DelegatedServiceName
+                    %endif
+                %endif
+            %endif
+        %else
+            %% Store the wrapper function name in this model in this services DelegatedServiceName field
+            %assign aRecord.serviceName = aService.DelegatedServiceName
+        %endif
+    %endif
+    %return aRecord
+%endfunction
+
+%function SLibGetDelegatedServiceInfo(aPort, aService) void
+    %%    /-------------  Given a service port p2,
+    %%    |               and a service in that port
+    %%  p2| p1            this function return the delegation
+    %%===>| o===>         info stored in the child's service port p1
+    %%    | In1
+    %%    |
+    %%    \-------------
+    %if aPort.Kind == "function"
+        %return SLibGetDelegatedServiceInfoForFunctionPort(aPort, aService)
+    %endif
+
+    %createrecord aRecord { path ""; host ""; serviceName ""; variantCondition ""}
+    %if aService.DelegatedDworkIdx >= 0 ||  aService.DelegatedDworkIdx == -2
+        %assign paired = SLibGetPairedServiceAndPort(aPort, aService)
+        %if !ISEMPTY(paired.port)
+            %assign aSID = aService.DelegatedSID
+            %if aService.DelegatedDworkIdx == -2
+                %assign aSID = paired.port.SID
+            %endif
+            %assign mdlBlk = SLibGetMdlBlockFromSID(aSID)
+            %if !ISEMPTY(mdlBlk)
+                %assign pairedServiceInChildMdl = SLibGetPairedServiceAtMdlBoundary(paired.port, paired.service, mdlBlk)
+                %if !ISEMPTY(pairedServiceInChildMdl)
+                    %assign modelBlkDWork = SLibGetModelBlockDwork(mdlBlk)
+                    %if !ISEMPTY(modelBlkDWork)
+                        %assign pairedDelegatedDworkPath = pairedServiceInChildMdl.DelegatedDworkPath
+                        %assign dwPrefix = SLibGetSelfCoderDataGroupVarGroupIndex() > -1 ? "" : "rtdw."
+                        %if !ISEMPTY(pairedDelegatedDworkPath)
+                            %assign aRecord.path = modelBlkDWork + "." + pairedDelegatedDworkPath
+                            %assign aRecord.host = dwPrefix + modelBlkDWork + "." + pairedServiceInChildMdl.DelegatedHost
+                            %assign aRecord.serviceName = pairedServiceInChildMdl.DelegatedServiceName
+                            %assign aRecord.variantCondition = pairedServiceInChildMdl.DWorkVariantCondition
+                        %else
+                            %assign dworkPath = SLibGetChildModelServiceDWorkPath(pairedServiceInChildMdl)
+                            %if !ISEMPTY(dworkPath)
+                                %assign aRecord.path = modelBlkDWork + "." + dworkPath
+                                %assign aRecord.host = dwPrefix + modelBlkDWork
+                                %assign aRecord.serviceName = pairedServiceInChildMdl.CGFcnName
+                                %assign aRecord.variantCondition = pairedServiceInChildMdl.DWorkVariantCondition
+                            %endif
+                        %endif
+                    %endif
+                %endif
+            %endif
+        %endif
+    %endif
+    %return aRecord
+%endfunction
+
+%function SLibIsServiceFcn(system, aFcnType, aTID)
+    %assign thisModule = ...
+        ::CompiledModel.RTWCGModules.RTWCGModule[system.CGIRModuleIdx]
+    %if (aFcnType == "OutputUpdate" || aFcnType == "Output" ) && ...
+        TYPE(aTID) == "Number" && aTID > 0 && ...
+        ISFIELD(SampleTime[aTID], "EntryFcnName") && ...
+        ISFIELD(thisModule, "SystemFunctions") && ...
+        ISFIELD(thisModule.SystemFunctions, SampleTime[aTID].EntryFcnName)
+        %assign fcnIndex = GETFIELD(thisModule.SystemFunctions, SampleTime[aTID].EntryFcnName)
+        %assign thisFcn  = thisModule.Function[fcnIndex]
+        %if thisFcn.IsServiceFcn == TLC_TRUE
+            %return TLC_TRUE
+        %endif
+    %endif
+    %return TLC_FALSE
+%endfunction
+
+%% determine whether a given tid is a service task tid;
+%function SLibIsServiceTaskTID(aTID)
+    %assign sampleTime = SampleTime[aTID]
+    %if TYPE(aTID) == "Number" && aTID > 0 && ...
+        ISFIELD(sampleTime, "EntryFcnName") && ...
+        ISFIELD(sampleTime, "Asynchronous") && ...
+        ISFIELD(sampleTime, "EventSourceType") && ...
+        ISFIELD(sampleTime, "ExplicitTasking")
+        %assign asynchronous = GETFIELD(sampleTime, "Asynchronous")
+        %assign eventSource  = GETFIELD(sampleTime, "EventSourceType")
+        %assign explicitTask = GETFIELD(sampleTime, "ExplicitTasking")
+        %if asynchronous == "yes" && eventSource == "MessageService" && ...
+            explicitTask == "yes"
+            %return TLC_TRUE
+        %endif
+
+        %if eventSource == "AsyncSfcnBlk" && ...
+            ISFIELD(sampleTime, "IsMessageTriggered")
+            %if GETFIELD(sampleTime, "IsMessageTriggered") == 1
+                %return TLC_TRUE
+            %endif
+        %endif
+    %endif
+    %return TLC_FALSE
+%endfunction
+
+%function SLibCacheAndRestoreServiceDWorkNeeded() void
+    %return IsModelReferenceTarget() && ...
+        (SLibZeroMemory("RTM") || SLibZeroMemory("DWork")) && ...
+        (!SLibModelDWorkStructIsEmpty() || SLibIsSelfStructured())
+%endfunction
+
+%function SLibCacheServicePortDWork() Output
+    %if !SLibServicePortsExist() || GenerateClassInterface
+        %return
+    %endif
+    %% Because a model's service port dwork may be set prior to the model's init
+    %% function is called, we have to cache the service port DWork prior to
+    %% the DWork being memset to zero. After the memset, the cached values
+    %% will be restored (by SLibRestoreServicePortDWork). At this point.
+    %% only the requester side of a model hierarchy needs to be cached.
+    %% The provider side does a bit-wise copy of the child port after
+    %% the child has been initialized (and after the memset is done).
+    %with ServicePortInfoMap
+        %assign argIdx = 0
+        %foreach portIdx = NumServicePorts
+            %assign thisPort = ServicePort[portIdx]
+            %if thisPort.IsTopMdlRootSP == 1
+                %continue
+            %endif
+            %assign providingServices = thisPort.ProvidingServices
+            %if !ISEMPTY(providingServices)
+                %assign numProvidingSvc = SIZE(providingServices.ProvidingService)[1]
+                %foreach i=numProvidingSvc
+                    %assign aProvidingService = providingServices.ProvidingService[i]
+                    %if aProvidingService.DworkIdx >= 0
+                        %assign dwRec = ::CompiledModel.DWorks.DWork[aProvidingService.DworkIdx]
+                        %if dwRec.IsRemovedInIR
+                            %continue
+                        %endif
+                        %assign dwName = ...
+                            FcnCGIRCGVarHelper(dwRec.VarGroupIdx[0], dwRec.VarGroupIdx[1], ...
+                            TLC_FALSE, GetBaseSystemIdx(), SLibDWorkWidth(dwRec), "", -1, ...
+                            "", 0, TLC_FALSE)
+                        %assign cgTypeIdx = SLibGetRecordContainerCGTypeIdx(dwRec)
+                        %assign dwType = LibCGTypeName(cgTypeIdx)
+                        %assign argName = "service%<argIdx>"
+                        %assign ppIf = SLibIfVariantConditionForm(dwRec.VariantCondition)
+                        %assign ppEndif = SLibEndIfVariantConditionForm(dwRec.VariantCondition)
+                        %<ppIf>
+                        %<dwType> %<argName> = %<dwName>;
+                        %<ppEndif>
+                        %assign argIdx = argIdx + 1
+                    %endif
+                %endforeach
+            %endif
+        %endforeach
+    %endwith
+%endfunction
+
+%function SLibRestoreServicePortDWork() Output
+    %if !SLibServicePortsExist() || GenerateClassInterface
+        %return
+    %endif
+    %% Because a model's service port dwork may be set prior to the model's init
+    %% function is called, we have to cache the service port DWork prior to
+    %% the DWork being memset to zero. After the memset, the cached vaules
+    %% will be restored (by this function)
+    %with ServicePortInfoMap
+        %assign argIdx = 0
+        %foreach portIdx = NumServicePorts
+            %assign thisPort = ServicePort[portIdx]
+            %if thisPort.IsTopMdlRootSP == 1
+                %continue
+            %endif
+            %assign providingServices = thisPort.ProvidingServices
+            %if !ISEMPTY(providingServices)
+                %assign numProvidingSvc = SIZE(providingServices.ProvidingService)[1]
+                %foreach i=numProvidingSvc
+                    %assign aProvidingService = providingServices.ProvidingService[i]
+                    %if aProvidingService.DworkIdx >= 0
+                        %assign dwRec = ::CompiledModel.DWorks.DWork[aProvidingService.DworkIdx]
+                        %if dwRec.IsRemovedInIR
+                            %continue
+                        %endif
+                        %assign dwName = ...
+                            FcnCGIRCGVarHelper(dwRec.VarGroupIdx[0], dwRec.VarGroupIdx[1], ...
+                            TLC_FALSE, GetBaseSystemIdx(), SLibDWorkWidth(dwRec), "", -1, ...
+                            "", 0, TLC_FALSE)
+                        %assign argName = "service%<argIdx>"
+                        %assign ppIf = SLibIfVariantConditionForm(dwRec.VariantCondition)
+                        %assign ppEndif = SLibEndIfVariantConditionForm(dwRec.VariantCondition)
+                        %<ppIf>
+                        %<dwName> = %<argName>;
+                        %<ppEndif>
+                        %assign argIdx = argIdx + 1
+                    %endif
+                %endforeach
+            %endif
+        %endforeach
+    %endwith
+%endfunction
+
+%function SLibInitServicePortCallbacks() Output
+    %if !GenerateClassInterface || !SLibServicePortsExist()
+        %return
+    %endif
+    %assign tmpBuf = ""
+    %with ServicePortInfoMap
+        %foreach portIdx = NumServicePorts
+            %assign thisPort = ServicePort[portIdx]
+            %assign aSID = thisPort.SID
+            %assign portIdx = thisPort.ServicePortIdx
+            %assign providingServices = thisPort.ProvidingServices
+            %if !ISEMPTY(providingServices)
+                %assign numProvidingSvc = SIZE(providingServices.ProvidingService)[1]
+                %foreach i=numProvidingSvc
+                    %assign aProvidingService = providingServices.ProvidingService[i]
+                    %if aProvidingService.Name == "TakeData" && !ISEMPTY(aProvidingService.CGVarName)
+                        %assign tmpBuf = tmpBuf + "%<aProvidingService.CGVarName>.mCallback = std::bind( &%<::CPPClassName>::%<aProvidingService.CGFcnName>, this, _1 );"
+                    %endif
+                %endforeach
+            %endif
+        %endforeach
+        %if !ISEMPTY(tmpBuf)
+            using std::placeholders::_1;
+            %<tmpBuf>
+        %endif
+    %endwith
+%endfunction
+
+%% Utility function that returns a DWork path for a model block's
+%% service port
+%%    /-------------  Given a model block (aMdlBlk), a service
+%%    |               port (p2) and a service in that port
+%%  p2| p1            this function return the DWork path
+%%===>| o===>         for the service port p1
+%%    | In1
+%%    |      aMdlBlk
+%%    \-------------
+
+%function SLibGetServiceDWorkInfoForMdl(aMdlBlk, aPort, aService) void
+    %createrecord aRecord { DWorkPath ""; VariantCondition ""}
+    %assign serviceDWorkPath = ""
+    %if !ISEMPTY(aMdlBlk)
+        %assign pairedServiceInChildMdl = ...
+            SLibGetPairedServiceAtMdlBoundary(aPort, aService, aMdlBlk)
+        %if !ISEMPTY(pairedServiceInChildMdl)
+            %assign dworkPath = SLibGetChildModelServiceDWorkPath(pairedServiceInChildMdl)
+            %if !ISEMPTY(dworkPath)
+                %assign modelBlkDWork = SLibGetModelBlockStructDWorkArgIfExists(aMdlBlk,"RegistrationFcn")
+                %if !ISEMPTY(modelBlkDWork)
+                    %assign serviceDWorkPath = modelBlkDWork +  "." + dworkPath
+                %else
+                    %assign serviceDWorkPath = dworkPath
+                %endif
+            %endif
+            %assign aRecord.DWorkPath = serviceDWorkPath
+            %assign aRecord.VariantCondition = pairedServiceInChildMdl.DWorkVariantCondition
+        %endif
+    %endif
+    %return aRecord
+%endfunction
+
+%function SLibInitServiceToNULL(thisService, mdlDWorkArg) Output
+    %assign dworkPath = SLibGetChildModelServiceDWorkPath(thisService)
+    %assign serviceDWorkPath = dworkPath
+    %if !ISEMPTY(mdlDWorkArg)
+        %assign serviceDWorkPath = mdlDWorkArg + "." + serviceDWorkPath
+    %endif
+    %assign serviceFcnPtr =  serviceDWorkPath + "." + thisService.Name
+    %assign nullDef = SLibGetNullDefinitionFromTfl()
+    %<serviceFcnPtr> = %<nullDef>;
+    %assign hostPtr = serviceDWorkPath + ".host"
+    %<hostPtr> = %<nullDef>;
+%endfunction
+
+%function SLibDumpServicePortUnconnectedMdlPortsInit() Output
+    %% This handles unconnected model service ports
+    %% -------\       /--------------
+    %%        |       |
+    %%  ===>o |>     >| o===>
+    %%   Out1 |p1   p2| In1
+    %% -------/       \-------------
+    %%
+    %% Here we assign DWork for Out1 and In1 to NULL
+    %%
+    %if GenerateClassInterface || !SLibServicePortsExist()
+        %return
+    %endif
+    %with ServicePortInfoMap
+        %foreach portIdx = NumServicePorts
+            %assign thisPort = ServicePort[portIdx]
+            %if thisPort.Kind == "function"
+                %% We only need to handle messages here. Simulink will not allow
+                %% unconnected function ports
+                %continue
+            %endif
+            %assign aSID = thisPort.SID
+            %assign portIdx = thisPort.ServicePortIdx
+            %assign requestingServices = thisPort.RequestingServices
+            %assign providingServices = thisPort.ProvidingServices
+            %if ISEMPTY(requestingServices) && ISEMPTY(providingServices)
+                %% We have a service port that is not providing or
+                %% requesting a service. This indicates that the port
+                %% is unconnected
+                %assign mdlBlk = SLibGetMdlBlockFromSID(aSID)
+                %if !ISEMPTY(mdlBlk)
+                    %assign mdlDWorkArg = SLibGetModelBlockStructDWorkArgIfExists(mdlBlk,"RegistrationFcn")
+                    %assign pairedPort = SLibGetPairedServicePort(portIdx, TLC_FALSE, thisPort.ServicePortType, mdlBlk)
+                    %if ISFIELD(pairedPort, "RequestingService")
+                        %assign requestingServices = pairedPort.RequestingService
+                        %assign numRequestingSvc = SIZE(requestingServices)[1]
+                        %if numRequestingSvc > 0
+                            %if numRequestingSvc == 1
+                                %assign thisService = requestingServices
+                                %<SLibInitServiceToNULL(thisService, mdlDWorkArg)>
+                            %else
+                                %foreach svcIdx=numRequestingSvc
+                                    %assign thisService = requestingServices[svcIdx]
+                                    %<SLibInitServiceToNULL(thisService, mdlDWorkArg)>
+                                %endforeach
+                            %endif
+                        %endif
+                    %endif
+                    %if ISFIELD(pairedPort, "ProvidingService")
+                        %assign providingServices = pairedPort.ProvidingService
+                        %assign numProvidingSvc = SIZE(providingServices)[1]
+                        %if numProvidingSvc > 0
+                            %if numProvidingSvc == 1
+                                %assign thisService = providingServices
+                                %<SLibInitServiceToNULL(thisService, mdlDWorkArg)>
+                            %else
+                                %foreach svcIdx=numProvidingSvc
+                                    %assign thisService = providingServices[svcIdx]
+                                    %<SLibInitServiceToNULL(thisService, mdlDWorkArg)>
+                                %endforeach
+                            %endif
+                        %endif
+                    %endif
+                %endif
+            %endif
+        %endforeach
+    %endwith
+%endfunction
+
+
+%function SLibInitFunctionPointersForGivenProviderPort(aPort, portPtr, pairedPortCGName) Output
+    %assign providerBlk = SLibGetMdlBlockFromSID(aPort.SID)
+    %if ISEMPTY(providerBlk)
+        %return
+    %endif
+
+    %assign interface = GetModelrefInterface(providerBlk)
+    %% Set every function to its associated delegated function (this will end up
+    %% being the generated wrapper function for every service in a function port)
+    %foreach portIdx = interface.NumServicePorts
+        %assign thisPort = interface.ServicePort[portIdx]
+        %if thisPort.Kind == "function" && !ISEMPTY(thisPort.CGName) && thisPort.CGName == pairedPortCGName
+            %assign requestingServices = thisPort.RequestingService
+            %if !ISEMPTY(requestingServices)
+                %assign numRequestingSvc = SIZE(requestingServices)[1]
+                %if numRequestingSvc == 1
+                    %if !ISEMPTY(requestingServices.CGFcnName) && !ISEMPTY(requestingServices.DelegatedServiceName)
+                        %assign svcPtrLHS = portPtr + "." + requestingServices.CGFcnName
+                        %assign svcPtrRHS = requestingServices.DelegatedServiceName
+                        %<svcPtrLHS> = %<svcPtrRHS>;
+                    %endif
+                %else
+                    %% Will never hit this code path with current fcn port implementation
+                    %% Nirmal creates a new Port for every service in a scoped function port
+                    %% I'm chosing to error rather than assert since TLC asserts are not often on
+                    %<LibReportFatalError("Unexpected number of services in a function service port")>
+
+                    %% When the above design changes, the following logic should be enabled
+                    %%foreach i=numRequestingSvc
+                    %%    %assign aRequestingService = requestingServices[i]
+                    %%    %if !ISEMPTY(aRequestingService.CGFcnName) && !ISEMPTY(aRequestingService.DelegatedServiceName)
+                    %%        %assign svcPtrLHS = portPtr + "." + aRequestingService.CGFcnName
+                    %%        %assign svcPtrRHS = aRequestingService.DelegatedServiceName
+                    %%        %<svcPtrLHS> = %<svcPtrRHS>;
+                    %%    %endif
+                    %%endforeach
+                %endif
+            %endif
+        %endif
+    %endforeach
+%endfunction
+
+%function SLibDumpFunctionServicePortConnectionsInit(aPort, aPortIdx) Output
+    %% This handles the direct connection between two models' function ports
+    %% -------\       /--------------
+    %%        |       |
+    %%  ===>o |======>| o===>[service]
+    %%   Out1 |p1   p2| In1
+    %% -------/       \-------------
+    %%    M1             M2
+    %%
+    %% In this case, we first initialize the service provider's host pointer (M2's In1's host pointer is set to M2)
+    %% then we copy M2's service port struct to M1's (Out1 = In1)
+    %% Additionally, if the provider model (M2) is delegating the service rather than directly providing it,
+    %% we initialize the function pointers to the delegation wrapper functions
+
+    %% Service port definitions are split across many service port elements
+    %% So make sure we init only the first encounter
+    %if !SLibGetFunctionServicePortInitCodeEmitted(aPort)
+        %if ISEMPTY(aPort.CGName) && !ISEMPTY(aPort.RequestingServices)
+            %assign requesterBlk = SLibGetMdlBlockFromSID(aPort.SID)
+            %% Requester ports must be on a modelref boundary (p1 above)
+            %if !ISEMPTY(requesterBlk)
+                %% aPort = p1
+                %assign returnInfo = SLibGetRTMAccessPathAndPairedServicePort(aPort)
+                %assign rtmAccessToProvidingPort = returnInfo.rtmAccessPath
+                %assign pairedProvidingPort = returnInfo.port %% p2
+                %assign pairedProvidingPortInMdl = returnInfo.portInMdl %% In1
+
+                %if !ISEMPTY(rtmAccessToProvidingPort) && !ISEMPTY(pairedProvidingPort) && ...
+                    !ISEMPTY(pairedProvidingPortInMdl) && !ISEMPTY(pairedProvidingPortInMdl.CGName)
+                    %assign pairedPortCGName = pairedProvidingPortInMdl.CGName
+                    %assign returnInfo = SLibGetRTMAccessPathAndPairedServicePort(pairedProvidingPort)
+                    %assign rtmAccessToRequestingPort = returnInfo.rtmAccessPath
+                    %assign pairedRequestingPort = returnInfo.port %% p1
+                    %assign pairedRequestingPortInMdl = returnInfo.portInMdl %% Out1
+                    %if !ISEMPTY(rtmAccessToRequestingPort) && !ISEMPTY(pairedRequestingPortInMdl) && !ISEMPTY(pairedRequestingPortInMdl.CGName)
+                        %assign requestingMdlBlk = SLibGetMdlBlockFromSID(pairedRequestingPort.SID)
+                        %% Set Out1's host to In1's delegating host
+                        %assign portPtr = "(" + rtmAccessToProvidingPort + ")->" + pairedPortCGName
+                        %assign hostPtr =  portPtr + ".host"
+                        %if !pairedProvidingPortInMdl.IsDelegating
+                            %assign hostVal = "(void *)" + rtmAccessToProvidingPort
+                        %else
+                            %assign delegatedFcnSvcPortHost = rtmAccessToProvidingPort + "." + pairedProvidingPortInMdl.DelegatedFcnSvcPortHost
+                            %assign hostVal = "(void *)(%<delegatedFcnSvcPortHost>)"
+                            %<SLibInitFunctionPointersForGivenProviderPort(pairedProvidingPort, portPtr, pairedPortCGName)>
+                        %endif
+                        %<hostPtr> = %<hostVal>;
+                        (%<rtmAccessToRequestingPort>)->%<pairedRequestingPortInMdl.CGName> = (%<rtmAccessToProvidingPort>)->%<pairedProvidingPortInMdl.CGName>;
+                        %<SLibSetFunctionServicePortInitCodeEmitted(aPort)>
+                    %endif
+                %endif
+            %endif
+        %endif %% !ISEMPTY(requesterBlk)
+    %endif %% ISEMPTY(aPort.CGName) && !ISEMPTY(aPort.RequestingServices)
+%endfunction
+
+%function SLibDumpMessageServicePortConnectionsInit(thisPort, portIdx) Output
+    %% This handles the direct connection between two models' message ports
+    %% -------\       /--------------
+    %%        |       |
+    %%  ===>o |======>| o===>[queue]
+    %%   Out1 |p1   p2| In1
+    %% -------/       \-------------
+    %%
+    %% Here we assign DWork for Out1 to the service and host of
+    %% the service provider. We handle the delegation and
+    %% no delegation cases here.
+    %%
+    %assign aSID = thisPort.SID
+
+    %assign requestingServices = thisPort.RequestingServices
+    %if !ISEMPTY(requestingServices)
+        %assign numRequestingSvc = SIZE(requestingServices.RequestingService)[1]
+        %foreach i=numRequestingSvc
+            %assign aRequestingService = requestingServices.RequestingService[i]
+            %assign requesterBlk = SLibGetMdlBlockFromSID(thisPort.SID)
+            %% Requester ports must be on a modelref boundary (p1 above)
+            %if !ISEMPTY(requesterBlk)
+                %% Get the DWork path from the requester side's paired port (Out1 above)
+                %assign requesterDWorkArg = SLibGetModelBlockStructDWorkArgIfExists(requesterBlk,"RegistrationFcn")
+                %assign pairedRequesterServiceInChildMdl = SLibGetPairedServiceAtMdlBoundary(thisPort, aRequestingService, requesterBlk)
+                %assign dworkPath = SLibGetChildModelServiceDWorkPath(pairedRequesterServiceInChildMdl)
+                %assign serviceDWorkPath = dworkPath
+                %if !ISEMPTY(requesterDWorkArg)
+                    %assign serviceDWorkPath = requesterDWorkArg + "." + serviceDWorkPath
+                %endif
+
+                %if !ISEMPTY(serviceDWorkPath)
+                    %if aRequestingService.DworkIdx < 0
+                        %% Would not expect requesting port to have a DWork since it is not an Outport or Inport.
+                        %% Get the service connected to the requester (p2 above).
+                        %assign pairedServiceAndPort = SLibGetPairedServiceAndPort(thisPort, aRequestingService)
+                        %if !ISEMPTY(pairedServiceAndPort.port) && !ISEMPTY(pairedServiceAndPort.service)
+                            %assign providerBlk = SLibGetMdlBlockFromSID(pairedServiceAndPort.port.SID)
+                            %% Make sure the paired service is also on a modelref boundary
+                            %if !ISEMPTY(providerBlk)
+                                %%  Get the DWork arg for the provider side's paired port (In1 above)
+                                %assign pairedProviderServiceInChildMdl = ...
+                                    SLibGetPairedServiceAtMdlBoundary(pairedServiceAndPort.port, ...
+                                    pairedServiceAndPort.service, ...
+                                    providerBlk)
+                                %if !ISEMPTY(pairedProviderServiceInChildMdl)
+                                    %assign providerDWorkArg = SLibGetModelBlockStructDWorkArgIfExists(providerBlk,"RegistrationFcn")
+                                    %if !ISEMPTY(pairedProviderServiceInChildMdl.DelegatedDworkPath)
+                                        %% Handle the delegation case (provider model will forward the service
+                                        %% request to one of its child models.
+                                        %% -------\       /-------------
+                                        %%        |       |      /------
+                                        %%        |       |      |
+                                        %%  ===>o |======>| o===>|o===>     Here we set Out1's service port dwork to p3's values
+                                        %%   Out1 |p1   p2| In1  |In3 (p3)
+                                        %%        |       |      \------
+                                        %% -------/       \-------------
+                                        %% Grab the service function and host from the delegated fields of the port
+                                        %assign serviceFcnPtrRHS = pairedProviderServiceInChildMdl.DelegatedServiceName
+                                        %if !ISEMPTY(providerDWorkArg)
+                                            %assign hostRHS = ...
+                                                "(void *)&(" + providerDWorkArg + "." + ...
+                                                pairedProviderServiceInChildMdl.DelegatedHost + ")"
+                                        %else
+                                            %assign hostRHS = SLibGetNullDefinitionFromTfl()
+                                        %endif
+                                    %else
+                                        %% Handle the non-delegation case (provider model will provide the service directly).
+                                        %% Grab the service function from the provider model's port
+                                        %assign serviceFcnPtrRHS = pairedProviderServiceInChildMdl.CGFcnName
+                                        %if !ISEMPTY(providerDWorkArg)
+                                            %assign hostRHS = "&" + providerDWorkArg
+                                        %else
+                                            %assign hostRHS = SLibGetNullDefinitionFromTfl()
+                                        %endif
+                                    %endif
+                                %else
+                                    %continue
+                                %endif
+                            %else
+                                %continue
+                            %endif
+                        %else
+                            %continue
+                        %endif
+                    %endif
+                    %assign serviceFcnPtr =  serviceDWorkPath + "." + aRequestingService.Name
+                    %<serviceFcnPtr> = %<serviceFcnPtrRHS>;
+                    %assign hostPtr = serviceDWorkPath + ".host"
+                    %<hostPtr> = %<hostRHS>;
+                %endif
+            %endif
+        %endforeach %% numRequestingSvc
+    %endif %% !ISEMPTY(aRequestingService)
+
+%endfunction
+
+%function SLibDumpServicePortConnectionsInit() Output
+
+    %<SLibDumpServicePortUnconnectedMdlPortsInit()>
+
+    %% This handles the direct connection between two models
+    %% -------\       /--------------
+    %%        |       |
+    %%  ===>o |======>| o===>
+    %%   Out1 |p1   p2| In1
+    %% -------/       \-------------
+    %%
+    %if GenerateClassInterface || !SLibServicePortsExist()
+        %return
+    %endif
+    %with ServicePortInfoMap
+        %foreach portIdx = NumServicePorts
+            %assign thisPort = ServicePort[portIdx]
+            %if thisPort.Kind == "function"
+                %<SLibDumpFunctionServicePortConnectionsInit(thisPort, portIdx)>
+            %elseif thisPort.Kind == "message"
+                %<SLibDumpMessageServicePortConnectionsInit(thisPort, portIdx)>
+            %endif
+            %% There is no error for unhandled service port kinds since it is OK
+            %% to have no implementation or a different implementation for
+            %% new services
+        %endforeach %% NumServicePorts
+    %endwith %%ServicePortInfoMap
+%endfunction
+
+%function SLibInitServicePorts() Output
+    %if !GenerateClassInterface || !SLibServicePortsExist() || ...
+        CGMODEL_ACCESS("CGModel.getServiceFunctions") < 2 || SLibAutosarCompliant()
+        %return
+    %endif
+    %with ServicePortInfoMap
+        %assign rootSystem = System[GetBaseSystemIdx()]
+        %assign rootModule = ::CompiledModel.RTWCGModules.RTWCGModule[rootSystem.CGIRModuleIdx]
+        %assign fcnIdx = ISFIELD(rootModule,"SystemFunctionTypes") && ...
+            ISFIELD(rootModule.SystemFunctionTypes,"ModelConstructor") ...
+            ? GETFIELD(rootModule.SystemFunctionTypes,"ModelConstructor") : -1
+        %if fcnIdx < 0
+            %return
+        %endif
+        %assign constrFcn = rootModule.Function[fcnIdx]
+        %foreach argIdx = constrFcn.NumArgs
+            %if 0 == constrFcn.ArgAccessed[argIdx]
+                %continue
+            %endif
+            %foreach portIdx = NumServicePorts
+                %assign thisPort = ServicePort[portIdx]
+                %if thisPort.ExternalPortIdx < 0 || !thisPort.IsTopMdlRootSP
+                    %% only initialize services on root I/O
+                    %continue
+                %endif
+                %assign mdlBlk = SLibGetMdlBlockFromSID(thisPort.SID)
+
+                %assign requestingServices = thisPort.RequestingServices
+                %assign isRequester = TLC_FALSE
+                %if !ISEMPTY(requestingServices)
+                    %assign numRequestingSvc = SIZE(requestingServices.RequestingService)[1]
+                    %foreach i=numRequestingSvc
+                        %assign aRequestingService = requestingServices.RequestingService[i]
+                        %if aRequestingService.ModelConstructorArgIdx == argIdx
+                            %<aRequestingService.CGVarName>.init();
+                            %assign isRequester = TLC_TRUE
+                            %break
+                        %endif
+                    %endforeach %% numRequestingSvc
+                %endif %% !ISEMPTY(aRequestingService)
+
+                %if !isRequester
+                    %assign providingServices = thisPort.ProvidingServices
+                    %if !ISEMPTY(providingServices)
+                        %assign numProvidingSvc = SIZE(providingServices.ProvidingService)[1]
+                        %foreach i=numProvidingSvc
+                            %assign aProvidingService = providingServices.ProvidingService[i]
+                            %if aProvidingService.ModelConstructorArgIdx == argIdx
+                                %<aProvidingService.CGVarName>.init();
+                                %break
+                            %endif
+                        %endforeach
+                    %endif %% !ISEMPTY(providingServices)
+                %endif %% !isRequester
+            %endforeach %% NumServicePorts
+        %endforeach %% constrFcn.NumArgs
+    %endwith %%ServicePortInfoMap
+%endfunction
+
+%function SLibTermServicePorts() Output
+    %if !GenerateClassInterface || !SLibServicePortsExist() || ...
+        CGMODEL_ACCESS("CGModel.getServiceFunctions") < 2 || SLibAutosarCompliant()
+        %return
+    %endif
+    %with ServicePortInfoMap
+        %assign rootSystem = System[GetBaseSystemIdx()]
+        %assign rootModule = ::CompiledModel.RTWCGModules.RTWCGModule[rootSystem.CGIRModuleIdx]
+        %assign fcnIdx = ISFIELD(rootModule,"SystemFunctionTypes") && ...
+            ISFIELD(rootModule.SystemFunctionTypes,"ModelConstructor") ...
+            ? GETFIELD(rootModule.SystemFunctionTypes,"ModelConstructor") : -1
+        %if fcnIdx < 0
+            %return
+        %endif
+        %assign constrFcn = rootModule.Function[fcnIdx]
+        %foreach argIdx = constrFcn.NumArgs
+            %if 0 == constrFcn.ArgAccessed[argIdx]
+                %continue
+            %endif
+            %foreach portIdx = NumServicePorts
+                %assign thisPort = ServicePort[portIdx]
+                %if thisPort.ExternalPortIdx < 0 || !thisPort.IsTopMdlRootSP
+                    %% only initialize services on root I/O
+                    %continue
+                %endif
+                %assign mdlBlk = SLibGetMdlBlockFromSID(thisPort.SID)
+
+                %assign requestingServices = thisPort.RequestingServices
+                %assign isRequester = TLC_FALSE
+                %if !ISEMPTY(requestingServices)
+                    %assign numRequestingSvc = SIZE(requestingServices.RequestingService)[1]
+                    %foreach i=numRequestingSvc
+                        %assign aRequestingService = requestingServices.RequestingService[i]
+                        %if aRequestingService.ModelConstructorArgIdx == argIdx
+                            %<aRequestingService.CGVarName>.term();
+                            %assign isRequester = TLC_TRUE
+                            %break
+                        %endif
+                    %endforeach %% numRequestingSvc
+                %endif %% !ISEMPTY(aRequestingService)
+
+                %if !isRequester
+                    %assign providingServices = thisPort.ProvidingServices
+                    %if !ISEMPTY(providingServices)
+                        %assign numProvidingSvc = SIZE(providingServices.ProvidingService)[1]
+                        %foreach i=numProvidingSvc
+                            %assign aProvidingService = providingServices.ProvidingService[i]
+                            %if aProvidingService.ModelConstructorArgIdx == argIdx
+                                %<aProvidingService.CGVarName>.term();
+                                %break
+                            %endif
+                        %endforeach
+                    %endif %% !ISEMPTY(providingServices)
+                %endif %% !isRequester
+            %endforeach %% NumServicePorts
+        %endforeach %% constrFcn.NumArgs
+    %endwith %%ServicePortInfoMap
+%endfunction
+
+%function SLibSetFunctionServicePortInitCodeEmitted(thisPort) void
+    %% Record that the given port's initialization code has been emitted
+    %if !EXISTS(ServicePortNames)
+        %assign ::ServicePortNames = []
+    %endif
+    %assign ::ServicePortNames = ::ServicePortNames + thisPort.CGName
+%endfunction
+
+%function SLibGetFunctionServicePortInitCodeEmitted(thisPort) void
+    %% Return whether or not the given port's initialization code has been emitted
+    %assign servicePortInitAlreadyEmitted = TLC_FALSE
+    %if !EXISTS(ServicePortNames)
+        %assign ::ServicePortNames = []
+    %endif
+    %if !ISEMPTY(thisPort.CGName)
+        %assign numPortNames = SIZE(::ServicePortNames)[1]
+        %foreach portNameIdx = numPortNames
+            %if ::ServicePortNames[portNameIdx] == thisPort.CGName
+                %assign servicePortInitAlreadyEmitted = TLC_TRUE
+                %break
+            %endif
+        %endforeach
+    %endif
+    %return servicePortInitAlreadyEmitted
+%endfunction
+
+%function SLibSetDelegatedFcnSvcPortHostAndName(aPort, aPortIdx, host, name) void
+    %% Helper function to set a service ports delegation info
+    %if ISEMPTY(host) || ISEMPTY(name) || ISEMPTY(aPort.CGName) || aPort.Kind != "function"
+        %return
+    %endif
+    %% Because function service port definitions are split across many service ports
+    %% we need to set the delegation info on each of the ports that make up that
+    %% definition. So iterate over the service port list and set the delegation
+    %% info on each port with the same CGName
+    %assign aPort.DelegatedFcnSvcPortHost = host
+    %assign aPort.DelegatedFcnSvcPortName = name
+    %with ServicePortInfoMap
+        %foreach portIdx = NumServicePorts
+            %if portIdx == aPortIdx
+                %continue
+            %endif
+            %assign thisPort = ServicePort[portIdx]
+            %if thisPort.Kind == "function"
+                %if thisPort.CGName == aPort.CGName
+                    %assign thisPort.DelegatedFcnSvcPortHost = host
+                    %assign thisPort.DelegatedFcnSvcPortName = name
+                %endif
+            %endif
+        %endforeach
+    %endwith
+%endfunction
+
+%function SLibDumpFunctionServicePortProvidersInit(aPort, aPortIdx) Output
+    %% Handle the provider side of the modelref hierarchy
+    %%    /-------------
+    %%    |      /------
+    %%    |      |
+    %%===>| o===>|o===>     Here we copy child model's port data
+    %%  p1|p2  p3|p4        to the parent model (p2 = p4)
+    %%    |      \------
+    %%    \-------------
+
+    %if !SLibGetFunctionServicePortInitCodeEmitted(aPort)
+        %% The port must have a CG var created (CGName set) and must be providing
+        %% services (RequestingServices must not be empty)
+        %% In the above diagram, port p2 will have the CG var and will be
+        %% requesting services from port p3 (hence the check on RequestingServices)
+        %if !ISEMPTY(aPort.CGName) && !ISEMPTY(aPort.RequestingServices) %% aPort == p2
+            %assign returnInfo = SLibGetRTMAccessPathAndPairedServicePort(aPort)
+            %assign rtmAccess = returnInfo.rtmAccessPath %% Path to service provider model (model with p4)
+            %assign pairedPort = returnInfo.port %% p3
+            %assign pairedPortInMdl = returnInfo.portInMdl %% p4
+            %if !ISEMPTY(rtmAccess) && !ISEMPTY(pairedPort) && !ISEMPTY(pairedPortInMdl) && !ISEMPTY(pairedPortInMdl.CGName)
+                %assign providingMdlBlk = SLibGetMdlBlockFromSID(pairedPort.SID)
+                %assign providingMdlBlkDWork = SLibGetModelBlockDwork(providingMdlBlk)
+                %if !pairedPortInMdl.IsDelegating
+                    %% If the port (p4) is actually providing the service (rather
+                    %% than forwarding the service request to a child model) initialize
+                    %% it's host pointer to the model block instance
+                    %assign hostPtr = rtmAccess + "->" + pairedPortInMdl.CGName + ".host"
+                    %assign hostVal = "(void *)" + rtmAccess
+                    %<hostPtr> = %<hostVal>;
+                %endif
+                %<::tSimStruct>->%<aPort.CGName> = %<rtmAccess>->%<pairedPortInMdl.CGName>;
+
+                %% Book keeping - store delegation info for the parent model to use if needed
+                %%                mark that aPort's init code has been emitted
+                %<SLibSetDelegatedFcnSvcPortHostAndName(aPort, aPortIdx, providingMdlBlkDWork, pairedPortInMdl.CGName)>
+                %<SLibSetFunctionServicePortInitCodeEmitted(aPort)>
+            %endif
+        %endif
+    %endif
+%endfunction
+
+%function SLibDumpMessageServicePortProvidersInit(thisPort, portIdx) Output
+    %% Handle the provider side of the modelref hierarchy
+    %%    /-------------
+    %%    |      /------
+    %%    |      |
+    %%===>| o===>|o===>     Here we copy child model's dwork
+    %%  p2| In1  |In2 (p3)  to the parent model (In1 = In2)
+    %%    |      \------
+    %%    \-------------
+    %assign mdlBlk = SLibGetMdlBlockFromSID(thisPort.SID)
+    %assign requestingServices = thisPort.RequestingServices
+    %if !ISEMPTY(requestingServices)
+        %assign numRequestingSvc = SIZE(requestingServices.RequestingService)[1]
+        %foreach i=numRequestingSvc
+            %assign aRequestingService = requestingServices.RequestingService[i]
+            %if ISEMPTY(mdlBlk)
+                %if aRequestingService.DworkIdx >= 0 && ...
+                    (thisPort.ServicePortType == "SVC_OUT_PORT" || thisPort.ServicePortType == "SVC_IN_PORT")
+                    %assign dwRec = ::CompiledModel.DWorks.DWork[aRequestingService.DworkIdx]
+                    %if dwRec.IsRemovedInIR
+                        %continue
+                    %endif
+                    %assign dwName = ...
+                        FcnCGIRCGVarHelper(dwRec.VarGroupIdx[0], dwRec.VarGroupIdx[1], ...
+                        TLC_FALSE, GetBaseSystemIdx(), SLibDWorkWidth(dwRec), "", -1, ...
+                        "", 0, TLC_FALSE)
+                    %assign ppIf = SLibIfVariantConditionForm(dwRec.VariantCondition)
+                    %assign ppEndif = SLibEndIfVariantConditionForm(dwRec.VariantCondition)
+                    %if aRequestingService.DelegatedDworkIdx >= 0
+                        %assign delegatedBlk = SLibGetMdlBlockFromSID(aRequestingService.DelegatedSID)
+                        %if !ISEMPTY(delegatedBlk)
+                            %assign pairedService = SLibGetPairedServiceHelper(aRequestingService.DelegatedPortIdx, aRequestingService.Name, TLC_TRUE, thisPort.ServicePortType, delegatedBlk)
+                            %assign dworkPath = SLibGetChildModelServiceDWorkPath(pairedService)
+                            %if !ISEMPTY(dworkPath)
+                                %assign mdlBlockStructArg = SLibGetModelBlockStructDWorkArgIfExists(delegatedBlk,"RegistrationFcn")
+                                %if !ISEMPTY(mdlBlockStructArg)
+                                    %assign serviceDWorkPath = mdlBlockStructArg + "." + dworkPath
+                                    %<ppIf>
+                                    %<serviceDWorkPath>.host = (void *)&(%<mdlBlockStructArg>);
+                                    %<dwName> = %<serviceDWorkPath>;
+                                    %<ppEndif>
+                                %else
+                                    %assign nulldef = SLibGetNullDefinitionFromTfl()
+                                    %<ppIf>
+                                    %<dworkPath>.host = %<nulldef>;
+                                    %<dwName> = %<dworkPath>;
+                                    %<ppEndif>
+                                %endif
+                            %endif
+                        %endif
+                    %else
+                        %<ppIf>
+                        %<dwName>.%<aRequestingService.Name> = %<aRequestingService.CGFcnName>;
+                        %<ppEndif>
+                    %endif
+                %endif
+            %endif
+        %endforeach %% numRequestingSvc
+    %endif %% !ISEMPTY(aRequestingService)
+
+    %% In this case the service provider is in the bottom model and the top model
+    %% which has the requesters needs to init the provider's host ptr.
+    %assign providingServices = thisPort.ProvidingServices
+    %if !ISEMPTY(providingServices)
+        %assign numProvidingSvc = SIZE(providingServices.ProvidingService)[1]
+        %foreach i=numProvidingSvc
+            %assign aProvidingService = providingServices.ProvidingService[i]
+            %assign dworkIdx = aProvidingService.DworkIdx
+            %if dworkIdx < 0
+                %if !ISEMPTY(mdlBlk)
+                    %assign pairedServiceAndPort = SLibGetPairedServiceAndPort(thisPort, aProvidingService)
+                    %if ISEMPTY(pairedServiceAndPort.port) || ISEMPTY(pairedServiceAndPort.service) || ...
+                        pairedServiceAndPort.service.DelegatedDworkIdx < 0
+                        %% Don't initialize host pointer here if delegation
+                        %assign pairedServiceInChildMdl = ...
+                            SLibGetPairedServiceAtMdlBoundary(thisPort, aProvidingService, mdlBlk)
+                        %if !ISEMPTY(pairedServiceInChildMdl)
+                            %assign dworkPath = SLibGetChildModelServiceDWorkPath(pairedServiceInChildMdl)
+                            %if !ISEMPTY(dworkPath) && ISEMPTY(pairedServiceInChildMdl.DelegatedSID)
+                                %assign modelBlkDWork = SLibGetModelBlockStructDWorkArgIfExists(mdlBlk,"RegistrationFcn")
+                                %if !ISEMPTY(modelBlkDWork)
+                                    %assign serviceDWorkPath = modelBlkDWork +  "." + dworkPath
+                                    %assign hostPtr = serviceDWorkPath + ".host"
+                                    %<hostPtr> = (void *)&(%<modelBlkDWork>);
+                                %else
+                                    %assign hostPtr = dworkPath + ".host"
+                                    %assign nulldef = SLibGetNullDefinitionFromTfl()
+                                    %<hostPtr> = %<nulldef>;
+                                %endif
+                            %endif
+                        %endif
+                    %endif
+                %endif
+            %endif
+        %endforeach
+    %endif %% !ISEMPTY(providingServices)
+%endfunction
+
+%function SLibDumpServicePortProvidersInit() Output
+    %% Handle the provider side of the modelref hierarchy
+    %%    /-------------
+    %%    |      /------
+    %%    |      |
+    %%===>| o===>|o===>
+    %%  p2| In1  |In2 (p3)
+    %%    |      \------
+    %%    \-------------
+    %if GenerateClassInterface || !SLibServicePortsExist()  || SLibAutosarCompliant()
+        %return
+    %endif
+    %with ServicePortInfoMap
+        %foreach portIdx = NumServicePorts
+            %assign thisPort = ServicePort[portIdx]
+            %if thisPort.Kind == "function"
+                %<SLibDumpFunctionServicePortProvidersInit(thisPort, portIdx)>
+            %elseif thisPort.Kind == "message"
+                %<SLibDumpMessageServicePortProvidersInit(thisPort, portIdx)>
+            %endif
+            %% There is no error for unhandled service port kinds since it is OK
+            %% to have no implementation or a different implementation for
+            %% new services
+        %endforeach %% NumServicePorts
+    %endwith %%ServicePortInfoMap
+%endfunction
+
+%function SLibGetRTMAccessPathAndPairedServicePort(thisPort) void
+    %% This function returns the paired port for the given port and the
+    %% associated port inside a model block. In particular, this function
+    %% is returning info for this specific model hierarchy:
+    %%
+    %%            /---
+    %%            |
+    %%    o======>| o==>   Given p1 (thisPort)
+    %%    p1    p2| p3     Return port p2
+    %%            \---            portInMdl p3
+    %%              M1            rtmAccessPath path M1's RTM
+    %createrecord aRecord { port ""; portInMdl ""; rtmAccessPath ""}
+    %assign rtmAccess = ""
+
+    %assign useProvidingServiceMap = TLC_TRUE
+    %assign aServicesMap = thisPort.ProvidingServices
+    %assign numSvcs = 0
+    %if ISEMPTY(aServicesMap)
+        %assign aServicesMap = thisPort.RequestingServices
+        %assign useProvidingServiceMap = TLC_FALSE
+        %assign numSvcs = SIZE(aServicesMap.RequestingService)[1]
+    %else
+        %assign numSvcs = SIZE(aServicesMap.ProvidingService)[1]
+    %endif
+
+    %foreach i=numSvcs
+        %if useProvidingServiceMap
+            %assign aService = aServicesMap.ProvidingService[i]
+        %else
+            %assign aService = aServicesMap.RequestingService[i]
+        %endif
+        %if !ISEMPTY(aService.PairedBlockSID)
+            %assign pairedServiceAndPort = SLibGetPairedServiceAndPort(thisPort, aService)
+            %assign pairedService = pairedServiceAndPort.service
+            %assign pairedPort = pairedServiceAndPort.port
+            %if !ISEMPTY(pairedService) && !ISEMPTY(pairedPort)
+                %assign mdlBlk = SLibGetMdlBlockFromSID(pairedPort.SID)
+                %if !ISEMPTY(mdlBlk)
+                    %assign pairedPortInMdl = SLibGetPairedServicePort(pairedPort.ServicePortIdx, TLC_FALSE, pairedPort.ServicePortType, mdlBlk)
+                    %assign blockInterface = GetModelrefInterface(mdlBlk)
+                    %assign blkSimpInterface = blockInterface.usesSimplifiedInterface
+                    %assign rtmContainedInSelf = (ISFIELD(mdlBlk, "ModelInstVarIndex") && mdlBlk.ModelInstVarIndex > -1) || ...
+                        (blockInterface.rtmAllocateInParent && ::isRAccel)
+                    %if blkSimpInterface || (blockInterface.rtmAllocateInParent && rtmContainedInSelf)
+                        %assign rtmAccess = SLibGetModelInstVariableAddressForSimplifiedInterface(mdlBlk,0,TLC_FALSE)
+                    %elseif SLibModelBlockRTMAllocateInParent(mdlBlk, blockInterface)
+                        %assign rtmAccess = "&" + mdlBlk.Identifier
+                    %else
+                        %assign mdlBlkDWork = ""
+                        %assign mdlBlkDWork = SLibGetModelBlockStructDWorkArg(mdlBlkDWork, ...
+                            GetBaseSystemIdx(), mdlBlk, "InitializeFcn", 0)
+                        %assign rtmField = rtmContainedInSelf ? "" : ".rtm"
+                        %assign rtmAccess =  "&(%<mdlBlkDWork>%<rtmField>)"
+                    %endif
+                    %assign aRecord.port = pairedPort
+                    %assign aRecord.portInMdl = pairedPortInMdl
+                    %assign aRecord.rtmAccessPath = rtmAccess
+                    %break
+                %endif
+            %endif
+        %endif
+    %endforeach
+    %return aRecord
+%endfunction
+
+%function SLibDumpFunctionServicePortRequestersInit(aPort) Output
+    %% Handle the requester side of the modelref hierarchy
+    %% ---------------\
+    %% -------\       |
+    %%  ==>o  |====>o |===>
+    %%   Out1 |   Out2|
+    %% -------/       |
+    %% ---------------/
+    %%
+    %% Here we assign port data for Out1 to port data for Out2
+    %if !ISEMPTY(aPort.CGName) && !ISEMPTY(aPort.ProvidingServices)
+        %% aPort = Out2
+        %assign returnInfo = SLibGetRTMAccessPathAndPairedServicePort(aPort)
+        %assign rtmAccess = returnInfo.rtmAccessPath
+        %assign pairedPort = returnInfo.portInMdl %% Out1
+        %if !ISEMPTY(rtmAccess) && !ISEMPTY(pairedPort) && !ISEMPTY(pairedPort.CGName)
+            %% Service port definitions are split across many service port elements
+            %% So make sure we init only the first encounter
+            %if !SLibGetFunctionServicePortInitCodeEmitted(aPort)
+                %<rtmAccess>->%<pairedPort.CGName> = %<::tSimStruct>->%<aPort.CGName>;
+                %<SLibSetFunctionServicePortInitCodeEmitted(aPort)>
+            %endif
+        %endif
+    %endif
+%endfunction
+
+%function SLibDumpMessageServicePortRequestersInit(thisPort) Output
+    %% Handle the requester side of the modelref hierarchy
+    %% ---------------\
+    %% -------\       |
+    %%  ==>o  |====>o |===>
+    %%   Out1 |   Out2|
+    %% -------/       |
+    %% ---------------/
+    %%
+    %% Here we assign DWork for Out1 to DWork for Out2
+    %assign providingServices = thisPort.ProvidingServices
+    %if !ISEMPTY(providingServices)
+        %assign numProvidingSvc = SIZE(providingServices.ProvidingService)[1]
+        %foreach i=numProvidingSvc
+            %assign aProvidingService = providingServices.ProvidingService[i]
+            %assign dworkIdx = aProvidingService.DworkIdx
+            %if  dworkIdx >= 0
+                %% This handles the requester side delegation case (Out2 -> Out1)
+                %% ---------------\
+                %% -------\       |
+                %%    p1  |    p2 |
+                %%  ==>o  |====>o |===>
+                %%   Out1 |   Out2|
+                %% -------/       |
+                %% ---------------/
+                %%
+                %% Here we assign DWork for Out1 to DWork for Out2
+                %% (essentially service port p1 = p2)
+                %assign dwRec = ::CompiledModel.DWorks.DWork[dworkIdx]
+                %if dwRec.IsRemovedInIR
+                    %continue
+                %endif
+                %assign providerBlk = System[dwRec.SigSrc[0]].Block[dwRec.SigSrc[2]]
+                %if (TYPE(providerBlk.Type) == "Identifier" && ...
+                    ((providerBlk.Type == "Outport") || (providerBlk.Type == "Opaque")))
+                    %if !ISEMPTY(aProvidingService.DelegatedSID)
+                        %assign mdlBlk = SLibGetMdlBlockFromSID(aProvidingService.DelegatedSID)
+                        %assign dwName = ...
+                            FcnCGIRCGVarHelper(dwRec.VarGroupIdx[0], dwRec.VarGroupIdx[1], ...
+                            TLC_FALSE, GetBaseSystemIdx(), SLibDWorkWidth(dwRec), "", -1, ...
+                            "", 0, TLC_FALSE)
+                        %assign serviceDWorkInfo = SLibGetServiceDWorkInfoForMdl(mdlBlk, thisPort, aProvidingService)
+                        %assign serviceDWorkPath = serviceDWorkInfo.DWorkPath
+                        %assign serviceVC = serviceDWorkInfo.VariantCondition
+                        %assign ppIf = SLibIfVariantConditionForm(dwRec.VariantCondition)
+                        %assign ppEndif = SLibEndIfVariantConditionForm(dwRec.VariantCondition)
+                        %assign ppIfMdl = SLibIfVariantConditionForm(serviceVC)
+                        %assign ppEndifMdl = SLibEndIfVariantConditionForm(serviceVC)
+                        %<ppIf>
+                        %<ppIfMdl>
+                        %<serviceDWorkPath> = %<dwName>;
+                        %<ppEndifMdl>
+                        %<ppEndif>
+                    %endif
+                %endif
+            %else
+                %% This handles the service provider to direct child requester case (Queue -> Out2)
+                %% ---------------\
+                %% -------\    p2 |
+                %%  ==>o  |====>o |===>[Queue]
+                %%   Out1 |   Out2|
+                %% -------/       |
+                %% ---------------/
+                %%
+                %% Here we assign DWork for Out2
+                %% (essentially set service port p2 properties directly)
+                %if !ISEMPTY(aProvidingService.PairedBlockSID)
+                    %assign pairedServiceAndPort = SLibGetPairedServiceAndPort(thisPort, aProvidingService)
+                    %assign pairedService = pairedServiceAndPort.service
+                    %assign pairedPort = pairedServiceAndPort.port
+                    %if !ISEMPTY(pairedService) && !ISEMPTY(pairedPort)
+                        %assign mdlBlk = SLibGetMdlBlockFromSID(pairedPort.SID)
+                        %assign providerMdlBlk = SLibGetMdlBlockFromSID(thisPort.SID)
+                        %% Don't do this initialization for two connecting model blocks. This will be
+                        %% handled by SLibDumpServicePortConnectionsInit
+                        %if !ISEMPTY(mdlBlk) && ISEMPTY(providerMdlBlk)
+                            %assign serviceFcnPtrRHS = aProvidingService.CGFcnName
+                            %assign serviceDWorkInfo = SLibGetServiceDWorkInfoForMdl(mdlBlk, pairedPort, pairedService)
+                            %assign serviceDWorkPath = serviceDWorkInfo.DWorkPath
+                            %assign serviceVC = serviceDWorkInfo.VariantCondition
+                            %assign ppIfMdl = SLibIfVariantConditionForm(serviceVC)
+                            %assign ppEndifMdl = SLibEndIfVariantConditionForm(serviceVC)
+                            %assign serviceFcnPtr =  serviceDWorkPath + "." + pairedService.Name
+                            %<ppIfMdl>
+                            %<serviceFcnPtr> = %<serviceFcnPtrRHS>;
+                            %assign hostPtr = serviceDWorkPath + ".host"
+                            %if IsModelReferenceTarget()
+                                %% Parent is going to have to initialize host pointer
+                                %% since this model doesn't know it's instance data
+                                %% pointer.
+                                %<hostPtr> = %<SLibGetNullDefinitionFromTfl()>;
+                                %% Use -2 to indicate that delegaion info needs to
+                                %% be fabricated and stored in the model interface
+                                %% (in minfo)
+                                %assign tmpRet = %<SETFIELD(aProvidingService,"DelegatedDworkIdx",-2)>
+                            %else
+                                %if RTMTypeIsNeeded()
+                                    %<hostPtr> = %<::tSimStruct>;
+                                %else
+                                    %<hostPtr> = %<SLibGetNullDefinitionFromTfl()>;
+                                %endif
+                            %endif
+                            %<ppEndifMdl>
+                        %endif
+                    %endif
+                %endif
+            %endif %% dworkIdx
+        %endforeach %% numProvidingSvc
+    %endif %% !ISEMPTY(providingServices)
+%endfunction
+
+%function SLibDumpServicePortRequestersInit() Output
+    %% Handle the requester side of the modelref hierarchy
+    %% ---------------\
+    %% -------\       |
+    %%  ==>o  |====>o |===>
+    %%   Out1 |   Out2|
+    %% -------/       |
+    %% ---------------/
+    %%
+    %if GenerateClassInterface || !SLibServicePortsExist() || SLibAutosarCompliant()
+        %return
+    %endif
+    %with ServicePortInfoMap
+        %foreach portIdx = NumServicePorts
+            %assign thisPort = ServicePort[portIdx]
+            %if thisPort.Kind == "function"
+                %<SLibDumpFunctionServicePortRequestersInit(thisPort)>
+            %elseif thisPort.Kind == "message"
+                %<SLibDumpMessageServicePortRequestersInit(thisPort)>
+            %endif
+            %% There is no error for unhandled service port kinds since it is OK
+            %% to have no implementation or a different implementation for
+            %% new services
+        %endforeach %% NumServicePorts
+    %endwith %%ServicePortInfoMap
+%endfunction
+
+%function SLibDumpMessageServicePortInitForChildModel(mdlBlk, interface, thisPort) Output
+    %% This sets the host pointer for the message services provided by the child model
+    %if ISFIELD(thisPort, "ProvidingService")
+        %assign providingServices = thisPort.ProvidingService
+        %assign numProvidingSvc = SIZE(providingServices)[1]
+        %if numProvidingSvc > 0
+            %assign dwPrefix = interface.rtmAllocateInParent ? "." : ".rtdw."
+            %if numProvidingSvc == 1
+                %if providingServices.DelegatedDworkIdx == -2
+                    %assign modelBlkDWork = SLibGetModelBlockStructDWorkArgIfExists(mdlBlk,"RegistrationFcn")
+                    %if !ISEMPTY(modelBlkDWork)
+                        %assign serviceDWorkPath = modelBlkDWork + dwPrefix + providingServices.DelegatedDworkPath
+                        %assign hostPtr = serviceDWorkPath + ".host"
+                        %<hostPtr> = (void *)&(%<modelBlkDWork>);
+                    %endif
+                %endif
+            %else
+                %foreach svcIdx=numProvidingSvc
+                    %assign thisService = providingServices[svcIdx]
+                    %if thisService.DelegatedDworkIdx == -2
+                        %assign modelBlkDWork = SLibGetModelBlockStructDWorkArgIfExists(mdlBlk,"RegistrationFcn")
+                        %if !ISEMPTY(modelBlkDWork)
+                            %assign serviceDWorkPath = modelBlkDWork + dwPrefix + thisService.DelegatedDworkPath
+                            %assign hostPtr = serviceDWorkPath + ".host"
+                            %<hostPtr> = (void *)&(%<modelBlkDWork>);
+                        %endif
+                    %endif
+                %endforeach
+            %endif
+        %endif
+    %endif
+%endfunction
+
+%function SLibDumpServiceInitForChildModel(mdlBlk) Output
+    %if GenerateClassInterface || !EXISTS(NumServicePorts)
+        %return
+    %endif
+    %if mdlBlk.Type == "ModelReference"
+        %assign interface = GetModelrefInterface(mdlBlk)
+        %foreach portIdx = interface.NumServicePorts
+            %assign thisPort = interface.ServicePort[portIdx]
+            %if thisPort.Kind == "message"
+                %<SLibDumpMessageServicePortInitForChildModel(mdlBlk, interface, thisPort)>
+            %endif
+            %% There is no error for unhandled service port kinds since it is OK
+            %% to have no implementation or a different implementation for
+            %% new services
+        %endforeach
+    %endif
+%endfunction
+
+%function SLibGenerateFunctionServiceWrapperFcn(aServicePort, aService) void
+    %% Construct the wrapper function ServiceScopeName_FcnName that calls
+    %% the port scoped Simulink function. This is an externed, global function
+    %% that can be called by any model. It is this function that is stored in
+    %% a function service ports data. For example if there is a function service
+    %% port defined as "utility {fcn1, fcn2, ...}" then the service port data
+    %% will be
+    %%   utilityT utility;
+    %%   utility.host = pointer to service provider model's self struct
+    %%   utility.fcn1 = utility_fcn1 (wrapper fcn created by this logic)
+    %%   utility.fcn2 = utility_fcn2 (wrapper fcn created by this logic)
+    %% where the wrapper function calls the actual service
+    %%   <return> utility_fcn1( void* host, <args>)
+    %%   {
+    %%       return fcn1( (model_self_struct*)host, <args> );
+    %%   }
+    %%
+    %% The wrapper function is needed to cast the void* host argument to
+    %% the correct model self type
+    %assign CGFcnName = aService.CGFcnName
+    %assign calleeName = aService.CalleeName
+
+    %assign fcnParams = "void* host"
+    %assign fcnArgs = ""
+    %foreach argIdx = aService.NumInArgs + aService.NumOutArgs
+        %assign cgTypeIdx = aService.ArginCGTypeIdx[argIdx]
+        %assign typeIdx = LibCGTypeToSLType(cgTypeIdx)
+        %if aService.ArginIsComplex[argIdx]
+            %assign typeName = LibGetDataTypeComplexNameFromId(typeIdx)
+        %else
+            %assign typeName = LibGetDataTypeNameFromId(typeIdx)
+        %endif
+        %assign isMatrix = LibCGTypeIsMatrix(cgTypeIdx) && (LibCGTypeWidth(cgTypeIdx) > 1)
+        %assign passbyStr  = ""
+        %% If an input argument is of matrix type or pointer type add the "*"
+        %% If an input argument is of matrix type, add "const" to match what IR does
+        %if aService.ArginPassByType[argIdx] > 3 || ...
+            isMatrix || ...
+            LibCGTypeIsPointer(cgTypeIdx)
+            %assign passbyStr = "*"
+        %endif
+        %assign constStr = ""
+        %if argIdx < aService.NumInArgs && isMatrix
+            %assign constStr = "const "
+        %endif
+        %assign argName = "arg%<argIdx>"
+        %assign fcnParams = "%<fcnParams>, %<constStr>%<typeName>%<passbyStr> %<argName>"
+        %assign fcnArgs = fcnArgs + ", %<argName>"
+    %endforeach %% aProvidingService.NumInArgs
+
+    %openfile regBuf
+    %assign rootSystem = System[NumSystems-1]
+    %assign fcnName = aServicePort.CGName + "_" + CGFcnName
+    %assign fcnAbstract = "Wrapper for function service port"
+    %assign fcnReturns = "void"
+    %createrecord fcnRec {Name fcnName; Returns fcnReturns; Params fcnParams; Abstract fcnAbstract; ...
+        Category "model"; GeneratedBy "servicelib.tlc"; Type "Utility"; ...
+        GeneratedFor FcnGeneratedFor(rootSystem)}
+    %<SLibDumpFunctionBanner(fcnRec)>
+    %undef fcnRec
+    %<fcnReturns> %<fcnName>(%<fcnParams>) {
+        %<calleeName>((%<::tSimStructType> *)(host)%<fcnArgs>);
+    }
+
+    %closefile regBuf
+    %% Check if the file exists
+    %<SLibCacheSystemCodeToFile("sys_fcn_defn", rootSystem, regBuf)>
+
+    %openfile extRegBuf
+    %<LibExternInFcnDecls()> void %<fcnName>(%<fcnParams>);
+    %closefile extRegBuf
+    %assign fileName = ""
+    %<SLibCacheCodeToFile("mdl_fcn_decl",extRegBuf)>
+    %assign aService.DelegatedServiceName = fcnName
+%endfunction
+
+%function SLibDumpFunctionServicePortInit(aServicePort) Output
+    %% Emit the initialization code for a model that provides a service
+    %% Since the service definition is split across severval ports
+    %% We need to iterate over all ports to find the services to init
+    %if aServicePort.Kind != "function" || ISEMPTY(aServicePort.CGName) || aServicePort.ExternalPortIdx < 0
+        %return
+    %endif
+
+    %if SLibGetFunctionServicePortInitCodeEmitted(aServicePort)
+        %return
+    %endif
+    %assign returnInfo = SLibGetRTMAccessPathAndPairedServicePort(aServicePort)
+    %assign rtmAccess = returnInfo.rtmAccessPath
+    %assign pairedPort = returnInfo.port
+    %% Here we are only emitting port init for the model that is actually
+    %% providing the service and not just delegating the service.
+    %% We check that by seeing if the paired port is a model block. This
+    %% is done in SLibGetRTMAccessPathAndPairedServicePort
+    %if ISEMPTY(rtmAccess) && ISEMPTY(pairedPort)
+        %assign servicePortName = aServicePort.CGName
+        %if !ISEMPTY(aServicePort.RequestingServices)
+            %<SLibSetFunctionServicePortInitCodeEmitted(aServicePort)>
+            %assign nulldef = SLibGetNullDefinitionFromTfl()
+            %<::tSimStruct>->%<servicePortName>.host = %<nulldef>;
+            %assign ServicePortFcnNames = []
+            %with ServicePortInfoMap
+                %foreach portIdx = NumServicePorts
+                    %assign thisPort = ServicePort[portIdx]
+                    %if !ISEMPTY(thisPort.CGName) && (thisPort.CGName == servicePortName)
+                        %% Service port definitions are split across many service port elements
+                        %% So make sure we init only the first encounter of a given fcn
+                        %assign requestingServices = thisPort.RequestingServices
+                        %if !ISEMPTY(requestingServices)
+                            %assign numRequestingSvc = SIZE(requestingServices.RequestingService)[1]
+                            %foreach i=numRequestingSvc
+                                %assign aRequestingService = requestingServices.RequestingService[i]
+                                %assign servicePortFcnInitAlreadyEmitted = TLC_FALSE
+                                %assign numPortNames = SIZE(ServicePortFcnNames)[1]
+                                %foreach portNameIdx = numPortNames
+                                    %if ServicePortFcnNames[portNameIdx] == aRequestingService.CGFcnName
+                                        %assign servicePortFcnInitAlreadyEmitted = TLC_TRUE
+                                        %break
+                                    %endif
+                                %endforeach
+                                %if !servicePortFcnInitAlreadyEmitted
+                                    %assign CGFcnName = aRequestingService.CGFcnName
+                                    %<::tSimStruct>->%<thisPort.CGName>.%<CGFcnName> = %<thisPort.CGName>_%<CGFcnName>;
+                                    %assign ServicePortFcnNames = ServicePortFcnNames + CGFcnName
+
+                                    %<SLibGenerateFunctionServiceWrapperFcn(thisPort, aRequestingService)>
+
+                                %endif
+                            %endforeach %% numRequestingSvc
+                        %endif %% !ISEMPTY(requestingServices)
+                    %endif
+                %endforeach %% NumServicePorts
+            %endwith
+        %endif
+    %endif
+%endfunction
+
+%function SLibDumpMessageServicePortInit(thisPort) Output
+    %% Initialize this model's service DWork for services provided by this model
+    %assign requestingServices = thisPort.RequestingServices
+    %if ISEMPTY(requestingServices)
+        %return
+    %endif
+    %assign numRequestingSvc = SIZE(requestingServices.RequestingService)[1]
+    %assign aSID = thisPort.SID
+    %foreach i=numRequestingSvc
+        %assign aRequestingService = requestingServices.RequestingService[i]
+        %if aRequestingService.DworkIdx >= 0 && aRequestingService.DelegatedDworkIdx < 0
+            %assign dwRec = ::CompiledModel.DWorks.DWork[aRequestingService.DworkIdx]
+            %if dwRec.IsRemovedInIR
+                %continue
+            %endif
+            %assign providerBlk = System[dwRec.SigSrc[0]].Block[dwRec.SigSrc[2]]
+            %if (TYPE(providerBlk.Type) == "Identifier" && providerBlk.Type == "Inport")
+                %assign dworkvar = providerBlk.Identifier + "_" + dwRec.Name
+                %assign serviceFcnPtr = LibGetDWorkStruct() + "." + dworkvar + "." + aProvidingService.Name
+                %assign serviceFcnPtrRHS = aRequestingService.CGFcnName
+                %assign nulldef = SLibGetNullDefinitionFromTfl()
+                %assign hostPtr = LibGetDWorkStruct() + "." + dworkvar + ".host"
+                %assign ppIf = SLibIfVariantConditionForm(dwRec.VariantCondition)
+                %assign ppEndif = SLibEndIfVariantConditionForm(dwRec.VariantCondition)
+                %<ppIf>
+                %<serviceFcnPtr> = %<serviceFcnPtrRHS>;
+                %<hostPtr> = %<nulldef>;
+                %<ppEndif>
+            %endif
+        %endif
+    %endforeach %% numRequestingSvc
+%endfunction
+
+%function SLibDumpServicePortSelfInit() Output
+    %% Initialize this model's service data
+    %if GenerateClassInterface || !SLibServicePortsExist()
+        %return
+    %endif
+    %with ServicePortInfoMap
+        %foreach portIdx = NumServicePorts
+            %assign thisPort = ServicePort[portIdx]
+            %if thisPort.Kind == "function"
+                %<SLibDumpFunctionServicePortInit(thisPort)>
+            %elseif thisPort.Kind == "message"
+                %<SLibDumpMessageServicePortInit(thisPort)>
+            %endif
+            %% There is no error for unhandled service port kinds since it is OK
+            %% to have no implementation or a different implementation for
+            %% new services
+        %endforeach %% NumServicePorts
+    %endwith %%ServicePortInfoMap
+%endfunction
+
+%endif %% _SERVICELIB_
+%% [EOF] servicelib.tlc

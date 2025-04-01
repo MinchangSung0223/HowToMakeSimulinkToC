@@ -1,0 +1,693 @@
+%%
+%%
+%% Copyright 1994-2022 The MathWorks, Inc.
+%%
+%% Abstract: From File block
+%%
+%%      There are two different ways in which FromFile generates code:
+%%
+%%          1) Using the sl_fileio module for incremental reading
+%%          2) Loading the whole MAT-File into memory at code generation
+%%
+%%      For host-based simulation targets (RSim, Raccel, SL Accelerator,
+%%      and Model Reference SimTarget), the sl_fileio module can be linked
+%%      into the generated code and used to read MAT-Files from disk
+%%      incrementally.  The sl_fileio module can determine whether or not
+%%      incremental reading is possible (as from an HDF5 v7.3 MAT-File) or
+%%      whether the entire contents of the MAT-File must be read into memory
+%%      (as from a v4 or v5 MAT-File).  The sl_fileio module hides this
+%%      part so that the generated code simply interfaces to the sl_fileio
+%%      API and does not care if it is reading incrementally or not.
+%%
+%%      For other targets (grt, ert, real-time targets, etc.), the sl_fileio
+%%      cannot be linked into the generated code.  Instead, the contents of
+%%      the MAT-File are dumped into the .rtw file and generated directly
+%%      into the code during MdlStartup.
+%%
+%%      RSim (and Raccel) allow for the FromFile MAT-File to be remapped
+%%      at the command-line when the executable is spawned.  For both 1)
+%%      and 2) it is possible to remap the MAT-File and check that the new
+%%      MAT-File is consistent with the model.
+%%
+%% TopTester: test/toolbox/simulink/sl_loading/fromFile/tfromfile_incremental_fi4.m
+
+%implements FromFile "C"
+
+%% Function: BlockTypeSetup ========================================================================
+%% Abstract:
+%%
+%function BlockTypeSetup(block, system) void
+
+    %if ParamSettings.useIncrRead
+        %%
+        %% Use sl_fileio module for incremental reading of MAT-Files
+        %%
+        %% slSimTgtSlFileioRTW.h needs <stddef.h> for size_t
+        %<SLibAddToNonSharedIncludes("<stddef.h>")>
+        %<SLibAddToNonSharedIncludes("sl_fileio_rtw.h")>
+        %<SLibAddToNonSharedIncludes("simtarget/slSimTgtSlFileioRTW.h")>
+        %return ""
+    %endif
+%endfunction
+
+%% Start ======================================================================
+%% Abstract:
+%%      Load the from file .mat data into a PWork pointer
+%%
+%function Start(block, system) Output
+    {
+        %if ParamSettings.useIncrRead
+            %<startIncremental(block, system)>
+        %else
+            %<startNonIncremental(block, system)>
+        %endif
+    }
+%endfunction %% Start
+
+%% Outputs ======================================================================
+%% Abstract:
+%%      Output data from specified .mat file at each time point.
+%%
+%function Outputs(block, system) Output
+    %if ParamSettings.useIncrRead
+        %<outputsIncremental(block, system)>
+    %else
+        %<outputsNonIncremental(block, system)>
+    %endif
+%endfunction %% Outputs
+
+%% Terminate ==================================================================
+%% Abstract:
+%%      For incremental loading, release MATFileLoader instance, for the old-
+%%      fashioned loading from RAM, release the data memory.
+%%
+%function Terminate(block, system) Output
+    %if ParamSettings.useIncrRead
+        %<terminateNonVirtualBusLoading(block, system)>
+    %endif
+%endfunction %% Terminate
+
+%% Function: ZeroCrossings =========================================================================
+%% Abstract:
+%%      Zero-crossing callback.
+%%
+%function ZeroCrossings(block, system) Output
+    %if ParamSettings.useIncrRead
+        %<zeroCrossingsNonVirtualBusLoading(block, system)>
+    %endif
+%endfunction %% ZeroCrossings
+
+%% Function: createMatFileLoaderCollection =========================================================
+%% Abstract:
+%%      Code to create a MatFileLoaderCollection instance.
+%%
+%function createMatFileLoaderCollection(block, system) Output
+    %assign nulldef = SLibGetNullDefinitionFromTfl()
+    %assign scalarTokens = LibGetScalarDataInitTokens()
+    {
+        void *fp%<scalarTokens[0]>%<nulldef>%<scalarTokens[1]>;
+        const char *errMsg%<scalarTokens[0]>%<nulldef>%<scalarTokens[1]>;
+        errMsg = rtwMatFileLoaderCollectionCreateInstance( ...
+            %<::CompiledModel.ErrorXMLMode>, ...
+            &fp ...
+            );
+        if (errMsg != %<nulldef>) {
+            %<RTMSetErrStat("errMsg")>;
+            return;
+        }
+        %<LibBlockPWork(PrevTimePtr,"","",0)> = fp;
+
+        %assign dTypeId = LibBlockOutputSignalDataTypeId(0)
+        %assign dTypeId = LibGetDataTypeIdAliasedThruToFromId(dTypeId)
+        %assign nDims   = LibBlockOutputSignalNumDimensions(0)
+        %assign dims    = LibBlockOutputSignalDimensions(0)
+        %assign complex = LibBlockOutputSignalIsComplex(0)
+        %assign varPath = ""
+        %<createMatFileLoaderCollectionRecursion( ...
+            block, ...
+            system, ...
+            dTypeId, ...
+            nDims, ...
+            dims, ...
+            complex, ...
+            varPath ...
+            )>
+    }
+%endfunction %% createMatFileLoaderCollection
+
+%% Function: createMatFileLoaderCollectionRecursion ================================================
+%% Abstract:
+%%      Recursive part of createMatFileLoaderCollection.
+%%
+%function createMatFileLoaderCollectionRecursion( ...
+    block, ...
+    system, ...
+    dTypeId, ...
+    nDims, ...
+    dims, ...
+    complex, ...
+    varPath ...
+    ) Output
+    %assign nChildren = LibDataTypeNumElements(dTypeId)
+    %if nChildren == 0
+        %<matFileLoaderCollectionAddElement( ...
+            block, ...
+            system, ...
+            dTypeId, ...
+            nDims, ...
+            dims, ...
+            complex, ...
+            varPath ...
+            )>
+    %else
+        %foreach childNo = nChildren
+            %assign childDTypeId = LibDataTypeElementDataTypeId(dTypeId, childNo)
+            %assign childDTypeId  = LibGetDataTypeIdAliasedThruToFromId(childDTypeId)
+            %assign childNDims = LibDataTypeElementNumDimensions(dTypeId, childNo)
+            %assign childDims = LibDataTypeElementDimensions(dTypeId, childNo)
+            %assign childComplex = LibDataTypeElementIsComplex(dTypeId, childNo)
+            %assign childSignalName = LibDataTypeElementName(dTypeId, childNo)
+            %assign childVarPath = varPath + "." + childSignalName
+            %<createMatFileLoaderCollectionRecursion( ...
+                block, ...
+                system, ...
+                childDTypeId, ...
+                childNDims, ...
+                childDims, ...
+                childComplex, ...
+                childVarPath ...
+                )>
+        %endforeach
+    %endif
+%endfunction %% createMatFileLoaderCollectionRecursion
+
+%% Function: matFileLoaderCollectionAddElement =====================================================
+%% Abstract:
+%%      Code to add an element to MatFileLoaderCollection.
+%%
+%function matFileLoaderCollectionAddElement( ...
+    block, ...
+    system, ...
+    dTypeId, ...
+    nDims, ...
+    dims, ...
+    complex, ...
+    varPath ...
+    ) Output
+    %assign int32Type = LibGetDataTypeNameFromId(::CompiledModel.tSS_INT32)
+    %assign intType = LibGetDataTypeNameFromId(::CompiledModel.tSS_INTEGER)
+    %assign nulldef = SLibGetNullDefinitionFromTfl()
+    {
+        %% interpolation interface parameters
+        %assign extrapolationBeforeFirstDataPointInt = ...
+            ParamSettings.ExtrapolationBeforeFirstDataPoint
+        %assign interpolationWithinTimeRangeInt = ...
+            ParamSettings.InterpolationWithinTimeRange
+        %assign extrapolationAfterLastDataPointInt = ...
+            ParamSettings.ExtrapolationAfterLastDataPoint
+
+        %% zero-crossing parameter
+        %assign zeroCrossingSwitch = ParamSettings.ZeroCrossingSwitch
+
+        %assign equalSign = LibGetDataInitEqualSign()
+        %assign scalarTokens = LibGetScalarDataInitTokens()
+
+        %% ground value
+        %assign groundValueBin = DataTypes.DataType[dTypeId].GroundValueBin
+        %openfile groundValueBuffer
+        %if SLibIsNdIndexingFeatureOn()
+            %assign dummyVal = ...
+                GENERATE_FORMATTED_VALUE(groundValueBin, "", 0)
+        %else
+            %assign dummyVal = ...
+                GENERATE_FORMATTED_VALUE(groundValueBin, "")
+        %endif
+        %closefile groundValueBuffer
+        unsigned char groundValue[]%<equalSign>%<groundValueBuffer>;
+
+        %% class name
+        %assign className = SLibGetMLDataTypeFromId(dTypeId)
+        %if className == "boolean"
+            %assign className = "logical"
+        %endif
+
+        %% enum parameters
+        %if LibIsEnumDataType(dTypeId)
+            %assign className = LibGetDataTypeNameFromId(dTypeId)
+            %assign enumNStrings = FcnGetEnumTypeNumEnums(dTypeId)
+            %assign enumStringsInit = ...
+                "const char *enumStrings[%<enumNStrings>]%<equalSign>{"
+            %assign enumValuesInit = "%<int32Type> enumValues[%<enumNStrings>]%<equalSign>{"
+            %foreach enumIndex = enumNStrings
+                %assign enumString = SLibGetEnumTypeStringFromIndex(dTypeId, enumIndex)
+                %assign enumStringsInit = enumStringsInit + "\"%<enumString>\""
+                %assign enumValue = SLibGetEnumTypeValueFromIndex(dTypeId, enumIndex)
+                %assign enumValuesInit = enumValuesInit + "%<enumValue>"
+                %if enumIndex != enumNStrings-1
+                    %assign enumStringsInit = enumStringsInit + ", "
+                    %assign enumValuesInit = enumValuesInit + ", "
+                %endif
+            %endforeach
+            %assign enumStringsInit = enumStringsInit + "};"
+            %assign enumValuesInit = enumValuesInit + "};"
+            const int enumNStrings = %<enumNStrings>;
+            %<enumStringsInit>
+            %<enumValuesInit>
+        %else
+            const int enumNStrings%<scalarTokens[0]>0%<scalarTokens[1]>;
+            const char **enumStrings%<scalarTokens[0]>%<nulldef>%<scalarTokens[1]>;
+            const %<int32Type> *enumValues%<scalarTokens[0]>%<nulldef>%<scalarTokens[1]>;
+        %endif
+
+        %% fixpt parameters
+        %if LibIsDataTypeFixpt(dTypeId)
+            %assign fixedPoint = 1
+            %assign curDT = FixPt_GetDataTypeFromIndex(dTypeId)
+            %if fxpIsDataTypeFixPt(curDT)
+                %assign fxp_mode = 0
+            %elseif fxpIsDataTypeScaledDouble(curDT)
+                %assign fxp_mode = 1
+            %elseif FixPt_DataTypeIsDouble(curDT)
+                %assign fxp_mode = 2
+            %elseif FixPt_DatatTypeIsSingle(curDT)
+                %assign fxp_mode = 3
+            %elseif FixPt_DatatTypeIsBoolean(curDT)
+                %assign fxp_mode = 4
+            %else
+                %assert TLC_FALSE
+            %endif
+            %assign fxp_isSigned = curDT.IsSigned
+            %assign fxp_wordLen = curDT.RequiredBits
+            %assign fxp_slope = curDT.FracSlope
+            %assign fxp_fixedExp = curDT.FixedExp
+            %assign fxp_bias = curDT.Bias
+        %else
+            %assign fixedPoint = 0
+            %assign fxp_mode = 0
+            %assign fxp_isSigned = 0
+            %assign fxp_wordLen = 0
+            %assign fxp_slope = 0
+            %assign fxp_fixedExp = 0
+            %assign fxp_bias = 0
+        %endif
+
+        %% storage DTypeId
+        %assign storageDTypeId = LibGetDataTypeStorageIdFromId(dTypeId)
+
+        %% dimensions
+        %if nDims == 1
+            %<intType> dimensions[1]%<equalSign>{%<dims[0]>};
+        %else
+            %assign dimsInit = "%<intType> dimensions[%<nDims>]%<equalSign>{"
+            %foreach dimsIdx = nDims
+                %assign dimsInit = dimsInit + "%<dims[dimsIdx]>"
+                %if dimsIdx != nDims-1
+                    %assign dimsInit = dimsInit + ", "
+                %endif
+            %endforeach
+            %assign dimsInit = dimsInit + "};"
+            %<dimsInit>
+        %endif
+
+        %% fxpBlockProp parameters for fi data interpolation
+        %assign fxpDiagnosticOverflow = ParamSettings.FxpDiagnosticOverflow
+        %assign fxpDiagnosticSaturation = ParamSettings.FxpDiagnosticSaturation
+        %assign fxpBlockPath = STRING(ParamSettings.FxpBlockPath)
+
+        %% add element call
+        errMsg = rtwMatFileLoaderCollectionAddElement(...
+            %<::CompiledModel.ErrorXMLMode>, ...
+            fp, ...
+            fileName, ...
+            "%<varPath>", ...
+            %<extrapolationBeforeFirstDataPointInt>, ...
+            %<interpolationWithinTimeRangeInt>, ...
+            %<extrapolationAfterLastDataPointInt>, ...
+            %<zeroCrossingSwitch>, ...
+            groundValue, ...
+            "%<className>", ...
+            %<storageDTypeId>, ...
+            %<nDims>, ...
+            dimensions, ...
+            %<complex>, ...
+            %<fixedPoint>, ...
+            %<fxp_mode>, ...
+            %<fxp_isSigned>, ...
+            %<fxp_wordLen>, ...
+            %<fxp_slope>, ...
+            %<fxp_fixedExp>, ...
+            %<fxp_bias>, ...
+            enumNStrings, ...
+            enumStrings, ...
+            enumValues, ...
+            %<fxpDiagnosticOverflow>, ...
+            %<fxpDiagnosticSaturation>, ...
+            "%<fxpBlockPath>" ...
+            );
+
+        %% Error processing
+        if (errMsg != %<nulldef>) {
+            %<RTMSetErrStat("errMsg")>;
+            return;
+        }
+
+    }
+%endfunction %% matFileLoaderCollectionAddElement
+
+%% Function: matFileLoaderCollectionGetOutput ======================================================
+%% Abstract:
+%%      Code to add a getOutput call to MatFileLoaderCollection.
+%%
+%function matFileLoaderCollectionGetOutput( ...
+    block, ...
+    system, ...
+    varPath, ...
+    leafIdx ...
+    ) Output
+    %assign nulldef = SLibGetNullDefinitionFromTfl()
+    %assign scalarTokens = LibGetScalarDataInitTokens()
+    {
+        void *y%<scalarTokens[0]>%<varPath>%<scalarTokens[1]>;
+        errMsg = rtwMatFileLoaderCollectionGetOutput( ...
+            %<::CompiledModel.ErrorXMLMode>, ...
+            fp, ...
+            %<leafIdx>, ...
+            t, ...
+            %<RTMIs("MajorTimeStep")>, ...
+            &y ...
+            );
+        if (errMsg != %<nulldef>) {
+            %<RTMSetErrStat("errMsg")>;
+            return;
+        }
+    }
+%endfunction %% matFileLoaderCollectionGetOutput
+
+%% Function: outputsIncremental ====================================================================
+%% Abstract:
+%%      Outputs callback for incremental loading.
+%%
+%function outputsIncremental(block, system) Output
+    %<outputsNonVirtualBusLoading(block, system)>
+%endfunction %% outputsIncremental
+
+%% Function: outputsNonIncremental =================================================================
+%% Abstract:
+%%      Outputs callback for non-incremental loading.
+%%
+%function outputsNonIncremental(block, system) Output
+    %assign booleanType = LibGetDataTypeNameFromId(::CompiledModel.tSS_BOOLEAN)
+    %assign realType = LibGetDataTypeNameFromId(::CompiledModel.tSS_DOUBLE)
+    {
+        %assign npoints = ParamSettings.NumPoints
+        %assign multColumns = npoints != 1
+        %assign scalarTokens = LibGetScalarDataInitTokens()
+        %% If there are/could be multiple columns in the data
+        %% we need to keep track of the previous time.  Otherwise
+        %% we just output the same data at each time step.
+        %if multColumns
+            static const %<realType> *pStart%<scalarTokens[0]>%<SLibGetNullDefinitionFromTfl()>%<scalarTokens[1]>;
+            static %<booleanType> initBasePtr%<scalarTokens[0]>%<GET_TYPE_ID_REPLACEMENT("true")>%<scalarTokens[1]>;
+            %<realType>        time   %<scalarTokens[0]>%<LibGetTaskTimeFromTID(block)>%<scalarTokens[1]>;
+            const %<realType>  *pU    %<scalarTokens[0]>%<SLibGetNullDefinitionFromTfl()>%<scalarTokens[1]>;
+        %endif
+        const %<realType> *pT%<scalarTokens[0]>(const %<realType> *) %<LibBlockPWork(PrevTimePtr,"","",0)>%<scalarTokens[1]>;
+
+        %if multColumns
+            if (initBasePtr == %<GET_TYPE_ID_REPLACEMENT("true")>) {
+                pStart = (%<realType> *) %<LibBlockPWork(PrevTimePtr,"","",0)>;
+                initBasePtr = %<GET_TYPE_ID_REPLACEMENT("false")>;
+            }
+        %endif
+
+        %% Write out the code for the case when there is 1 column
+        %if npoints == 1
+            %openfile onecolumnbuf
+            %assign rollVars = ["Y", "<pwork>/PrevTimePtr"]
+            %roll idx = RollRegions, lcv = RollThreshold, block, "Roller", rollVars
+                %assign y = LibBlockOutputSignal(0, "", lcv, idx)
+                %if lcv != ""
+                    %<y> = pT[%<lcv> + 1];
+                %else
+                    %assign index = idx + 1
+                    %<y> = pT[%<index>];
+                %endif
+            %endroll
+            %closefile onecolumnbuf
+        %endif
+
+        %if npoints == 1
+            %<onecolumnbuf>
+        }
+        %return
+        %endif
+
+        pU = pStart + %<npoints-2>;
+
+        %%
+        %% Update current time pointer such that: pT[0] <= time < pT[1]
+        %%
+
+        if (time <= pStart[0]) {
+            pT = pStart;
+        } else if (time >= pU[0]) {
+            pT = pU;
+        } else {
+            if (time < pT[0]) {
+                while (time < pT[0]) {
+                    pT--;
+                }
+            } else {
+                while (time >= pT[1]) {
+                    pT++;
+                }
+            }
+        }
+        %<LibBlockPWork(PrevTimePtr,"","",0)> = (void *) pT;
+
+        pU = pT + %<npoints>;
+
+        %%
+        %% Compute the outputs.
+        %%
+        %assign noutputs = LibBlockOutputSignalWidth(0)
+        %assign rollVars = ["Y"]
+        if (pT[0] == pT[1]) {
+            %roll idx = RollRegions, lcv = RollThreshold, block, "Roller", rollVars
+                %assign y = LibBlockOutputSignal(0, "", lcv, idx)
+                %<y> = pU[ (time < pT[0]) ? 0 : 1 ];
+                %if (lcv != "") || (lcv == "" && idx < noutputs-1)
+                    pU += %<npoints>;
+                %endif
+            %endroll
+        } else {
+            %<realType> f%<scalarTokens[0]>(pT[1]-time)/(pT[1]-pT[0])%<scalarTokens[1]>;
+            %roll idx = RollRegions, lcv = RollThreshold, block, "Roller", rollVars
+                %assign y = LibBlockOutputSignal(0, "", lcv, idx)
+                if (pU[0] == pU[1]) {
+                    %<y> = pU[0];
+                } else {
+                    %<y> = f*pU[0]+(1.0-f)*pU[1];
+                }
+                %if (lcv != "") || (lcv == "" && idx < noutputs-1)
+                    pU += %<npoints>;
+                %endif
+            %endroll
+        }
+    }
+%endfunction %% outputsNonIncremental
+
+%% Function: outputsNonVirtualBusLoading ===========================================================
+%% Abstract:
+%%      Outputs callback for cases when non-virtual bus loading is turned on.
+%%
+%function outputsNonVirtualBusLoading(block, system) Output
+    %assign realType = LibGetDataTypeNameFromId(::CompiledModel.tSS_DOUBLE)
+    %assign nulldef = SLibGetNullDefinitionFromTfl()
+    %assign scalarTokens = LibGetScalarDataInitTokens()
+    %assign zeroCrossingSwitch = ParamSettings.ZeroCrossingSwitch
+    {
+        void *fp%<scalarTokens[0]>(void *) %<LibBlockPWork(PrevTimePtr,"","",0)>%<scalarTokens[1]>;
+        const char *errMsg%<scalarTokens[0]>%<nulldef>%<scalarTokens[1]>;
+        if (fp != %<nulldef> && ...
+            (%<RTMIs("MajorTimeStep")> || !%<zeroCrossingSwitch>) ...
+            ) {
+            %<realType> t%<scalarTokens[0]>%<LibGetTaskTimeFromTID(block)>%<scalarTokens[1]>;
+            %assign dTypeId = LibBlockOutputSignalDataTypeId(0)
+            %assign dTypeId = LibGetDataTypeIdAliasedThruToFromId(dTypeId)
+            %assign varPath = LibBlockOutputSignalAddr(0, "", "", 0)
+            %assign leafIdx = 0
+            %assign tmp = %<outputsNonVirtualBusLoadingRecursion( ...
+                block, ...
+                system, ...
+                dTypeId, ...
+                varPath, ...
+                leafIdx ...
+                )>
+        }
+    }
+%endfunction %% outputsNonVirtualBusLoading
+
+%% Function: outputsNonVirtualBusLoadingRecursion ==================================================
+%% Abstract:
+%%      Recursive part of outputsNonVirtualBusLoading.
+%%
+%function outputsNonVirtualBusLoadingRecursion( ...
+    block, ...
+    system, ...
+    dTypeId, ...
+    varPath, ...
+    leafIdx ...
+    ) Output
+    %assign nChildren = LibDataTypeNumElements(dTypeId)
+    %if nChildren == 0
+        %<matFileLoaderCollectionGetOutput( ...
+            block, ...
+            system, ...
+            varPath, ...
+            leafIdx ...
+            )>
+        %assign leafIdx = leafIdx + 1
+    %else
+        %foreach childNo = nChildren
+            %assign childDTypeId = LibDataTypeElementDataTypeId(dTypeId, childNo)
+            %assign childDTypeId = LibGetDataTypeIdAliasedThruToFromId(childDTypeId)
+            %assign childSignalName = LibDataTypeElementName(dTypeId, childNo)
+            %assign childVarPath = varPath + "." + childSignalName
+            %assign leafIdx = %<outputsNonVirtualBusLoadingRecursion( ...
+                block, ...
+                system, ...
+                childDTypeId, ...
+                childVarPath, ...
+                leafIdx ...
+                )>
+        %endforeach
+    %endif
+    %return leafIdx
+%endfunction %% outputsNonVirtualBusLoadingRecursion
+
+%% Function: startIncremental ======================================================================
+%% Abstract:
+%%      Start callback for incremental loading.
+%%
+%function startIncremental(block, system) Output
+    %<startNonVirtualBusLoading(block, system)>
+%endfunction %% startIncremental
+
+%% Function: startNonIncremental ===================================================================
+%% Abstract:
+%%      Start callback for non-incremental loading.
+%%
+%function startNonIncremental(block, system) Output
+    %assign realType = LibGetDataTypeNameFromId(::CompiledModel.tSS_DOUBLE)
+    %%
+    %% generate the numbers for the data declaration
+    %%
+    %assign tmpVar = valuesVecTemp { ...
+        Value  ParamSettings.TUdata ; ...
+        DataTypeIdx tSS_DOUBLE }
+    %assign valuesVecVal = LibPrepParameter(valuesVecTemp)
+    %openfile valuesBuffer
+    %if SLibIsNdIndexingFeatureOn()
+        %assign dummyVal = ...
+            GENERATE_FORMATTED_VALUE(valuesVecVal, "", 0)
+    %else
+        %assign dummyVal = ...
+            GENERATE_FORMATTED_VALUE(valuesVecVal, "")
+    %endif
+    %closefile valuesBuffer
+
+    %%
+    %% Simulink ensures no non-finite values, declare the (finite) data
+    %%
+    %assign tuBufferName = "tuData"
+    %assign nterms = SIZE(ParamSettings.TUdata,1)
+    static const %<realType> %<tuBufferName>[%<nterms>]%<LibGetDataInitEqualSign()>%<valuesBuffer>;
+
+    %<LibBlockPWork(PrevTimePtr,"","",0)> = (void *) &%<tuBufferName>[0];
+
+%endfunction %% startNonIncremental
+
+%% Function: startNonVirtualBusLoading =============================================================
+%% Abstract:
+%%      Start callback for cases when non-virtual bus loading is turned on.
+%%
+%function startNonVirtualBusLoading(block, system) Output
+    %assign nulldef = SLibGetNullDefinitionFromTfl()
+    %assign scalarTokens = LibGetScalarDataInitTokens()
+    %assign fnStr = STRING(ParamSettings.FileName)
+    char fileName[%<RTWMaxStringLength>]%<scalarTokens[0]>"%<fnStr>"%<scalarTokens[1]>;
+    %if isRSim
+        %if isRAccel==0
+            rt_RSimRemapFromFileName(fileName);
+        %endif
+    %endif
+    %if IsModelReferenceSimTarget() || isRAccel
+        %assign blockPath = STRING(LibGetBlockPath(block))
+        const char *blockpath%<scalarTokens[0]>"%<blockPath>"%<scalarTokens[1]>;
+        if(slIsRapidAcceleratorSimulating()) {
+            rt_RAccelReplaceFromFilename(blockpath, fileName);
+        }
+    %endif
+    %<createMatFileLoaderCollection(block, system)>
+%endfunction %% startNonVirtualBusLoading
+
+%% Function: terminateNonVirtualBusLoading =========================================================
+%% Abstract:
+%%      Terminate callback for cases when non-virtual bus loading is turned on.
+%%
+%function terminateNonVirtualBusLoading(block, system) Output
+    %assign nulldef = SLibGetNullDefinitionFromTfl()
+    %assign scalarTokens = LibGetScalarDataInitTokens()
+    {
+        const char *errMsg%<scalarTokens[0]>%<nulldef>%<scalarTokens[1]>;
+        void *fp%<scalarTokens[0]>(void *) %<LibBlockPWork(PrevTimePtr, "", "", 0)>%<scalarTokens[1]>;
+        if(fp != %<nulldef>) {
+            errMsg = ...
+                rtwMatFileLoaderCollectionDestroyInstance( ...
+                %<::CompiledModel.ErrorXMLMode>, ...
+                fp ...
+                );
+            if (errMsg != %<nulldef>) {
+                %<RTMSetErrStat("errMsg")>;
+                return;
+            }
+        }
+    }
+%endfunction %% terminateNonVirtualBusLoading
+
+%% Function: zeroCrossingsNonVirtualBusLoading =====================================================
+%% Abstract:
+%%      Zero crossings callback for cases when non-virtual bus loading is turned
+%%      on.
+%%
+%function zeroCrossingsNonVirtualBusLoading(block, system) Output
+    %assign realType = LibGetDataTypeNameFromId(::CompiledModel.tSS_DOUBLE)
+    %assign nulldef = SLibGetNullDefinitionFromTfl()
+    %assign scalarTokens = LibGetScalarDataInitTokens()
+    {
+        void *fp%<scalarTokens[0]>(void *) %<LibBlockPWork(PrevTimePtr,"","",0)>%<scalarTokens[1]>;
+        if(fp != %<nulldef>) {
+            %<realType> t%<scalarTokens[0]>%<LibGetT()>%<scalarTokens[1]>;
+            double zcSignalValue%<scalarTokens[0]>-1.0%<scalarTokens[1]>;
+            void *pZCSignalValue%<scalarTokens[0]>&zcSignalValue%<scalarTokens[1]>;
+            const char *errMsg%<scalarTokens[0]>%<nulldef>%<scalarTokens[1]>;
+            %foreach sigIdx = ParamSettings.ZeroCrossingSignalWidth
+                errMsg = rtwMATFileLoaderCollectionGetZeroCrossingSignal(...
+                    fp, ...
+                    %<sigIdx>, ...
+                    t, ...
+                    %<RTMIs("MajorTimeStep")>, ...
+                    pZCSignalValue...
+                    );
+                if (errMsg != %<nulldef>) {
+                    %<RTMSetErrStat("errMsg")>;
+                    return;
+                }
+                %<LibBlockZCSignalValue("","",0, sigIdx)> = zcSignalValue;
+            %endforeach
+        }
+    }
+%endfunction %% zeroCrossingsNonVirtualBusLoading(block, system)
+
+%% [EOF] fromfile.tlc

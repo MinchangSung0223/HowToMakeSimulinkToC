@@ -1,0 +1,111 @@
+%% ============================================================================
+%% Abstract:
+%%
+%% Copyright 2014-2022 The MathWorks, Inc.
+%%
+
+%if EXISTS(_TGTCONN_) == 0
+%assign _TGTCONN_ = 1
+
+%% Function SLibWriteTgtConnFile ==============================================
+%% Abstract :
+%%
+%function SLibWriteTgtConnFile() void
+    %assign charType = LibGetDataTypeNameFromId(::CompiledModel.tSS_CHAR)
+    %assign intType = LibGetDataTypeNameFromId(::CompiledModel.tSS_INTEGER)
+
+    %realformat "CONCISE"
+
+    %assign SrcFileName = SLibGetFileNameForCode("mdl_tgtconn_src") + ".%<::LangFileExt>"
+    %assign SrcFileType = "source"
+
+    %% ***********************************
+    %%         <model>_tgtconn.c
+    %% ***********************************
+
+    %<LibWriteToStandardOutput("### Writing %<SrcFileType> file %<SrcFileName>")>
+    %openfile outputFile = SrcFileName
+    /*
+    * %<SrcFileName>
+    *
+    %<SLibCommonHeaderInfo()>\
+    */
+
+    #include "%<SLibGetFileNameForCode("rtwtypes_hdr")>.h"
+
+    %if isRAccel && SLibRemoveSimstrucFromRtwtypes()
+        %% Needed for UNUSED_PARAMETER
+        #include "rt_defines.h"
+    %endif
+
+    %if ::GenCPP
+        #ifdef __cplusplus
+        #define EXTERN_C extern "C"
+        #else
+        #define EXTERN_C
+        #endif
+    %else
+        #define EXTERN_C
+    %endif
+
+    %assign tgtConnStr = FEVAL("coder.internal.connectivity.TgtConnMgr.getIncludesAndDefinesCode")
+    %if !WHITE_SPACE(tgtConnStr)
+        %<tgtConnStr>
+    %endif
+
+    EXTERN_C void TgtConnBackgroundTask()
+    {
+        %assign tgtConnStr = FEVAL("coder.internal.connectivity.TgtConnMgr.getBackgroundTaskCode")
+        %if !WHITE_SPACE(tgtConnStr)
+            %<tgtConnStr>
+        %endif
+    }
+
+    EXTERN_C const %<charType> *TgtConnInit(%<intType> argc, %<charType> *argv[])
+    {
+        %assign tgtConnStr = FEVAL("coder.internal.connectivity.TgtConnMgr.getMdlInitCode")
+        const %<charType> *result = %<SLibGetNullDefinitionFromTfl()>; /* assume success */
+        %if !WHITE_SPACE(tgtConnStr)
+            %<tgtConnStr>
+        %endif
+        return(result);
+    }
+
+    EXTERN_C void TgtConnTerm()
+    {
+        %assign tgtConnStr = FEVAL("coder.internal.connectivity.TgtConnMgr.getMdlTermCode")
+        %if !WHITE_SPACE(tgtConnStr)
+            %<tgtConnStr>
+        %endif
+    }
+
+    EXTERN_C void TgtConnPreStep(%<intType> tid)
+    {
+        %assign tgtConnStr = FEVAL("coder.internal.connectivity.TgtConnMgr.getPreStepCode")
+        %if !WHITE_SPACE(tgtConnStr)
+            %<tgtConnStr>
+        %endif
+    }
+
+    EXTERN_C void TgtConnPostStep(%<intType> tid)
+    {
+        %assign tgtConnStr = FEVAL("coder.internal.connectivity.TgtConnMgr.getPostStepCode")
+        %if !WHITE_SPACE(tgtConnStr)
+            %<tgtConnStr>
+        %endif
+    }
+
+    /* EOF: %<SrcFileName> */
+    %closefile outputFile
+
+    %% Set the filter to 1, to prevent re-writing to disk
+    %assign tgtConnCFile = SLibGetFileRecForCode("mdl_tgtconn_src")
+    %<SLibSetModelFileAttribute(tgtConnCFile, "Filter", 1)>
+    %<SLibAddGeneratedFileToList(SrcFileName,"interface","source","")>
+
+%endfunction
+
+%%
+%endif   %% _TGTCONN_
+
+%% EOF tgtconn.tlc ============================================================

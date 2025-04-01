@@ -1,0 +1,569 @@
+%%
+%%
+%%
+%%
+%% Copyright 1994-2023 The MathWorks, Inc.
+%%
+%% Description:
+%%   This TLC library file contains function for caching code for the shared
+%%   utilities src directory.
+
+%if EXISTS(_CACHE_SHAREDUTILS_LIB_) == 0
+%assign _CACHE_SHAREDUTILS_LIB_ = 1
+
+%include "cache_sharedutils_api.tlc"
+
+%%
+%% Design of global variable ::GlobalSharedUtilsIncludes
+%%
+%%   ::GlobalSharedUtilsIncludes is a vector of vectors.
+%%     It can also be thought of as a ragged two dimensional array.
+%%     Is serves as stack for storing include header file requirements for
+%%     shared utilities.
+%%
+%%   A typical GlobalSharedUtilsIncludes LOGICALLY looks as following:
+%%      top    newest ["<math.h>", "custom1.h", "custom2.h"]
+%%                   []
+%%      bottom oldest ["math.h", "<float.h>"]
+%%   Note the physical layout is the reverse of the logical layout.  The
+%%   newest items are at the highest row index.
+%%
+%%   Each row of GlobalSharedUtilsIncludes contains the header files that
+%%   will be needed by a function.  This functions can be created in
+%%   a nested manner, hence the need for a stack.  A utility can incrementally
+%%   add additional header files to its row in the stack.
+
+%%   To help developers access the stack, several stack functions are available
+%%   to operate on ::GlobalSharedUtilsIncludes.
+%%
+%%   LibPushStackSharedUtilsIncludes(inputVector)
+%%    -- it will push an entire new vector of includes into top of stack,
+%%       in other words, a new row will be inserted into logical-top
+%%       stack position.
+%%
+%%   LibPushEmptyStackSharedUtils()
+%%    -- it will push an empty vector of includes into top of stack,
+%%       in other words, a new row will be inserted into logical-top
+%%       stack position and that row will be empty.  This is useful for
+%%       initializing the set of header files required by a utility.
+%%
+%%   LibPopStackSharedUtilsIncludes()
+%%    -- From the logical top of the stack remove an entire row and
+%%       return that vector.
+%%
+%%   LibAddtoSharedUtilsIncludes(incFileName)
+%%    -- Add an individual element to the list of header files at
+%%       the current logical-top of stack.  The row vector at the
+%%       top of the stack will be checked first.  If the header file
+%%       is already in the list, then nothing changes.  Otherwise,
+%%       the length of the vector at the logical-top of the stack
+%%       will be increased by one using the new header file name.
+%%
+%%   LibAddtoSharedUtilsIncludesVector(inputVet)
+%%    -- Append a vector of header file names to the list of vector of
+%%       header files at that are currently at the logical-top of stack.
+%%       Repeated header file names will be thrifted out.  The length
+%%       of the vector at the logical-top of the stack will be
+%%       increase enough to hold any new header file names.  Like a
+%%       set union operation.
+%%
+%%   Usage:
+%%     On the begining of shared utilities code generation, we call
+%%     LibPushEmptyStackSharedUtils to create a new row at the logical-top of stack
+%%     to record include file requirements.  As the need for an individual header
+%%     file is identified, calls are made to LibAddtoSharedUtilsIncludes to insert
+%%     that file in the row at the logical-top of the stack.  At the end of
+%%     code generation for each utility, authors must call LibPopStackSharedUtilsIncludes
+%%     to clean up the stack by removing the logical-top.
+%%     In the middle of generating code for one utility, it is common to begin generating
+%%     another required utility.  The stack design support this nested creation of
+%%     utilities.
+%%
+%%     Reading the top of stack requires two function calls.  The first function pops
+%%     the vector from the logical-top of the stack.  A second call is required to
+%%     push that vector back on to the logical-top of the stack.
+%%
+%%     When code generation also return its buffer into upper layer function, we need
+%%     call pop function first, then use LibAddtoSharedUtilsIncludesVector(inputVet) to
+%%     append the poped layer into head file list for upper layer code generation function.
+
+
+%% Function: locGetCreatedByComment ================================================================
+%% Abstract:
+%%     Helper function function SLibDumpUtilsSourceCode.
+%%     It returns string comment to be used at the top of shared
+%%     utility files to indicate who created the utility functions.
+%%
+%function locGetCreatedByComment(name)
+    %if IsModelReferenceTarget() && ...
+        Name == ::CompiledModel.System[GetBaseSystemIdx()].Name
+        %assign comment = "* Created for model: %<::CompiledModel.Name>"
+    %else
+        %assign comment = "* Created for block: %<Name>"
+    %endif
+    %return comment
+%endfunction
+
+
+%% Function: SLibDumpUtilsSourceCodeAndCacheFunctionPrototype ======================================
+%% Abstract:
+%%   Write shared utils source code into disk, as well as add function
+%%   signature into shared utils general include header file.  Includes for the
+%%   header files from the logical-top of the stack ::GlobalSharedUtilsIncludes
+%%   are inserted prior to the body in the c-file.
+%%
+%%   Add pragmas around utility funcPrototype and funcDefinition
+%%   Cache function prototype when the function is not shared utils
+%%
+%%   Example:
+%%        %openfile buffer
+%%        void myfunc(int i) {
+%%          i++;
+%%        }
+%%        %closefile buffer
+%%        %<SLibDumpUtilsSourceCodeAndCacheFunctionPrototype("myfunc","void myfunc(int i)",buffer)>
+%%
+%function SLibDumpUtilsSourceCodeAndCacheFunctionPrototype(fcnName,funcProto,buffer) void
+    %<SLibDumpUtilsSourceCodeWithPrototypeIncludesAndCached(fcnName,funcProto,buffer,"")>
+%endfunction
+
+%function SLibGetUtilsCoderTypeSymbols(fcnName) void
+    %assign symbols = [ %<SLibVarGroupBasicTypesAll()> ]
+    %assign rtwCtx = ::CompiledModel.RTWContext
+    %assign isMultiword = SLibIsHostBasedSimulationTarget() ? ...
+        TLC_TRUE : ...
+        FEVAL("rtwprivate", "retrieveMultiWordUtilitiesAndFunctions", "%<MasterSharedCodeManagerFile>", rtwCtx, fcnName)
+    %if isMultiword
+        %assign symbols = symbols + "multiword_types"
+    %endif
+    %if LibIsHalfPrecisionUsed()
+        %assign symbols = symbols + "half_type"
+    %endif
+    %return symbols
+%endfunction
+
+
+%% Function: SLibDumpUtilsSourceCodeWithPrototypeIncludesAndCached =================================
+%% Abstract:
+%%   Write shared utils source code into disk, as well as add function
+%%   signature into shared utils general include header file.  Includes for the
+%%   header files from the logical-top of the stack ::GlobalSharedUtilsIncludes
+%%   are inserted prior to the body in the c-file. And cache function prototype
+%%   when the function is not shared utils
+%%
+%%   Add pragmas around utility funcPrototype and funcDefinition
+%%   Cache function prototype when the function is not shared utils
+%%
+%%   Example:
+%%        %openfile buffer
+%%        void myfunc(int i) {
+%%          i++;
+%%        }
+%%        %closefile buffer
+%%        %<SLibDumpUtilsSourceCodeWithPrototypeIncludesAndCached("myfunc","void myfunc(int i)",buffer,"")>
+%%
+%function SLibDumpUtilsSourceCodeWithPrototypeIncludesAndCached(fcnName,funcProto,buffer,funcProtoIncludes) void
+    %% input argument funcProto and buffer shall not have pragma
+    %<SLibDumpUtilsSourceCodeWithPrototypeIncludes(fcnName,funcProto,buffer,funcProtoIncludes)>
+    %if ::CompiledModel.GenUtilsSrcInSharedLocation == 0
+        %assign msfcn = "MemSecFuncSharedUtil"
+        %openfile fcnPrototype_pragma
+        %<SLibGetFcnMemSecPragmaOnDecl(fcnName, msfcn, "Pre")>\
+        %<funcProto>
+        %<SLibGetFcnMemSecPragmaOnDecl(fcnName, msfcn, "Post")>\
+        %closefile fcnPrototype_pragma
+        %<LibCacheFunctionPrototype(fcnPrototype_pragma)>\
+    %endif
+
+%endfunction
+
+%% Function: SLibDumpUtilsSourceCodeForSystem ======================================================
+%% Abstract:
+%%   Write shared utils source code into disk, as well as add function
+%%   signature into shared utils general include header file.  Includes for the
+%%   header files from the logical-top of the stack ::GlobalSharedUtilsIncludes
+%%   are inserted prior to the body in the c-file.
+%%
+%%   Example:
+%%        %openfile buffer
+%%        void myfunc(int i) {
+%%          i++;
+%%        }
+%%        %closefile buffer
+%%        %<SLibDumpUtilsSourceCode("myfunc","void myfunc(int i)",buffer)>
+%%
+%function SLibDumpUtilsSourceCodeForSystem(fcnName,funcProto,buffer, system, addExternC) void
+    %% g1633934:Dump the header file includes if using row-major code generation and sharedutils
+    %% for the logging transpose function. The transpose function includes should not be
+    %% if the model is Accelerator type model
+
+
+    %% g2869187 - This header inclusion is needed only when MatFileLogging is enabled for row-major model.
+    %%            Row-major + MatFileLogging is currently an  unsupported workflow (user error)
+    %%            This header inclusion should be reevaluated when we support MatfileLogging for row-major
+    %assign isMatFileLoggingSupportedForRowMajor = CGMODEL_ACCESS("CGModel.IsMatFileLoggingSupportedForRowMajor")
+    %assign isRowMajorMatFileLoggingEnabled = isMatFileLoggingSupportedForRowMajor && LibIsRowMajorLayout() && MatFileLogging
+
+    %if isRowMajorMatFileLoggingEnabled
+        %if !Accelerator && !IsModelReferenceSimTarget()
+            %% User top
+            %openfile funcProtoIncludesTop
+            %<LibDumpTopOfHdrFileUserCode()>\
+            %closefile funcProtoIncludesTop
+
+            %% User bottom
+            %openfile funcProtoIncludesBottom
+            %<LibDumpBottomOfHdrFileUserCode()>\
+            %closefile funcProtoIncludesBottom
+        %elseif IsModelReferenceSimTarget()
+            %% User top
+            %openfile funcProtoIncludesTop
+            %<LibDumpTopOfHdrFileUserCode()>\
+            %closefile funcProtoIncludesTop
+        %endif
+    %endif
+    %assign funcProtoIncludes = ""
+    %if EXISTS(funcProtoIncludesBottom)
+        %assign funcProtoIncludes = funcProtoIncludesTop + "\n" + funcProtoIncludesBottom
+    %elseif EXISTS(funcProtoIncludesTop)
+        %assign funcProtoIncludes = funcProtoIncludesTop
+    %endif
+    %<SLibSynchronizeFileRepWithFileRecords()>
+    %<SLibDumpUtilsSourceCodeWithPrototypeIncludesForSystem(fcnName,funcProto,buffer,funcProtoIncludes, system, addExternC)>
+%endfunction
+
+%% Function: SLibDumpUtilsSourceCode ===============================================================
+%% Abstract:
+%%    Invoke SLibDumpUtilsSourceCodeForSystem() for no particular system - in other words a
+%%    shared utility
+%%
+%function SLibDumpUtilsSourceCode(fcnName,funcProto,buffer) void
+    %<SLibDumpUtilsSourceCodeForSystem(fcnName,funcProto,buffer, [], TLC_FALSE)>
+%endfunction
+
+%% Function: SLibDumpUtilsSourceCodeWithExternC ====================================================
+%% Abstract:
+%%    Invoke SLibDumpUtilsSourceCodeWithExternC() for no particular system - in other words a
+%%    shared utility - but wrap prototype and function in externC if needed
+%%
+%function SLibDumpUtilsSourceCodeWithExternC(fcnName,funcProto,buffer) void
+    %<SLibDumpUtilsSourceCodeForSystem(fcnName,funcProto,buffer, [], TLC_TRUE)>
+%endfunction
+
+%% Function: SLibDumpUtilsSourceCodeToOwnFile ======================================================
+%% Abstract:
+%%   Write shared utils source code into disk as a separate file, as well as add function
+%%   signature into shared utils general include header file.  Includes for the
+%%   header files from the logical-top of the stack ::GlobalSharedUtilsIncludes
+%%   are inserted prior to the body in the c-file.
+%%
+%%   Example:
+%%        %openfile buffer
+%%        void myfunc(int i) {
+%%          i++;
+%%        }
+%%        %closefile buffer
+%%        %<SLibDumpUtilsSourceCode("myfunc","void myfunc(int i)",buffer)>
+%%
+%function SLibDumpUtilsSourceCodeToOwnFile(fcnName,funcProto,buffer,addExternC) void
+    %assign funcProtoIncludes = ""
+    %if EXISTS(funcProtoIncludesBottom)
+        %assign funcProtoIncludes = funcProtoIncludesTop + "\n" + funcProtoIncludesBottom
+    %elseif EXISTS(funcProtoIncludesTop)
+        %assign funcProtoIncludes = funcProtoIncludesTop
+    %endif
+    %<SLibSynchronizeFileRepWithFileRecords()>
+    %<SLibDumpUtilsSourceCodeWithPrototypeIncludesToOwnFile(fcnName,funcProto,buffer,funcProtoIncludes,addExternC)>
+%endfunction
+
+%function FcnDumpSharedUtilsIncludes(fileName)
+    %openfile buf
+    %if %<CGMODEL_ACCESS("CGModel.GlobalSharedUtilsIncludesSize")> > 0
+        %% read top of stack
+        %assign locGSUIncludesCache = LibPopStackSharedUtilsIncludes()
+        %assign nlocGSUIncludesCache = SIZE(locGSUIncludesCache,1)
+        %foreach idx = nlocGSUIncludesCache
+            %assign incFileName = locGSUIncludesCache[idx]
+            %if incFileName[0] == "<" || incFileName[0] == "\""
+                #include %<incFileName>
+            %else
+                #include "%<incFileName>"
+            %endif
+            %<SLibUpdateHeadersNeededByFile(fileName, incFileName)>
+        %endforeach
+        %<LibPushStackSharedUtilsIncludes(locGSUIncludesCache)>
+    %endif
+    %closefile buf
+    %return buf
+%endfunction
+
+%% Function: FcnGetPrePragma =======================================================================
+%% Abstract:
+%%    Dump prepragma for system if system is specified, otherwise the prepragma for shared utilities
+%%
+%function FcnGetPrePragma(fcnName, system) void
+    %if !ISEMPTY(system)
+        %return SLibGetFcnMemSecPragmaForSystemOnDecl(fcnName, "MemSecFuncExecute", "Pre", system)
+    %else
+        %return SLibGetFcnMemSecPragma(fcnName, "MemSecFuncSharedUtil", "Pre")
+    %endif
+%endfunction
+
+%% Function: FcnGetPostPragma ======================================================================
+%% Abstract:
+%%    Dump postpragma for system if system is specified, otherwise the postpragma for shared utilities
+%%
+%function FcnGetPostPragma(fcnName, system) void
+    %if !ISEMPTY(system)
+        %return SLibGetFcnMemSecPragmaForSystemOnDecl(fcnName, "MemSecFuncExecute", "Post", system)
+    %else
+        %return SLibGetFcnMemSecPragma(fcnName, "MemSecFuncSharedUtil", "Post")
+    %endif
+%endfunction
+
+%% Function: SLibDumpUtilsSourceCodeWithPrototypeIncludesToOwnFile =================================
+%% Abstract:
+%%   Write shared utils source code into disk as a separate file, as well as add function
+%%   signature and its includes into shared utils general include header file.  Includes for the
+%%   header files from the logical-top of the stack ::GlobalSharedUtilsIncludes
+%%   are inserted prior to the body in the c-file.
+%%
+%%   Example:
+%%        %openfile buffer
+%%        void myfunc(int i) {
+%%          i++;
+%%        }
+%%        %closefile buffer
+%%        %<SLibDumpUtilsSourceCodeWithPrototypeIncludesToOwnFile("myfunc","void myfunc(int i)",buffer,"",addExternC)>
+%%
+%function SLibDumpUtilsSourceCodeWithPrototypeIncludesToOwnFile(fcnName,funcProto,buffer,funcProtoIncludes, addExternC) void
+    %if !ISFIELD(::CompiledModel, "RTWInfoMatFile")
+        %<LoadRTWInfoMatFileforTLC()>
+    %endif
+    %assign baseFileName      = "%<fcnName>"
+    %assign fullFileName = fcnName + "." + ::LangFileExt
+    %if ::CompiledModel.GenUtilsSrcInSharedLocation == 1
+        %assign fileName      = "%<::CompiledModel.RTWInfoMatFile.sharedSourcesDir>%<fcnName>"
+    %else
+        %%assign fileName      = "%<::CompiledModel.RTWInfoMatFile.BuildDir>%<fcnName>"
+        %assign fileName      = "%<fcnName>"
+    %endif
+    %<SLibDumpUtilsSourceCodeWithPrototypeIncludesToFile(fcnName,funcProto,buffer, ...
+        funcProtoIncludes,baseFileName,fullFileName,fileName, [], addExternC)>
+%endfunction
+
+%% Function: SLibDumpUtilsSourceCodeWithPrototypeIncludesForSystem =================================
+%% Abstract:
+%%   Write shared utils source code into disk, as well as add function
+%%   signature and its includes into shared utils general include header file.  Includes for the
+%%   header files from the logical-top of the stack ::GlobalSharedUtilsIncludes
+%%   are inserted prior to the body in the c-file.
+%%
+%%   Example:
+%%        %openfile buffer
+%%        void myfunc(int i) {
+%%          i++;
+%%        }
+%%        %closefile buffer
+%%        %<SLibDumpUtilsSourceCodeWithPrototypeIncludes("myfunc","void myfunc(int i)",buffer,"")>
+%%
+%function SLibDumpUtilsSourceCodeWithPrototypeIncludesForSystem(fcnName,funcProto,buffer,funcProtoIncludes, system, addExternC) void
+    %if ::CompiledModel.GenUtilsSrcInSharedLocation == 1
+        %if !ISFIELD(::CompiledModel, "RTWInfoMatFile")
+            %<LoadRTWInfoMatFileforTLC()>
+        %endif
+        %assign baseFileName      = "%<fcnName>"
+        %assign fullFileName = fcnName + "." + ::LangFileExt
+        %assign fileName      = "%<::CompiledModel.RTWInfoMatFile.sharedSourcesDir>%<fcnName>"
+        %<SLibDumpUtilsSourceCodeWithPrototypeIncludesToFile(fcnName,funcProto,buffer, ...
+            funcProtoIncludes,baseFileName,fullFileName,fileName, system, addExternC)>
+    %else
+        %openfile buffer_pragmas
+        %if addExternC
+            %<FcnGenOpenExternCForCPP()>
+        %endif
+        %<FcnGetPrePragma(fcnName, system)>\
+        %<buffer>\
+        %<FcnGetPostPragma(fcnName, system)>\
+        %if addExternC
+            %<FcnGenCloseExternCForCPP()>
+        %endif
+
+        %closefile buffer_pragmas
+        %<SLibCacheSourceCode(buffer_pragmas)>\
+
+        %% Add #includes to system code since we're not generating
+        %% shared utilities
+        %if %<CGMODEL_ACCESS("CGModel.GlobalSharedUtilsIncludesSize")> > 0
+            %% pop and read top of stack to get header file names
+            %assign locGSUIncludesCache = LibPopStackSharedUtilsIncludes()
+            %assign nlocGSUIncludesCache = SIZE(locGSUIncludesCache,1)
+            %foreach idx = nlocGSUIncludesCache
+                %assign incFileName = locGSUIncludesCache[idx]
+                %assign system = ::CompiledModel.System[GetBaseSystemIdx()]
+                %assign moduleFileTypeIdx = ::CompiledModel.MdlHeaderFileIdx
+                %<FcnAppendSystemFcnHeaders(system, incFileName, moduleFileTypeIdx)>
+            %endforeach
+            %% push back onto the stack since we popped above
+            %<LibPushStackSharedUtilsIncludes(locGSUIncludesCache)>
+        %endif
+
+    %endif
+
+    %assign headerFile = CGMODEL_ACCESS("FileRepository.getUtilityFunctionHeaderFile", fcnName)
+    %assign sourceFile = CGMODEL_ACCESS("FileRepository.getUtilityFunctionSourceFile", fcnName)
+    %assign declDeps = SLibGetUtilsCoderTypeSymbols(fcnName)
+    %assign defnDeps = []
+    %<SLibAddEntryToFunctionTable(fcnName, headerFile, sourceFile, declDeps, defnDeps)>
+%endfunction
+
+%function SLibDumpUtilsSourceCodeWithPrototypeIncludesToFile(fcnName,funcProto,buffer, ...
+    funcProtoIncludes,baseFileName,fullFileName,fileName, system, addExternC) void
+    %if FILE_EXISTS(fileName+"."+ ::LangFileExt) == 0
+        %<SLibUpdateHeadersNeededByFile(fullFileName, fcnName + ".h")>
+        %openfile includeBuf
+        %% insert additional include files, such as <math.h>
+        %<FcnDumpSharedUtilsIncludes(fullFileName)>
+        %% include self to satisfy MISRA 8.1
+        #include "%<fcnName>.h"
+        %closefile includeBuf
+        %openfile protectedUtilityDef
+        %if GenCPP && addExternC
+            extern "C" {
+        %endif
+        %<FcnGetPrePragma(fcnName, system)>\
+        %<buffer>\
+        %<FcnGetPostPragma(fcnName, system)>\
+        %if GenCPP && addExternC
+        }
+        %endif
+
+        %closefile protectedUtilityDef
+        %assign createdBycomment = locGetCreatedByComment(Name)
+        %openfile bannerBuf
+        /*
+        * %<fcnName>.%<LangFileExt>
+        *
+        %<SLibCommonUtilHeaderInfo()>\
+        %<createdBycomment>
+        */
+        %closefile bannerBuf
+        %assign file = LibCreateSourceFileAtPath("Source","Simulink",fileName,baseFileName)
+        %<SLibSetModelFileAttribute(file, "Group", "utility")>
+        %if LibUseOldFilePackagingInfrastructure()
+            %<LibSetSourceFileSection(file, "Includes", includeBuf)>
+        %endif
+        %<LibSetSourceFileSection(file, "Functions", protectedUtilityDef)>
+        %<LibSetSourceFileSection(file, "Banner", bannerBuf)>
+        %<SLibSetModelFileIndent(file, TLC_TRUE)>
+        %<SLibSetModelFileShared(file, TLC_TRUE)>
+        %% We have to defer #including the coder types files since their optimized
+        %% existance can evolve during SLibGenBodyCache(), which we're in now
+        %<SLibSetModelFileDeferredIncludeCoderTypes(file, TLC_TRUE)>
+        %openfile includeHBuf
+
+        %% Include basic types headers rtwtypes.h, stdbool.h, stdint.h,
+        %% cstdint according to language standard settings
+        %%
+        %% TopTester: test/toolbox/rtw/targets/ert/tLangStandardTypes.m
+        %% TopTester: test/toolbox/rtw/targets/ert/tResolvedTypesTlc.m
+        %<LibEmitPlatformTypeIncludes()>
+
+        %assign rtwCtx = ::CompiledModel.RTWContext
+        %assign isMultiword = SLibIsHostBasedSimulationTarget() ? ...
+            TLC_TRUE : ...
+            FEVAL("rtwprivate", "retrieveMultiWordUtilitiesAndFunctions", "%<MasterSharedCodeManagerFile>", rtwCtx, fcnName)
+        %if isMultiword
+            #include "%<SLibCoderMultiwordTypesFilename()>"
+        %endif
+
+        %if LibIsHalfPrecisionUsed()
+            #include "%<SLibCoderHalfTypeHdrFilename()>"
+        %endif
+        %if SLibDeclareImageTypeUsage()
+            #include "%<SLibCoderImageTypeHdrFilename()>"
+        %endif
+        %closefile includeHBuf
+
+        %openfile customIncludeHBuf
+        %if ("%<funcProtoIncludes>" != "")
+            %<funcProtoIncludes>
+        %endif
+        %closefile customIncludeHBuf
+
+        %openfile fcnSignature
+        %if addExternC
+            %<FcnGenOpenExternCForCPP()>
+        %endif
+        %<FcnGetPrePragma(fcnName, system)>\
+        %<funcProto>
+        %<FcnGetPostPragma(fcnName, system)>\
+        %if addExternC
+            %<FcnGenCloseExternCForCPP()>
+        %endif
+        %closefile fcnSignature
+
+        %openfile bannerBuf
+        /*
+        * %<fcnName>.h
+        *
+        %<SLibCommonUtilHeaderInfo()>\
+        %<createdBycomment>
+        */
+        %closefile bannerBuf
+
+        %assign file = LibCreateSourceFileAtPath("Header","Simulink",fileName,baseFileName)
+        %<SLibSetModelFileAttribute(file, "Group", "utility")>
+        %<LibSetSourceFileSection(file, "Includes", includeHBuf)>
+        %<LibSetSourceFileSection(file, "CustomIncludes", customIncludeHBuf)>
+        %<LibSetSourceFileSection(file, "Declarations", fcnSignature)>
+        %<LibSetSourceFileSection(file, "Banner", bannerBuf)>
+        %<SLibSetModelFileIndent(file, TLC_TRUE)>
+        %<SLibSetModelFileShared(file, TLC_TRUE)>
+    %else
+        %<SLibAddGeneratedFileToList(fileName+ "."+ ::LangFileExt, "utility", "source","")>
+        %<SLibAddGeneratedFileToList(fileName+".h", "utility", "header","")>
+    %endif
+%endfunction
+
+%% Function: SLibDumpUtilsSourceCodeWithPrototypeIncludes ==========================================
+%% Abstract:
+%%   Invoke SLibDumpUtilsSourceCodeWithPrototypeIncludesForSystem() for no particular system -
+%%   in other words, a shared utility
+%%
+%function SLibDumpUtilsSourceCodeWithPrototypeIncludes(fcnName,funcProto,buffer,funcProtoIncludes) void
+    %<SLibDumpUtilsSourceCodeWithPrototypeIncludesForSystem(fcnName,funcProto,buffer,funcProtoIncludes, [], TLC_FALSE)>
+%endfunction
+
+
+%function SLibAddtoTFLSharedUtilsIncludes(incFileName) void
+    %%
+    %% ignore empties
+    %%
+
+    %if incFileName == ""
+        %return
+    %endif
+    %%
+    %if !EXISTS(::TFLSharedUtilsInclude) || SIZE(::TFLSharedUtilsInclude,1)<1
+        %assign ::TFLSharedUtilsInclude = []
+    %endif
+
+    %assign len = SIZE(::TFLSharedUtilsInclude,1)
+    %% scan for duplicates, add if not on any list
+    %%
+    %assign duplicate = TLC_FALSE
+    %foreach idx = len
+        %if ::TFLSharedUtilsInclude[idx] == incFileName
+            %assign duplicate = TLC_TRUE
+            %break
+        %endif
+    %endforeach
+    %if (!duplicate)
+        %assign ::TFLSharedUtilsInclude = ::TFLSharedUtilsInclude + incFileName
+    %endif
+%endfunction
+
+%endif %% _CACHE_SHAREDUTILS_LIB_
+
+%% [EOF] cache_sharedutils_lib.tlc

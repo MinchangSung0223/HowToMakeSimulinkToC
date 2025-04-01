@@ -1,0 +1,1926 @@
+%% Abstract: TLC for The To Async Queue block (SDI/HMI streaming)
+%%
+
+%% Copyright 2013-2022 The MathWorks, Inc.
+
+%implements ToAsyncQueueBlock "C"
+
+%% Function: SupportsInlineAQs =====================================================================
+%%
+%% Return TRUE if we should inline calls to the AQ library
+%%
+%function SupportsInlineAQs(block) void
+    %if !ParamSettings.SupportsInProcAQs[0]
+        %% Win32 does not support streaming
+        %return TLC_FALSE
+    %elseif ::isRAccel
+        %% Cmdline Rapid Accel
+        %return TLC_TRUE
+    %elseif Accelerator || IsModelReferenceSimTarget()
+        %% Top model Accel or ModelRef
+        %return TLC_TRUE
+    %elseif EXISTS(slrt) && slrt
+        %% Use buffered logging service on target
+        %return TLC_FALSE
+    %elseif EXISTS(slrealtime) && slrealtime
+        %% Use buffered logging service on target
+        %return TLC_FALSE
+    %else
+        %% Unknown target - use target connectivity
+        %return TLC_FALSE
+    %endif
+%endfunction
+
+%% Function: ShouldTAQBlockLog =====================================================================
+%%
+%% Return true if this block should generate code for logging.
+%% For protected models, we do not want to log data for hidden blocks.
+%% Only graphical blocks such as Record and To Workspace blocks will log inside protected models
+%%
+%function ShouldTAQBlockLog() void
+    %% For Streamout blocks we use block path as domain
+    %% Should not generate code when using raccel live streaming feature
+    %return ParamSettings.BlockPathDomain || !SLibIsGeneratingSimTargetForProtectedModel()
+%endfunction
+
+%% Function: SupportsTargetConAQs ==================================================================
+%%
+%% Return TRUE if we should insert code for target connectivity
+%%
+%function SupportsTargetConAQs(block) void
+    %if !ParamSettings.UseTgtConnForRaccel[0] && SupportsInlineAQs(block)
+        %return TLC_FALSE
+    %elseif IsModelReferenceSimTarget()
+        %return TLC_TRUE
+    %elseif EXISTS(slrt) && slrt
+        %% Use buffered logging service on target
+        %return TLC_FALSE
+    %elseif EXISTS(slrealtime) && slrealtime
+        %% Use buffered logging service on target
+        %return TLC_FALSE
+    %else
+        %return FEVAL("coder.internal.connectivity.TgtConnMgr.isServiceNeeded", "coder.internal.connectivity.ToAsyncQueueAppSvc")
+    %endif
+%endfunction
+
+%% Function: UseSLRTLoggingService =================================================================
+%%
+%% Return TRUE if we should insert code for SLRT buffered logging service
+%%
+%function UseSLRTLoggingService(block) void
+    %if EXISTS(slrt) && slrt && block.ParamSettings.IsBufferedLogging
+        %return TLC_TRUE
+    %elseif EXISTS(slrealtime) && slrealtime && block.ParamSettings.IsBufferedLogging
+        %return TLC_TRUE
+    %else
+        %return TLC_FALSE
+    %endif
+%endfunction
+
+%% Function: UseSLRTMessageLogging =================================================================
+%%
+%% Return TRUE when code should be inserted for SLRT async logging of message payloads
+%%
+%function UseSLRTMessageLogging(block) void
+    %if EXISTS(slrt) && slrt && block.ParamSettings.IsMessageLine
+        %return TLC_TRUE
+    %elseif EXISTS(slrealtime) && slrealtime && block.ParamSettings.IsMessageLine
+        %return TLC_TRUE
+    %else
+        %return TLC_FALSE
+    %endif
+%endfunction
+
+%% Function: OutputTargetConCheck ==================================================================
+%%
+%% If SupportsInlineAQs returns true because we are generating code for model
+%% reference, we need to add checks so we don't call this code for Rapid Accel
+%% menu simulation, RTW Code Generation, or External mode connect.
+%%
+%function OutputTargetConCheck(block, system) Output
+    %if IsModelReferenceSimTarget()
+        if((ssGetSimMode(%<RTMGet("MdlRefSfcnS")>) != SS_SIMMODE_EXTERNAL) &&
+        ((%<RTMGet("MdlRefSfcnS")>)->mdlInfo->rtwgenMode != SS_RTWGEN_MODELREFERENCE_RTW_TARGET))
+    %elseif SupportsTargetConAQs(block)
+        if(sdiIsUsingInlineAsyncQueues())
+    %endif
+%endfunction
+
+%% Function: GetDataMapInfoForSystem ===============================================================
+%%
+%% Get the DataMapInfo used for accessing the MMI
+%%
+%function GetDataMapInfoForSystem(system) void
+    %if ::isRAccel
+        %return ::RSimRTWCAPIVar
+    %else
+        %return RTMsGet(system, "DataMapInfo")
+    %endif
+%endfunction
+
+%% Function: BlockTypeSetup ========================================================================
+%%
+%% Add necessary includes for Async Queue API
+%%
+%function BlockTypeSetup(block, system) void
+
+    %if EXISTS(slrt) && slrt
+        %<LibAddToCommonIncludes("<xpcimports.h>")>
+        %openfile tmp
+        extern void* slrtRegisterSignalToLoggingService(rtwCAPI_ModelMappingInfo* mdlMMI, const char* relBlkPath, int portNumber);
+        %closefile tmp
+        %<LibCacheFunctionPrototype(tmp)>
+    %endif
+    %if EXISTS(slrealtime) && slrealtime
+        %<LibAddToCommonIncludes("<logsrv.h>")>
+        %openfile tmp
+        extern void* slrtRegisterSignalToLoggingService(uintptr_t sigAddr);
+        %closefile tmp
+        %<LibCacheFunctionPrototype(tmp)>
+    %endif
+
+    %if SupportsInlineAQs(block)
+        %<SLibAddToCommonIncludes("sl_AsyncioQueue/AsyncioQueueCAPI.h")>
+    %endif
+
+    %if Accelerator && !ParamSettings.SupportsInProcAQs[0]
+        %assign warnTxt = "Streaming is not supported in Accelerator mode on win32"
+        %<LibBlockReportWarning(block, warnTxt)>
+    %endif
+
+    %if SupportsTargetConAQs(block)
+        %<SLibAddToCommonIncludes("ToAsyncQueueTgtAppSvc/ToAsyncQueueTgtAppSvcCIntrf.h")>
+    %endif
+%endfunction %% BlockTypeSetup
+
+%% Function: CheckForMdlRefCodeGen =================================================================
+%%
+%% Inserts code to check if we are code generation for Mdl Ref Sim Targets
+%%
+%function CheckForMdlRefCodeGen(block, system) Output
+
+    %% Check for code generation of Model Ref Sim Targets
+    %if IsModelReferenceSimTarget()
+        %assign simS = RTMsGet(system, "MdlRefSfcnS")
+        if (slIsRapidAcceleratorSimulating() ||  (ssGetSimMode(%<simS>) == SS_SIMMODE_NORMAL) || ssRTWGenIsAccelerator(%<simS>))
+    %endif
+
+%endfunction %% CheckForMdlRefCodeGen
+
+%% Function: SetupRuntimeResources =================================================================
+%%
+%% Block SetupRuntimeResources function - register queues and process constant outputs
+%%
+%function SetupRuntimeResources(block, system) Output
+
+    %% Target connectivity (checks for target type are within this method)
+
+    %if ShouldTAQBlockLog()
+        %% Inlined AQ function calls
+        %if SupportsInlineAQs(block)
+            %<OutputTargetConCheck(block, system)>
+            {
+                %if ParamSettings.UsingJetstreamRapidAccelStreaming
+                    %<LibBlockDWork(Index, "", "", 0)> = slexecGetLiveOutputIndex(%<SLibGetSimStruct()>, "%<ParamSettings.Identifier>","%<ParamSettings.InputSignalBlockPath>");
+                %else
+                    %<StartForAccel(block, system)>
+                %endif
+            }
+        %endif
+    %endif
+%endfunction %% SetupRuntimeResources
+
+%% Function: Start =================================================================================
+%%
+%% Block start function - register queues and process constant outputs
+%%
+%function Start(block, system) Output
+    %if ShouldTAQBlockLog()
+        %if UseSLRTLoggingService(block)
+            %% Generate Start code for SLRT
+            %<StartForSLRT(block, system)>
+        %else
+            %% Constant sample time signals are processed only once at Start (both
+            %% rapid accel AND model reference targets)
+            %<OutputsForTID(block, system, -2)>
+        %endif
+    %endif
+%endfunction %% Start
+
+%% Function: StartForSLRT ==========================================================================
+%%
+%% Generate code for Model Reference Accelerator; note that top-level accelerator
+%% does not generate code for start functions
+%%
+%function StartForSLRT(block, system) Output
+
+    %foreach portIdx = block.NumDataInputPorts
+        %% Register this port's signal to SLRT Logging Service
+        %%
+        %assign sighandle = LibBlockPWork(SLRTSigHandles, "", "", portIdx)
+        %assign mapInfo = GetDataMapInfoForSystem(system)
+        %assign relBlockPath = STRING(ParamSettings.InputSignalBlockPath)
+        %assign sigAddr = LibBlockInputSignalAddr(portIdx, "", "", 0)
+
+        %if ParamSettings.IsVirtualBus[0]
+            %assign actPortIndex = portIdx
+        %else
+            %assign actPortIndex = ParamSettings.InputSignalPortIndex[0]
+        %endif
+        %if EXISTS(slrt) && slrt
+            %<sighandle> = slrtRegisterSignalToLoggingService(&%<mapInfo>.mmi, "%<relBlockPath>", %<actPortIndex>);
+        %endif
+        %if EXISTS(slrealtime) && slrealtime
+            %<sighandle> = slrtRegisterSignalToLoggingService(reinterpret_cast<uintptr_t>(%<sigAddr>));
+        %endif
+    %endforeach
+%endfunction %% StartForSLRT
+
+%% Function: StartForAccel =========================================================================
+%%
+%% Generate code for Model Reference Accelerator; note that top-level accelerator
+%% does not generate code for start functions
+%%
+%function StartForAccel(block, system) Output
+    %assign portDT = LibBlockInputSignalDataTypeId(0)
+    %assign dtID = LibGetDataTypeIdAliasedThruToFromId(portDT)
+    %assign pwork = LibBlockPWork(AQHandles, "", "", 0)
+    %assign mapInfo = GetDataMapInfoForSystem(system)
+    {
+        %<CheckForMdlRefCodeGen(block, system)>
+        {
+            bool isStreamoutAlreadyRegistered = false;
+            %% Virtual buses
+            %if ParamSettings.IsVirtualBus[0]
+                %<OutputAsyncQRegVirtBus(block, system)>
+
+                %% NV Bus
+            %elseif LibDataTypeIsBus(dtID)
+                %<OutputAsyncQRegNonVirtBus(block, system)>
+
+                %% Enumerations
+            %elseif LibIsEnumDataType(dtID)
+                %<OutputAsyncQReg(block, system, pwork, portDT, 0)>
+
+                %% Dynamic Arrays
+            %elseif LibDataTypeIsDynamicMatrix(dtID)
+                %<OutputAsyncQReg(block, system, pwork, portDT, 0)>
+
+                %% Fixed Point
+            %elseif LibIsDataTypeFixpt(dtID) || LibIsHalfDataType(dtID)
+                %<OutputAsyncQReg(block, system, pwork, portDT, 0)>
+
+                %% Image Data Type
+            %elseif LibIsImageDataType(dtID)
+                %<OutputAsyncQReg(block, system, pwork, portDT, 0)>
+
+                %% Built-in
+            %elseif LibIsBuiltInDataType(dtID) || LibIsStringDataType(dtID)
+                %<OutputAsyncQReg(block, system, pwork, portDT, 0)>
+
+                %% Unsupported type
+            %else
+                %assign warnTxt = "User-defined data types not supported for streaming."
+                %<LibBlockReportWarning(block, warnTxt)>
+                %<pwork> = %<SLibGetNullDefinitionFromTfl()>;
+            %endif
+
+            %% Register logging
+            if(!isStreamoutAlreadyRegistered) {
+                %<OutputLoggingRegistration(block, system, pwork)>
+            }
+        }
+    }
+
+%endfunction %% StartForAccel
+
+%% Function: OutputLoggingRegistration =============================================================
+%%
+%% For block based recording, register workspace and file logging
+%%
+%function OutputLoggingRegistration(block, system, pwork) Output
+    %assign charType = LibGetDataTypeNameFromId(::CompiledModel.tSS_CHAR)
+    %if !ISEMPTY(ParamSettings.RecToWksVarName)
+        {
+            %assign varName = "\"" + STRING(ParamSettings.RecToWksVarName) + "\""
+            %assign varFormat = "\"" + STRING(ParamSettings.RecToWksFormat) + "\""
+            sdiLabelU varName = sdiGetLabelFromChars(%<varName>);
+            sdiRegisterWksVariable(%<pwork>, varName, %<varFormat>);
+            sdiFreeLabel(varName);
+        }
+    %endif
+
+    %if !ISEMPTY(ParamSettings.RecToFileType)
+        {
+            %assign fileType = "\"" + STRING(ParamSettings.RecToFileType) + "\""
+            %assign fileName = "\"" + STRING(ParamSettings.RecToFileName) + "\""
+            sdiLabelU fileName = sdiGetLabelFromChars(%<fileName>);
+
+            %assign numNumericParams = SIZE(ParamSettings.RecToFileNumParamNames, 1)
+            %if numNumericParams
+                %<OutputStringVector(numNumericParams, ParamSettings.RecToFileNumParamNames, "numericParamNames")>
+                %<OutputTypedVector(numNumericParams, ParamSettings.RecToFileNumParamValues, "double", "numericParamValues")>
+            %else
+                const %<charType> ** numericParamNames = %<SLibGetNullDefinitionFromTfl()>;
+                const double * numericParamValues = %<SLibGetNullDefinitionFromTfl()>;
+            %endif
+
+            %assign numStrParams = SIZE(ParamSettings.RecToFileStrParamNames, 1)
+            %if numStrParams
+                %<OutputStringVector(numStrParams, ParamSettings.RecToFileStrParamNames, "strParamNames")>
+                %<OutputStringVector(numStrParams, ParamSettings.RecToFileStrParamValues, "strParamValues")>
+            %else
+                const %<charType> ** strParamNames = %<SLibGetNullDefinitionFromTfl()>;
+                const %<charType> ** strParamValues = %<SLibGetNullDefinitionFromTfl()>;
+            %endif
+
+            sdiRegisterFileRecording(
+            %<pwork>,
+            fileName,
+            %<fileType>,
+            %<numNumericParams>, numericParamNames, numericParamValues,
+            %<numStrParams>, strParamNames, strParamValues);
+
+            sdiFreeLabel(fileName);
+        }
+    %endif
+%endfunction
+
+%% Function: GetVirtualBusLeafDims =================================================================
+%%
+%% Get the leaf dimensions of an element of a virtual bus; because each
+%% leaf may have different number of dimension, we need to use a string
+%% vector and then eval the string
+%%
+%function GetVirtualBusLeafDims(block, aqIdx)
+    %assign doubleValue = FEVAL("eval", ParamSettings.ExpandedBusLeafDims[aqIdx])
+    %return FEVAL("cast", doubleValue, "int32")
+%endfunction
+
+%% Function: OutputAsyncQRegVirtBus ================================================================
+%%
+%% Create an Async Queues for a virtual buses.
+%%
+%function OutputAsyncQRegVirtBus(block, system) Output
+    %assign intType = LibGetDataTypeNameFromId(::CompiledModel.tSS_INTEGER)
+    {
+        %assign pwork = LibBlockPWork(AQHandles, "", "", 0)
+        %assign relBlockPath = "\"" + STRING(ParamSettings.InputSignalBlockPath) + "\""
+        %assign numLeaves =  ParamSettings.NumAQs
+        sdiSignalSourceInfoU srcInfo;
+        sdiLabelU sigName = sdiGetLabelFromChars("");
+        sdiLabelU blockPath = sdiGetLabelFromChars(%<relBlockPath>);
+        sdiLabelU blockSID = sdiGetLabelFromChars("");
+        sdiLabelU subPath = sdiGetLabelFromChars("");
+
+        %<OutputStringVector(numLeaves, ParamSettings.SignalUnits, "leafUnits")>
+
+        sdiVirtualBusLeafElementInfoU leafElInfo[%<numLeaves>];
+
+        %% Dimension arrays
+        %if ISEMPTY(ParamSettings.PortAQMapStartIdx)
+            %foreach portIdx = block.NumDataInputPorts
+                %assign portDT = LibBlockInputSignalDataTypeId(portIdx)
+                %if LibIsStringDataType(portDT)
+                    %assign nDims = 1
+                    %assign dims = 1
+                %else
+                    %assign nDims = LibBlockInputSignalNumDimensions(portIdx)
+                    %assign dims = LibBlockInputSignalDimensions(portIdx)
+                %endif
+                %assign varName = "childDimsArray" + STRING(portIdx)
+                %<OutputTypedVector(nDims, dims, intType, varName)>
+            %endforeach
+        %else
+            %foreach aqIdx = numLeaves
+                %assign origDT = ParamSettings.ExpandedBusLeafDataType[aqIdx]
+                %if LibIsStringDataType(origDT)
+                    %assign nDims = 1
+                    %assign dims = 1
+                %else
+                    %assign dims = GetVirtualBusLeafDims(block, aqIdx)
+                    %assign nDims = SIZE(dims,1)
+                %endif
+                %assign varName = "childDimsArray" + STRING(aqIdx)
+                %<OutputTypedVector(nDims, dims, intType, varName)>
+            %endforeach
+        %endif
+
+        %% Settings for each port
+        %assign aqIdx = 0
+        %foreach portIdx = block.NumDataInputPorts
+            {
+                %assign portDT = LibBlockInputSignalDataTypeId(portIdx)
+                %assign dtID = LibGetDataTypeIdAliasedThruToFromId(portDT)
+                %if LibGetIsInputPortVarDims(portIdx)
+                    %assign dimsMode = "DIMENSIONS_MODE_VARIABLE"
+                %else
+                    %assign dimsMode = "DIMENSIONS_MODE_FIXED"
+                %endif
+                %assign numAQs = 1
+                %if LibDataTypeIsBus(dtID)
+                    %<OutputNVBusInsideVBusDef(block, system, portIdx, aqIdx)>
+                    %assign numAQs = ParamSettings.PortNumAQs[portIdx]
+                %else
+                    %% Data type registration
+                    %if !ISEMPTY(ParamSettings.PortAQMapStartIdx)
+                        %assign portDT = ParamSettings.ExpandedBusLeafDataType[aqIdx]
+                        %assign dtID = LibGetDataTypeIdAliasedThruToFromId(portDT)
+                    %endif
+                    %if LibIsEnumDataType(dtID)
+                        %<OutputEnumDataTypeHandleReg(block, dtID)>
+                    %elseif LibIsDataTypeFixpt(dtID) || LibIsHalfDataType(dtID)
+                        %<OutputFixedPointDataTypeHandleReg(block, dtID, portDT)>
+                    %else
+                        %<OutputBuiltinDataTypeHandleReg(block, portDT)>
+                    %endif
+                    leafElInfo[%<aqIdx>].hDataType = hDT;
+
+                    %% Name
+                    %assign leafName = "\"" + STRING(ParamSettings.InputSignalName[aqIdx]) + "\""
+                    leafElInfo[%<aqIdx>].signalName = sdiGetLabelFromChars(%<leafName>);
+
+                    %% Dimensions
+                    %if !ISEMPTY(ParamSettings.PortAQMapStartIdx)
+                        %if LibIsStringDataType(portDT)
+                            %assign nDims = 1
+                            %assign dimsMode = "DIMENSIONS_MODE_FIXED"
+                        %else
+                            %assign dims = GetVirtualBusLeafDims(block, aqIdx)
+                            %assign nDims = SIZE(dims,1)
+                        %endif
+                        %assign varName = "childDimsArray" + STRING(aqIdx)
+                    %else
+                        %if LibIsStringDataType(portDT)
+                            %assign nDims = 1
+                            %assign dimsMode = "DIMENSIONS_MODE_FIXED"
+                        %else
+                            %assign nDims = LibBlockInputSignalNumDimensions(portIdx)
+                        %endif
+                        %assign varName = "childDimsArray" + STRING(portIdx)
+                    %endif
+                    leafElInfo[%<aqIdx>].dims.nDims = %<nDims>;
+                    leafElInfo[%<aqIdx>].dims.dimensions = %<varName>;
+                    leafElInfo[%<aqIdx>].dimsMode = %<dimsMode>;
+
+                    %% Complexity
+                    %if !ISEMPTY(ParamSettings.PortAQMapStartIdx)
+                        %assign isComplex = ParamSettings.ExpandedBusLeafComplexity[aqIdx]
+                    %else
+                        %assign isComplex = LibBlockInputSignalIsComplex(portIdx)
+                    %endif
+                    %if isComplex
+                        leafElInfo[%<aqIdx>].complexity = COMPLEX;
+                    %else
+                        leafElInfo[%<aqIdx>].complexity = REAL;
+                    %endif
+
+                    %% Sample Time
+                    %if ParamSettings.IsContinuous[portIdx]
+                        leafElInfo[%<aqIdx>].isLinearInterp = 1;
+                    %else
+                        leafElInfo[%<aqIdx>].isLinearInterp = 0;
+                    %endif
+
+                    %% Units
+                    leafElInfo[%<aqIdx>].units = leafUnits[%<aqIdx>];
+                %endif
+
+                %% Increment AQ index
+                %assign aqIdx = aqIdx + numAQs
+            }
+        %endforeach
+
+        %% Signal Source
+        srcInfo.numBlockPathElems = 1;
+        srcInfo.fullBlockPath = (sdiFullBlkPathU)&blockPath;
+        srcInfo.SID = (sdiSignalIDU)&blockSID;
+        srcInfo.subPath = subPath;
+        srcInfo.portIndex = %<ParamSettings.InputSignalPortIndex[0]> + 1;
+        srcInfo.signalName = sigName;
+        srcInfo.sigSourceUUID = 0;
+
+        %% Create Async Queue
+        %assign sigSourceUUID = "\"" + STRING(ParamSettings.SignalSourceUUID) + "\""
+        %assign loggedName = "\"" + STRING(ParamSettings.LoggedName) + "\""
+        %assign origSigName = "\"" + STRING(ParamSettings.OrigSignalName) + "\""
+        %assign propName = "\"" + STRING(ParamSettings.PropName) + "\""
+        %assign mapInfo = GetDataMapInfoForSystem(system)
+        sdiCreateAsyncQueuesForVirtualBusWithExportSettings(
+        &srcInfo,
+        %<mapInfo>.mmi.InstanceMap.fullPath,
+        %<sigSourceUUID>,
+        %<numLeaves>,
+        leafElInfo,
+        &%<pwork>,
+        %<ParamSettings.Decimation[0]>,
+        %<ParamSettings.MaxPoints[0]>,
+        %<loggedName>,
+        %<origSigName>,
+        %<propName>);
+        %<CacheDWorkDataForSimTargetOP(pwork, numLeaves)>;
+
+        %assign loggedName = "\"" + STRING(ParamSettings.LoggedName) + "\""
+        %assign origSigName = "\"" + STRING(ParamSettings.OrigSignalName) + "\""
+        %assign propName = "\"" + STRING(ParamSettings.PropName) + "\""
+
+        if(%<pwork>) {
+            sdiLabelU loggedName = sdiGetLabelFromChars(%<loggedName>);
+            sdiLabelU origSigName = sdiGetLabelFromChars(%<origSigName>);
+            sdiLabelU propName = sdiGetLabelFromChars(%<propName>);
+
+            %% Run Start Time and sample time
+            %assign aqIdx = 0
+            %foreach portIdx = block.NumDataInputPorts
+                %assign portTid = getPortTid(block, system, portIdx)
+                %assign tt = tid2time(block, system, portTid)
+                %if IsModelReferenceSimTarget() && !MdlRefDisallowSampleTimeInheritance()
+                    %assign discreteInterval = 0
+                %else
+                    %assign discreteInterval = ParamSettings.DiscreteInterval[portIdx]
+                %endif
+
+                %assign numAQs = 1
+                %if !ISEMPTY(ParamSettings.PortAQMapStartIdx)
+                    %assign numAQs = ParamSettings.PortNumAQs[portIdx]
+                %endif
+                %foreach aqNum = numAQs
+                    %assign pwork = LibBlockPWork(AQHandles, "", "", aqIdx)
+                    sdiSetSignalSampleTimeString(%<pwork>,
+                    "%<ParamSettings.SampleTimeLabels[portIdx]>",
+                    %<discreteInterval>,
+                    %<RTMGet("TFinal")>);
+                    sdiSetSignalRefRate(%<pwork>, %<ParamSettings.RefRatePeriod[portIdx]>);
+                    sdiSetRunStartTime(%<pwork>, %<tt>);
+                    sdiAsyncRepoSetSignalExportSettings(%<pwork>,
+                    %<ParamSettings.Decimation[0]>,
+                    %<ParamSettings.MaxPoints[0]>);
+                    sdiAsyncRepoSetSignalExportName(%<pwork>, loggedName , origSigName, propName);
+
+                    %if ParamSettings.BlockPathDomain
+                        sdiAsyncRepoSetBlockPathDomain(%<pwork>);
+                    %elseif !ISEMPTY(ParamSettings.SignalDomain)
+                        sdiAsyncRepoSetSignalDomainType(%<pwork>, "%<ParamSettings.SignalDomain>");
+                        sdiAsyncRepoSetSignalExportOrder(%<pwork>, %<ParamSettings.ExportOrderIndex[0]>);
+                    %endif
+                    %if ParamSettings.IsMessageLine
+                        sdiDisableDataThinning(%<pwork>);
+                    %endif
+                    %if ParamSettings.IsFrameBased
+                        sdiSetSignalIsFrameBased(%<pwork>, true);
+                    %endif
+                    %if ParamSettings.HideInSDI
+                        sdiAsyncRepoHideInSDI(%<pwork>, %<SLibGetNullDefinitionFromTfl()>);
+                    %endif
+                    %assign aqIdx = aqIdx + 1
+                %endforeach
+            %endforeach
+
+            sdiFreeLabel(loggedName);
+            sdiFreeLabel(origSigName);
+            sdiFreeLabel(propName);
+        }
+
+        %% Cleanup
+        sdiFreeLabel(sigName);
+        sdiFreeLabel(blockPath);
+        sdiFreeLabel(blockSID);
+        sdiFreeLabel(subPath);
+        %foreach aqIdx = numLeaves
+            sdiFreeName(leafElInfo[%<aqIdx>].signalName);
+        %endforeach
+    }
+%endfunction
+
+%% Function: OutputNVBusInsideVBusDef ==============================================================
+%%
+%% Output leaf information for a NV bus port within a virtual bus
+%%
+%function OutputNVBusInsideVBusDef(block, system, portIdx, aqStartIdx) Output
+    %assign numAQs = ParamSettings.PortNumAQs[portIdx]
+
+    %% Go through each AQ for this port
+    %assign aqIdx = aqStartIdx
+    %foreach aqOffsetIdx = numAQs
+        {
+            %% Data type registration
+            %assign origDT = ParamSettings.ExpandedBusLeafDataType[aqIdx]
+            %assign dtID = LibGetDataTypeIdAliasedThruToFromId(origDT)
+            %if LibIsEnumDataType(dtID)
+                %<OutputEnumDataTypeHandleReg(block, dtID)>
+            %elseif LibIsDataTypeFixpt(dtID) || LibIsHalfDataType(dtID)
+                %<OutputFixedPointDataTypeHandleReg(block, dtID, origDT)>
+            %else
+                %<OutputBuiltinDataTypeHandleReg(block, origDT)>
+            %endif
+            leafElInfo[%<aqIdx>].hDataType = hDT;
+
+            %% Name
+            %assign leafName = "\"" + STRING(ParamSettings.InputSignalName[aqIdx]) + "\""
+            leafElInfo[%<aqIdx>].signalName = sdiGetLabelFromChars(%<leafName>);
+
+            %% Dimensions
+            %if LibIsStringDataType(origDT)
+                %assign nDims = 1
+                %assign dims = 1
+                %assign dimsMode = "DIMENSIONS_MODE_FIXED"
+            %else
+                %assign dims = GetVirtualBusLeafDims(block, aqIdx)
+                %assign nDims = SIZE(dims,1)
+
+                %% TODO: need API to get dimensions mode
+                %assign dimsMode = "DIMENSIONS_MODE_FIXED"
+            %endif
+            %assign varName = "childDimsArray" + STRING(aqIdx)
+            leafElInfo[%<aqIdx>].dims.nDims = %<nDims>;
+            leafElInfo[%<aqIdx>].dims.dimensions = %<varName>;
+            leafElInfo[%<aqIdx>].dimsMode = %<dimsMode>;
+
+            %% Complexity
+            %if ParamSettings.ExpandedBusLeafComplexity[aqIdx]
+                leafElInfo[%<aqIdx>].complexity = COMPLEX;
+            %else
+                leafElInfo[%<aqIdx>].complexity = REAL;
+            %endif
+
+            %% Sample Time
+            %if ParamSettings.IsContinuous[portIdx]
+                leafElInfo[%<aqIdx>].isLinearInterp = 1;
+            %else
+                leafElInfo[%<aqIdx>].isLinearInterp = 0;
+            %endif
+
+            %% Units
+            leafElInfo[%<aqIdx>].units = leafUnits[%<aqIdx>];
+
+            %% Increment
+            %assign aqIdx = aqIdx + 1
+        }
+    %endforeach
+%endfunction
+
+%% Function: OutputAsyncQRegNonVirtBus =============================================================
+%%
+%% Create an Async Queues for a non-virtual buses
+%%
+%function OutputAsyncQRegNonVirtBus(block, system) Output
+    %assign intType = LibGetDataTypeNameFromId(::CompiledModel.tSS_INTEGER)
+    {
+        %if ParamSettings.CustomBusDataTypeID > 0
+            %assign dtID = ParamSettings.CustomBusDataTypeID
+        %else
+            %assign dtID = LibGetDataTypeIdAliasedThruToFromId(LibBlockInputSignalDataTypeId(0))
+        %endif
+        %assign pwork = LibBlockPWork(AQHandles, "", "", 0)
+        %assign sigName = "\"" + STRING(ParamSettings.InputSignalName[0]) + "\""
+        %assign relBlockPath = "\"" + STRING(ParamSettings.InputSignalBlockPath) + "\""
+        sdiSignalSourceInfoU srcInfo;
+        sdiLabelU sigName = sdiGetLabelFromChars(%<sigName>);
+        sdiLabelU blockPath = sdiGetLabelFromChars(%<relBlockPath>);
+        sdiLabelU blockSID = sdiGetLabelFromChars("");
+        sdiLabelU subPath = sdiGetLabelFromChars("");
+        sdiDims sigDims;
+        sdiHierarchyDefinition hTopBusHier;
+        %<OutputSubBusNodeVariables(dtID)>
+
+        %% Sample Time
+        %if ParamSettings.IsContinuous[0]
+            sdiSampleTimeContinuity stCont = SAMPLE_TIME_CONTINUOUS;
+        %else
+            sdiSampleTimeContinuity stCont = SAMPLE_TIME_DISCRETE;
+        %endif
+
+        %% Dimensions
+        %if !ISEMPTY(ParamSettings.CustomDims)
+            %assign nDims = SIZE(ParamSettings.CustomDims, 1)
+            %assign dims = ParamSettings.CustomDims
+        %else
+            %assign nDims = LibBlockInputSignalNumDimensions(0)
+            %assign dims = LibBlockInputSignalDimensions(0)
+        %endif
+        %<OutputTypedVector(nDims, dims, intType, "sigDimsArray")>
+        sigDims.nDims = %<nDims>;
+        sigDims.dimensions = sigDimsArray;
+
+        %% Bus hierarchy definition
+        %assign dtName = LibGetDataTypeNameFromId(dtID)
+        hTopBusHier = sdiCreateBusHierDefinition(%<SLibGetNullDefinitionFromTfl()>, %<sigName>, &sigDims, sizeof(%<dtName>));
+        %assign numLeaves = OutputBusHierDefinition(block, system, "hTopBusHier", dtID, 1, 0, 0)
+        %assign busSize = LibGetDataTypeSLSizeFromId(dtID)
+
+        %% Signal Source
+        srcInfo.numBlockPathElems = 1;
+        srcInfo.fullBlockPath = (sdiFullBlkPathU)&blockPath;
+        srcInfo.SID = (sdiSignalIDU)&blockSID;
+        srcInfo.subPath = subPath;
+        srcInfo.portIndex = %<ParamSettings.InputSignalPortIndex[0]> + 1;
+        srcInfo.signalName = sigName;
+        srcInfo.sigSourceUUID = 0;
+
+        %% Create Async Queue
+        %assign sigSourceUUID = "\"" + STRING(ParamSettings.SignalSourceUUID) + "\""
+        %assign loggedName = "\"" + STRING(ParamSettings.LoggedName) + "\""
+        %assign origSigName = "\"" + STRING(ParamSettings.OrigSignalName) + "\""
+        %assign propName = "\"" + STRING(ParamSettings.PropName) + "\""
+        %assign mapInfo = GetDataMapInfoForSystem(system)
+        %<pwork> = sdiCreateAsyncQueueForNVBus(
+        &hTopBusHier,
+        &srcInfo,
+        %<mapInfo>.mmi.InstanceMap.fullPath,
+        %<sigSourceUUID>,
+        %<busSize>,
+        &sigDims,
+        stCont,
+        %<ParamSettings.Decimation[0]>,
+        %<ParamSettings.MaxPoints[0]>,
+        %<loggedName>,
+        %<origSigName>,
+        %<propName>);
+
+        %% Run Start Time
+        %assign portTid = getPortTid(block, system, 0)
+        %assign tt = tid2time(block, system, portTid)
+        %if IsModelReferenceSimTarget() && !MdlRefDisallowSampleTimeInheritance()
+            %assign discreteInterval = 0
+        %else
+            %assign discreteInterval = ParamSettings.DiscreteInterval[0]
+        %endif
+        if(%<pwork>) {
+            sdiSetSignalSampleTimeString(%<pwork>,
+            "%<ParamSettings.SampleTimeLabels[0]>",
+            %<discreteInterval>,
+            %<RTMGet("TFinal")>);
+            sdiSetSignalRefRate(%<pwork>, %<ParamSettings.RefRatePeriod[0]>);
+            sdiSetRunStartTime(%<pwork>, %<tt>);
+
+            %if ParamSettings.BlockPathDomain
+                sdiAsyncRepoSetBlockPathDomain(%<pwork>);
+            %elseif !ISEMPTY(ParamSettings.SignalDomain)
+                sdiAsyncRepoSetSignalDomainType(%<pwork>, "%<ParamSettings.SignalDomain>");
+                sdiAsyncRepoSetSignalExportOrder(%<pwork>, %<ParamSettings.ExportOrderIndex[0]>);
+            %endif
+
+            %% Disable data thinning if the queue is streaming a message line
+            %if ParamSettings.IsMessageLine
+                sdiDisableDataThinning(%<pwork>);
+            %endif
+
+            %if ParamSettings.IsFrameBased
+                sdiSetSignalIsFrameBased(%<pwork>, true);
+            %endif
+            %if ParamSettings.HideInSDI
+                sdiAsyncRepoHideInSDI(%<pwork>, %<SLibGetNullDefinitionFromTfl()>);
+            %endif
+        }
+
+        %% Cleanup
+        sdiFreeLabel(sigName);
+        sdiFreeLabel(blockPath);
+        sdiFreeLabel(blockSID);
+        sdiFreeLabel(subPath);
+    }
+%endfunction
+
+%% Function: CountSubBusNodes ======================================================================
+%%
+%% Recursively count the number of sub-bus nodes
+%%
+%function CountSubBusNodes(dtID)
+    %assign numChildBuses = 0
+    %assign nChildren = LibDataTypeNumElements(dtID)
+    %foreach elIdx = nChildren
+        %assign childTypeIDincludingAlias = LibDataTypeElementDataTypeId(dtID, elIdx)
+        %assign childTypeID = LibGetDataTypeIdAliasedThruToFromId(childTypeIDincludingAlias)
+        %if LibDataTypeIsBus(childTypeID)
+            %assign numChildBuses = numChildBuses + 1 + CountSubBusNodes(childTypeID)
+        %endif
+    %endforeach
+    %return numChildBuses
+%endfunction
+
+%% Function: OutputSubBusNodeVariables =============================================================
+%%
+%% Output the local variables we will need for all sub-buses
+%%
+%function OutputSubBusNodeVariables(dtID) Output
+    %assign numSubBuses = CountSubBusNodes(dtID)
+    %if numSubBuses > 0
+        sdiHierarchyDefinition childHierDef[%<numSubBuses>];
+    %endif
+%endfunction
+
+%% Function: OutputBusHierDefinition ===============================================================
+%%
+%% Recursively define bus hierarchy
+%%
+%function OutputBusHierDefinition(block, system, parentName, dtID, hierLevel, childBusOffset, curLeafIdx) Output
+    %assign intType = LibGetDataTypeNameFromId(::CompiledModel.tSS_INTEGER)
+    %assign nChildren = LibDataTypeNumElements(dtID)
+    %foreach elIdx = nChildren
+        %assign childTypeIDincludingAlias = LibDataTypeElementDataTypeId(dtID, elIdx)
+        %assign childUnits =  "\"" + STRING(LibDataTypeElementASCIIEscapedUnits(dtID, elIdx)) + "\""
+        %assign childTypeID = LibGetDataTypeIdAliasedThruToFromId(childTypeIDincludingAlias)
+        %assign childName = "\"" + STRING(LibDataTypeElementName(dtID, elIdx)) + "\""
+        %assign childOffset = LibDataTypeElementOffset(dtID, elIdx) + childBusOffset
+        %assign childNDims = LibDataTypeElementNumDimensions(dtID, elIdx)
+        %assign childDims = LibDataTypeElementDimensions(dtID, elIdx)
+
+        %% TODO: need API to get dimensions mode
+        %assign isVarDims = TLC_FALSE
+
+        %% Sub-Bus
+        %if LibDataTypeIsBus(childTypeID)
+            {
+                %assign hierDefName = "childHierDef[" + STRING(hierLevel - 1) + "]"
+
+                %% Dimensions
+                sdiDims childSigDims;
+                %<OutputTypedVector(childNDims, childDims, intType, "childSigDimsArray")>
+                childSigDims.nDims = %<childNDims>;
+                childSigDims.dimensions = childSigDimsArray;
+
+                %% Create sub-bus
+                %assign dtName = LibGetDataTypeNameFromId(childTypeID)
+                %<hierDefName> = sdiCreateBusHierDefinition(%<parentName>, %<childName>, &childSigDims, sizeof(%<dtName>));
+            }
+
+            %% Recurse
+            %assign curLeafIdx = OutputBusHierDefinition(block, system, hierDefName, childTypeID, hierLevel + 1, childOffset, curLeafIdx)
+
+            %% Leaf Signal
+        %else
+            {
+
+                %% Data type registration
+                %if LibIsEnumDataType(childTypeID)
+                    %<OutputEnumDataTypeHandleReg(block, childTypeID)>
+                %elseif LibIsDataTypeFixpt(childTypeID) || LibIsHalfDataType(childTypeID)
+                    %<OutputFixedPointDataTypeHandleReg(block, childTypeID, childTypeIDincludingAlias)>
+                %else
+                    %<OutputBuiltinDataTypeHandleReg(block, childTypeIDincludingAlias)>
+                %endif
+                {
+                    %% Complexity
+                    %if LibDataTypeElementIsComplex(dtID, elIdx)
+                        sdiComplexity sigComplexity = COMPLEX;
+                    %else
+                        sdiComplexity sigComplexity = REAL;
+                    %endif
+
+                    %% Units
+                    %if ParamSettings.UseUnitsFromBusObj
+                        sdiLabelU units = sdiGetLabelFromChars(%<childUnits>);
+                    %else
+                        sdiLabelU units = sdiGetLabelFromChars("");
+                    %endif
+
+                    %% Dimensions
+                    %if LibIsStringDataType(childTypeID)
+                        %assign childNDims = 1
+                        %assign childDims = 1
+                    %endif
+                    sdiDims childSigDims;
+                    %<OutputTypedVector(childNDims, childDims, intType, "childSigDimsArray")>
+                    childSigDims.nDims = %<childNDims>;
+                    childSigDims.dimensions = childSigDimsArray;
+
+                    %% Sample time: defined by top level bus (variable: stCont)
+
+                    %% Add leaf element to hierarchy
+                    %assign leafName = "\"" + STRING(ParamSettings.NVBusLeafFullName[curLeafIdx]) + "\""
+                    %if isVarDims
+                        sdiAddBusHierVarDimsLeaf(%<parentName>, %<leafName>, units, %<childOffset>, hDT, sigComplexity, &childSigDims, stCont);
+                    %else
+                        sdiAddBusHierLeaf(%<parentName>, %<leafName>, units, %<childOffset>, hDT, sigComplexity, &childSigDims, stCont);
+                    %endif
+
+                    %% Cleanup
+                    sdiFreeLabel(units);
+                    %assign curLeafIdx = curLeafIdx + 1
+                }
+            }
+        %endif
+    %endforeach
+
+    %return curLeafIdx
+%endfunction
+
+%% Function: OutputAsyncQReg =======================================================================
+%%
+%% Create an Async Queue for a built-in and fixed point data type (model
+%% reference accelerator)
+%%
+%function OutputAsyncQReg(block, system, pwork, portDT, portIdx) Output
+    %assign intType = LibGetDataTypeNameFromId(::CompiledModel.tSS_INTEGER)
+    {
+        %assign isMdlRef = IsModelReferenceSimTarget()
+        %assign sigName = "\"" + STRING(ParamSettings.InputSignalName[portIdx]) + "\""
+        %assign relBlockPath = "\"" + STRING(ParamSettings.InputSignalBlockPath) + "\""
+        sdiSignalSourceInfoU srcInfo;
+        %assign loggedName = "\"" + STRING(ParamSettings.LoggedName) + "\""
+        %assign origSigName = "\"" + STRING(ParamSettings.OrigSignalName) + "\""
+        %assign propName = "\"" + STRING(ParamSettings.PropName) + "\""
+        sdiLabelU loggedName = sdiGetLabelFromChars(%<loggedName>);
+        sdiLabelU origSigName = sdiGetLabelFromChars(%<origSigName>);
+        sdiLabelU propName = sdiGetLabelFromChars(%<propName>);
+        sdiLabelU blockPath = sdiGetLabelFromChars(%<relBlockPath>);
+        sdiLabelU blockSID = sdiGetLabelFromChars("");
+        sdiLabelU subPath = sdiGetLabelFromChars("");
+        sdiDims sigDims;
+
+        %% For Each dimensions and signal name
+        %if isMdlRef
+            sdiDims forEachMdlRefDims;
+            %<intType> forEachMdlRefDimsArray[32];
+        %endif
+        %if block.NumForEachLevels > 0
+            %<OutputTypedVector(block.NumForEachLevels, block.ForEachDims, intType, "forEachDimsArray")>
+            sdiDims forEachDims;
+            sdiLabelU sigName = sdiGetLabelFromChars(%<loggedName>);
+        %else
+            sdiLabelU sigName = sdiGetLabelFromChars(%<sigName>);
+        %endif
+        %if isMdlRef || block.NumForEachLevels > 0
+            sdiAsyncQueueHandle hForEachParent = %<SLibGetNullDefinitionFromTfl()>;
+        %endif
+
+        %% Data type registration
+        %assign dtID = LibGetDataTypeIdAliasedThruToFromId(portDT)
+
+        %if LibDataTypeIsDynamicMatrix(dtID)
+            %assign dynamicArrayDTID = SLibDynamicArrayContainedDataTypeFromId(dtID)
+            %<OutputBuiltinDataTypeHandleReg(block, dynamicArrayDTID)>
+        %elseif LibIsEnumDataType(dtID)
+            %<OutputEnumDataTypeHandleReg(block, dtID)>
+        %elseif LibIsDataTypeFixpt(dtID) || LibIsHalfDataType(dtID)
+            %<OutputFixedPointDataTypeHandleReg(block, dtID, portDT)>
+        %elseif LibIsImageDataType(dtID)
+            %<OutputImageDataTypeHandleReg(block, dtID)>
+        %else
+            %<OutputBuiltinDataTypeHandleReg(block, portDT)>
+        %endif
+        {
+            %% Complexity
+            %if LibBlockInputSignalIsComplex(portIdx)
+                sdiComplexity sigComplexity = COMPLEX;
+            %else
+                sdiComplexity sigComplexity = REAL;
+            %endif
+
+            %% Sample Time
+            %if ParamSettings.IsContinuous[portIdx]
+                sdiSampleTimeContinuity stCont = SAMPLE_TIME_CONTINUOUS;
+            %else
+                sdiSampleTimeContinuity stCont = SAMPLE_TIME_DISCRETE;
+            %endif
+
+            %% Dimensions
+            %if LibIsStringDataType(dtID)
+                %assign nDims = 1
+                %assign dims = 1
+                %assign dimsMode = "DIMENSIONS_MODE_FIXED"
+            %elseif LibDataTypeIsDynamicMatrix(dtID)
+                %assign dims = SLibDynamicArrayContainedDataDimensionsFromId(dtID)
+                %assign nDims = LibBlockInputSignalNumDimensions(portIdx)
+                %assign dimsMode = "DIMENSIONS_MODE_VARIABLE"
+            %elseif LibIsImageDataType(dtID)
+                %assign dtID = LibGetDataTypeIdAliasedThruToFromId(portDT)
+                %assign rows = SLibImageNumRowsFromId(dtID)
+                %assign columns = SLibImageNumColsFromId(dtID)
+                %assign channels = SLibImageNumChannelsFromId(dtID)
+                %assign nDims = 3
+                %assign dims = [%<rows>, %<columns>, %<channels>]
+                %assign dimsMode = "DIMENSIONS_MODE_FIXED"
+                %assign maxFrameBytes = 0
+                %assign frameRate = 0
+            %elseif !ISEMPTY(ParamSettings.CustomDims)
+                %assign nDims = SIZE(ParamSettings.CustomDims, 1)
+                %assign dims = ParamSettings.CustomDims
+                %if LibGetIsInputPortVarDims(portIdx)
+                    %assign dimsMode = "DIMENSIONS_MODE_VARIABLE"
+                %else
+                    %assign dimsMode = "DIMENSIONS_MODE_FIXED"
+                %endif
+            %else
+                %assign nDims = LibBlockInputSignalNumDimensions(portIdx)
+                %assign dims = LibBlockInputSignalDimensions(portIdx)
+                %if LibGetIsInputPortVarDims(portIdx)
+                    %assign dimsMode = "DIMENSIONS_MODE_VARIABLE"
+                %else
+                    %assign dimsMode = "DIMENSIONS_MODE_FIXED"
+                %endif
+            %endif
+            %<OutputTypedVector(nDims, dims, intType, "sigDimsArray")>
+            sigDims.nDims = %<nDims>;
+            sigDims.dimensions = sigDimsArray;
+
+            %% Signal Source
+            srcInfo.numBlockPathElems = 1;
+            srcInfo.fullBlockPath = (sdiFullBlkPathU)&blockPath;
+            srcInfo.SID = (sdiSignalIDU)&blockSID;
+            srcInfo.subPath = subPath;
+            srcInfo.portIndex = %<ParamSettings.InputSignalPortIndex[0]> + 1;
+            srcInfo.signalName = sigName;
+            srcInfo.sigSourceUUID = 0;
+
+            %% Units
+            %assign sigUnits = "\"" + STRING(ParamSettings.SignalUnits[portIdx]) + "\""
+
+            %% For Each parent creation
+            %assign mapInfo = GetDataMapInfoForSystem(system)
+            %if isMdlRef
+                if(slIsRapidAcceleratorSimulating()) {
+                    forEachMdlRefDims.nDims = 0;
+                } else {
+                    forEachMdlRefDims.nDims = slSigLogGetForEachDimsForRefModel(%<RTMsGet(system, "MdlRefSfcnS")>, forEachMdlRefDimsArray);
+                    forEachMdlRefDims.dimensions = forEachMdlRefDimsArray;
+                }
+            %endif
+            %if block.NumForEachLevels > 0
+                %% Block is within For-Each subsystem; it may also be within a model reference that is inside a For-Each
+                forEachDims.nDims =  %<block.NumForEachLevels>;
+                forEachDims.dimensions = forEachDimsArray;
+                %if isMdlRef
+                    %assign forEachModelBlockDims = "&forEachMdlRefDims"
+                %else
+                    %assign forEachModelBlockDims = SLibGetNullDefinitionFromTfl()
+                %endif
+
+                hForEachParent = sdiCreateForEachParent(
+                &srcInfo,
+                %<mapInfo>.mmi.InstanceMap.fullPath,
+                &forEachDims,
+                loggedName,
+                origSigName,
+                propName,
+                %<forEachModelBlockDims>);
+                sdiUpdateForEachLeafName(&srcInfo, hForEachParent);
+                %if ParamSettings.BlockPathDomain
+                    %assign AQ = "hForEachParent"
+                    %% Register logging
+                    %<OutputLoggingRegistration(block, system, AQ)>
+                    sdiAsyncRepoSetBlockPathDomain(hForEachParent);
+                    isStreamoutAlreadyRegistered = true;
+                %endif
+            %elseif isMdlRef
+                %% Block is not within For-Each, but model block may be within For-Each
+                if(forEachMdlRefDims.nDims > 0) {
+                    hForEachParent = sdiCreateForEachParent(
+                    &srcInfo,
+                    %<mapInfo>.mmi.InstanceMap.fullPath,
+                    %<SLibGetNullDefinitionFromTfl()>,
+                    loggedName, origSigName,
+                    propName,
+                    &forEachMdlRefDims);
+                    sdiUpdateForEachLeafName(&srcInfo, hForEachParent);
+                    %if ParamSettings.BlockPathDomain
+                        %assign AQ = "hForEachParent"
+                        %% Register logging
+                        %<OutputLoggingRegistration(block, system, AQ)>
+                        sdiAsyncRepoSetBlockPathDomain(hForEachParent);
+                        isStreamoutAlreadyRegistered = true;
+                    %endif
+                }
+            %endif
+
+            %% Create the Async Queue
+            %assign sigSourceUUID = "\"" + STRING(ParamSettings.SignalSourceUUID) + "\""
+
+            %if ParamSettings.IsFrameBased
+                %% Async Queue for frame signal should be configured before signal creation
+                %<pwork> = sdiStartAsyncioQueueCreation(
+                hDT,
+                &srcInfo,
+                %<mapInfo>.mmi.InstanceMap.fullPath,
+                %<sigSourceUUID>,
+                sigComplexity,
+                &sigDims,
+                %<dimsMode>,
+                stCont,
+                %<sigUnits>);
+            %else
+                %<pwork> = sdiStartAsyncioQueueCreation(
+                hDT,
+                &srcInfo,
+                %<mapInfo>.mmi.InstanceMap.fullPath,
+                %<sigSourceUUID>,
+                sigComplexity,
+                &sigDims,
+                %<dimsMode>,
+                stCont,
+                %<sigUnits>);
+            %endif
+
+            %assign curDT = FixPt_GetDataTypeFromIndex(dtID)
+
+            %% For Fixed point (except int64) log fixed point as double
+            %% For int64, logging type depends on ParamS1ettings.LogFixPtAsDouble
+            %assign logFixPtAsDouble = !(ISEQUAL(ParamSettings.RecToWksFormat, "timeseries") || ISEQUAL(ParamSettings.RecToWksFormat, "Dataset"))  && (LibIsDataTypeFixpt(dtID) || LibIsHalfDataType(dtID))
+            %if logFixPtAsDouble && LocFixPtIsInt64(curDT)
+                %assign logFixPtAsDouble = ParamSettings.LogFixPtAsDouble
+            %endif
+
+            %if logFixPtAsDouble
+                sdiConfigureAsyncioQueueToLogFixPtAsDouble(%<pwork>);
+                hDT = sdiAsyncRepoGetBuiltInDataTypeHandle(DATA_TYPE_DOUBLE);
+            %endif
+
+            %if !ParamSettings.IsFrameBased
+                sdiCompleteAsyncioQueueCreation(%<pwork>, hDT, &srcInfo);
+            %endif
+            if(%<pwork>) {
+                %assign portTid = getPortTid(block, system, portIdx)
+                %assign tt = tid2time(block, system, portTid)
+                %if IsModelReferenceSimTarget() && !MdlRefDisallowSampleTimeInheritance()
+                    %assign discreteInterval = 0
+                %else
+                    %assign discreteInterval = ParamSettings.DiscreteInterval[portIdx]
+                %endif
+                sdiSetSignalSampleTimeString(%<pwork>,
+                "%<ParamSettings.SampleTimeLabels[portIdx]>",
+                %<discreteInterval>,
+                %<RTMGet("TFinal")>);
+                sdiSetSignalRefRate(%<pwork>, %<ParamSettings.RefRatePeriod[portIdx]>);
+                sdiSetRunStartTime(%<pwork>, %<tt>);
+
+                sdiAsyncRepoSetSignalExportSettings(%<pwork>, %<ParamSettings.Decimation[0]>, %<ParamSettings.MaxPoints[0]>);
+                sdiAsyncRepoSetSignalExportName(%<pwork>, loggedName, origSigName, propName);
+
+                %% Disable data thinning if the queue is streaming a message line
+                %if ParamSettings.IsMessageLine
+                    sdiDisableDataThinning(%<pwork>);
+                %endif
+
+                %if ParamSettings.HideInSDI
+                    sdiAsyncRepoHideInSDI(%<pwork>, %<SLibGetNullDefinitionFromTfl()>);
+                %endif
+
+                %if ParamSettings.BlockPathDomain
+                    sdiAsyncRepoSetBlockPathDomain(%<pwork>);
+                %elseif !ISEMPTY(ParamSettings.SignalDomain)
+                    sdiAsyncRepoSetSignalDomainType(%<pwork>, "%<ParamSettings.SignalDomain>");
+                    sdiAsyncRepoSetSignalExportOrder(%<pwork>, %<ParamSettings.ExportOrderIndex[0]>);
+                %endif
+
+                %if ParamSettings.IsFrameBased
+                    sdiSetSignalIsFrameBased(%<pwork>, true);
+                    %%Finalize AsyncioQueue creation for frame signals
+                    sdiCompleteAsyncioQueueCreation(%<pwork>, hDT, &srcInfo);
+                %endif
+
+                %% For Each linkage
+                %if block.NumForEachLevels > 0
+                    sdiAttachForEachIterationToParent(hForEachParent, %<pwork>, %<SLibGetNullDefinitionFromTfl()>);
+                    if(srcInfo.signalName != sigName){
+                        sdiFreeName(srcInfo.signalName);
+                    }
+                %elseif isMdlRef
+                    if(forEachMdlRefDims.nDims > 0) {
+                        sdiAttachForEachIterationToParent(hForEachParent, %<pwork>, %<SLibGetNullDefinitionFromTfl()>);
+                        if(srcInfo.signalName != sigName){
+                            sdiFreeName(srcInfo.signalName);
+                        }
+                    }
+                %endif
+
+                %if LibIsImageDataType(dtID)
+                    sdiSetImageTypeMetadata(%<pwork>, sigDims, %<frameRate>, %<getImagePixelBaseType(dtID)>, %<maxFrameBytes>, %<getImageLayout(dtID)>, %<getImageColorFormat(dtID)>, %<channels>, "");
+                %endif
+            }
+
+            %% Cleanup
+            sdiFreeLabel(sigName);
+            sdiFreeLabel(loggedName);
+            sdiFreeLabel(origSigName);
+            sdiFreeLabel(propName);
+            sdiFreeLabel(blockPath);
+            sdiFreeLabel(blockSID);
+            sdiFreeLabel(subPath);
+
+        }
+    }
+%endfunction %% OutputBuiltinAQReg
+
+%% Function: OutputBuiltinDataTypeHandleReg ========================================================
+%%
+%% Register a built-in data type with the Async Queue infrastructure (model
+%% reference accel)
+%%
+%function OutputBuiltinDataTypeHandleReg(block, portDT) Output
+    %if LibIsStringDataType(portDT)
+        sdiAsyncRepoDataTypeHandle hDT = sdiAsyncRepoGetStringDataTypeHandle();
+        %return
+    %endif
+
+    %assign dtID = LibGetDataTypeIdAliasedThruToFromId(portDT)
+    %switch dtID
+      %case tSS_DOUBLE
+        %assign builtInTypeName = "DATA_TYPE_DOUBLE"
+        %break
+      %case tSS_SINGLE
+        %assign builtInTypeName = "DATA_TYPE_SINGLE"
+        %break
+      %case tSS_INT8
+        %assign builtInTypeName = "DATA_TYPE_INT8"
+        %break
+      %case tSS_UINT8
+        %assign builtInTypeName = "DATA_TYPE_UINT8"
+        %break
+      %case tSS_INT16
+        %assign builtInTypeName = "DATA_TYPE_INT16"
+        %break
+      %case tSS_UINT16
+        %assign builtInTypeName = "DATA_TYPE_UINT16"
+        %break
+      %case tSS_INT32
+        %assign builtInTypeName = "DATA_TYPE_INT32"
+        %break
+      %case tSS_UINT32
+        %assign builtInTypeName = "DATA_TYPE_UINT32"
+        %break
+      %case tSS_BOOLEAN
+        %assign builtInTypeName = "DATA_TYPE_BOOLEAN"
+        %break
+      %default
+        %assign errTxt = "Unsupoprted built-in data type"
+        %<LibBlockReportFatalError(block, errTxt)>
+    %endswitch
+
+    %if LibIsAliasDataType(portDT)
+        %assign aliasTypeName = LibGetDataTypeNameFromId(portDT)
+        sdiAsyncRepoDataTypeHandle hDT =
+        sdiAsyncRepoCreateAliasedDataType("%<aliasTypeName>", %<builtInTypeName>);
+    %else
+        sdiAsyncRepoDataTypeHandle hDT =
+        sdiAsyncRepoGetBuiltInDataTypeHandle(%<builtInTypeName>);
+    %endif
+%endfunction
+
+%% Function: OutputImageDataTypeHandleReg ==========================================================
+%%
+%% Register an Image data type with the Async Queue infrastructure (model
+%% reference accel)
+%%
+%function OutputImageDataTypeHandleReg(block, dtID) Output
+    %switch SLibImageBaseTypeFromId(dtID)
+      %case "Double"
+        %assign builtInTypeName = "DATA_TYPE_DOUBLE"
+        %break
+      %case "Single"
+        %assign builtInTypeName = "DATA_TYPE_SINGLE"
+        %break
+      %case "Int8"
+        %assign builtInTypeName = "DATA_TYPE_INT8"
+        %break
+      %case "Uint8"
+        %assign builtInTypeName = "DATA_TYPE_UINT8"
+        %break
+      %case "Int16"
+        %assign builtInTypeName = "DATA_TYPE_INT16"
+        %break
+      %case "Uint16"
+        %assign builtInTypeName = "DATA_TYPE_UINT16"
+        %break
+      %case "Int32"
+        %assign builtInTypeName = "DATA_TYPE_INT32"
+        %break
+      %case "Uint32"
+        %assign builtInTypeName = "DATA_TYPE_UINT32"
+        %break
+      %default
+        %assign errTxt = "Unsupoprted built-in data type"
+        %<LibBlockReportFatalError(block, errTxt)>
+    %endswitch
+
+    sdiAsyncRepoDataTypeHandle hDT =
+    sdiAsyncRepoGetBuiltInDataTypeHandle(%<builtInTypeName>);
+%endfunction
+
+%% Function: OutputEnumDataTypeHandleReg ===========================================================
+%%
+%% Register an enumerated data type with the Async Queue infrastructure (model
+%% reference accel)
+%%
+%function OutputEnumDataTypeHandleReg(block, dtID) Output
+    %assign intType = LibGetDataTypeNameFromId(::CompiledModel.tSS_INTEGER)
+    %assign dtName = LibGetDataTypeNameFromId(dtID)
+    %assign nEnums = FcnGetEnumTypeNumEnums(dtID)
+    %assign allEnumValues = Vector(%<nEnums>) [0@%<nEnums>]
+    %assign allEnumLabels = Vector(%<nEnums>) [""@%<nEnums>]
+    %foreach enumIdx = nEnums
+        %assign allEnumValues[enumIdx] = SLibGetEnumTypeValueFromIndex(dtID, enumIdx)
+        %assign allEnumLabels[enumIdx] = SLibGetEnumTypeStringFromIndex(dtID, enumIdx)
+    %endforeach
+
+    %if LibIsEnumTypeStoredAsInt(dtID)
+        %assign baseTypeName = "int32"
+    %else
+        %assign storageID = LibGetEnumTypeStorageType(dtID)
+        %assign baseTypeName = LibGetDataTypeNameFromId(storageID)
+    %endif
+    %%assign nEnums = SIZE(ParamSettings.EnumValues, 1)
+    %%assign allEnumValues = ParamSettings.EnumValues
+    %%assign allEnumLabels = ParamSettings.EnumLabels
+
+    %<OutputTypedVector(nEnums, allEnumValues, intType, "enumValues")>
+    %<OutputStringVector(nEnums, allEnumLabels, "enumLabels")>
+    sdiAsyncRepoDataTypeHandle hDT = sdiAsyncRepoCreateEnumDataType(
+    "%<dtName>",
+    "%<baseTypeName>",
+    %<nEnums>,
+    enumValues,
+    enumLabels);
+%endfunction
+
+%% Function: LocFixPtIsInt64 =======================================================================
+%%
+%% Check if a given fixed point type is (u)int64
+%%
+%function LocFixPtIsInt64(dt) void
+    %if dt.RequiredBits == 64 && dt.FixedExp == 0 && dt.FracSlope == 1 && dt.Bias == 0
+        %return TLC_TRUE
+    %else
+        %return TLC_FALSE
+    %endif
+%endfunction
+
+%% Function: OutputFixedPointDataTypeHandleReg =====================================================
+%%
+%% Register a fixed point data type with the Async Queue infrastructure (model
+%% reference accel)
+%%
+%function OutputFixedPointDataTypeHandleReg(block, dtID, aliasedTypeID) Output
+    %assign curDT = FixPt_GetDataTypeFromIndex(dtID)
+
+    %if FixPt_DataTypeIsDouble(curDT) && !fxpIsDataTypeScaledDouble(curDT)
+        %<OutputBuiltinDataTypeHandleReg(block, tSS_DOUBLE)>
+    %elseif FixPt_DataTypeIsSingle(curDT)
+        %<OutputBuiltinDataTypeHandleReg(block, tSS_SINGLE)>
+    %elseif FixPt_DataTypeIsHalf(curDT)
+        sdiAsyncRepoDataTypeHandle hDT = sdiAsyncRepoCreateHalfDataType();
+    %elseif FixPt_DataTypeIsBoolean(curDT)
+        %<OutputBuiltinDataTypeHandleReg(block, tSS_BOOLEAN)>
+    %else
+        %assign isSigned = curDT.IsSigned
+        %assign wordLength = curDT.RequiredBits
+        %assign slopeAdjFactor = curDT.FracSlope
+        %assign fixedExponent = curDT.FixedExp
+        %assign fractionLength = -1 * fixedExponent
+        %assign bias = curDT.Bias
+
+        %if fxpIsDataTypeScaledDouble(curDT)
+            %assign dataTypeMode = 1
+        %else
+            %assign dataTypeMode = 0
+        %endif
+
+        %if LocFixPtIsInt64(curDT)
+            %if isSigned
+                sdiAsyncRepoDataTypeHandle hDT = sdiAsyncRepoGetInt64DataTypeHandle(true);
+            %else
+                sdiAsyncRepoDataTypeHandle hDT = sdiAsyncRepoGetInt64DataTypeHandle(false);
+            %endif
+        %elseif slopeAdjFactor == 1 && bias == 0
+            sdiAsyncRepoDataTypeHandle hDT = sdiAsyncRepoCreateFixedPointDataType_BinaryPointScaling(
+            %<dataTypeMode>,
+            %<isSigned>,
+            %<wordLength>,
+            %<fractionLength>);
+        %else
+            sdiAsyncRepoDataTypeHandle hDT = sdiAsyncRepoCreateFixedPointDataType_SlopeBiasScaling(
+            %<dataTypeMode>,
+            %<isSigned>,
+            %<wordLength>,
+            %<slopeAdjFactor>,
+            %<fixedExponent>,
+            %<bias>);
+        %endif
+
+        %if dtID != aliasedTypeID
+            %assign aliasTypeName = LibGetDataTypeNameFromId(aliasedTypeID)
+            sdiAsyncRepoSetAliasedDataTypeName(hDT, "%<aliasTypeName>");
+        %endif
+    %endif
+%endfunction
+
+%% Function: OutputTypedVector =====================================================================
+%%
+%% Output a local variable to pass in vectors (e.g. dimensions vector)
+%%
+%function OutputTypedVector(nValues, values, valueType, varname) Output
+    %assign equalSign = LibGetDataInitEqualSign()
+    %if nValues == 1
+        %<valueType> %<varname>[1]%<equalSign>{%<values[0]>};
+    %else
+        %assign valuesInit = "%<valueType> %<varname>[%<nValues>]%<equalSign>{"
+        %foreach valuesIdx = nValues
+            %assign valuesInit = valuesInit + "%<values[valuesIdx]>"
+            %if valuesIdx != nValues-1
+                %assign valuesInit = valuesInit + ", "
+            %endif
+        %endforeach
+        %assign valuesInit = valuesInit + "};"
+        %<valuesInit>
+    %endif
+%endfunction %% OutputTypedVector
+
+%% Function: OutputStringVector ====================================================================
+%%
+%% Output a local variable to pass in vectors (e.g. enum labels)
+%%
+%function OutputStringVector(nValues, values, varname) Output
+    %assign charType = LibGetDataTypeNameFromId(::CompiledModel.tSS_CHAR)
+    %assign equalSign = LibGetDataInitEqualSign()
+    %if nValues == 1
+        const %<charType> * %<varname>[1]%<equalSign>{"%<values[0]>"};
+    %else
+        %assign valuesInit = "const %<charType> * %<varname>[%<nValues>]%<equalSign>{"
+        %foreach valuesIdx = nValues
+            %assign valuesInit = valuesInit + "\"%<values[valuesIdx]>\""
+            %if valuesIdx != nValues-1
+                %assign valuesInit = valuesInit + ", "
+            %endif
+        %endforeach
+        %assign valuesInit = valuesInit + "};"
+        %<valuesInit>
+    %endif
+%endfunction %% OutputTypedVector
+
+%% Function: getImagePixelBaseType =================================================================
+%%
+%% Output Base Type of Contained Image Data as Number
+%%
+%function getImagePixelBaseType(dtID)
+    %switch SLibImageBaseTypeFromId(dtID)
+      %case "Double"
+        %assign pixelBaseType = "DATA_TYPE_DOUBLE"
+        %break
+      %case "Single"
+        %assign pixelBaseType = "DATA_TYPE_SINGLE"
+        %break
+      %case "Int8"
+        %assign pixelBaseType = "DATA_TYPE_INT8"
+        %break
+      %case "Uint8"
+        %assign pixelBaseType = "DATA_TYPE_UINT8"
+        %break
+      %case "Int16"
+        %assign pixelBaseType = "DATA_TYPE_INT16"
+        %break
+      %case "Uint16"
+        %assign pixelBaseType = "DATA_TYPE_UINT16"
+        %break
+      %case "Int32"
+        %assign pixelBaseType = "DATA_TYPE_INT32"
+        %break
+      %case "Uint32"
+        %assign pixelBaseType = "DATA_TYPE_UINT32"
+        %break
+      %default
+        %assign errTxt = "Unsupoprted built-in data type"
+        %<LibBlockReportFatalError(block, errTxt)>
+    %endswitch
+
+    %return pixelBaseType
+%endfunction
+
+%% Function: getImageLayout ========================================================================
+%%
+%% Output Image Layout Number
+%%
+%function getImageLayout(dtID)
+    %switch SLibImageLayoutFromId(dtID)
+      %case "ColumnMajor"
+        %assign layout = 0
+        %break
+      %case "RowMajor"
+        %assign layout = 1
+        %break
+      %default
+        %assign layout = -1
+    %endswitch
+
+    %return layout
+%endfunction
+
+%% Function: getImageColorFormat ===================================================================
+%%
+%% Output Image Color Format Number
+%%
+%function getImageColorFormat(dtID)
+    %switch SLibImageColorFormatFromId(dtID)
+      %case "BGRA"
+        %assign colorFormat = 0
+        %break
+      %case "RGB"
+        %assign colorFormat = 1
+        %break
+      %case "BGR"
+        %assign colorFormat = 2
+        %break
+      %case "Grayscale"
+        %assign colorFormat = 3
+        %break
+      %case "Binary"
+        %assign colorFormat = 4
+        %break
+      %case "Generic"
+        %assign colorFormat = 5
+        %break
+      %default
+        %assign colorFormat = -1
+    %endswitch
+
+    %return colorFormat
+%endfunction
+
+%function getBaseTidForTimeKeepingIfUnion(tid)
+    %% For union rates, we should always use base rate time
+    %% for sim-targets. For PCG, this line should be unreachable
+    %if SLibUnionSampletimeTID(tid) || TYPE(tid) == "Vector"
+        %assert (Accelerator || ::isRAccel)
+        %return 0
+    %endif
+    %return tid
+%endfunction
+
+%% Function: tid2time ==============================================================================
+%%
+%% Get the correct time for a given Task
+%%
+%function tid2time(block, system, tid) void
+
+    %if LibIsDeploymentDiagram()
+        %assign sysIdx = block.BlkSysIdx
+        %assign tt = SLibDeploymentGenerateRTMGetTMacro(tid, sysIdx)
+    %elseif ifUseDESTimeSource(block)
+        %assign tt = getDESEngTimeSource(block)
+    %elseif LibTriggeredTID(tid) && ISFIELD(block, "TriggerTimeKeepingTID")
+        %assign currTid = getBaseTidForTimeKeepingIfUnion(block.TriggerTimeKeepingTID)
+        %assign tt = LibGetTaskTime(currTid)
+    %elseif TYPE(tid) == "Number" && tid == -2
+        %assign tt = LibGetT()
+    %else
+        %assign currTid = getBaseTidForTimeKeepingIfUnion(tid)
+        %assign tt = LibGetTaskTime(currTid)
+    %endif
+    %return tt
+%endfunction %% tid2time
+
+%% Function: getPortTid ============================================================================
+%%
+%% Get the task for a given port
+%%
+%function getPortTid(block, system, portIdx) void
+    %if LibBlockInputSignalSampleTimeIndexExists(block)
+        %assign portTid = LibBlockInputSignalSampleTimeIndex(portIdx)
+    %elseif ISEQUAL(TID, "constant")
+        %assign portTid = -2
+    %else
+        %assign portTid = TID
+    %endif
+    %return portTid
+%endfunction %% getPortTid
+
+%% Function: portHasTid ============================================================================
+%%
+%% Returns true if the tid or vector of tids associated with a port is or has the given tid
+%%
+%function portHasTid(block, system, portIdx, tid) void
+    %assign portTid = getPortTid(block, system, portIdx)
+    %if ISEQUAL(portTid, tid)
+        %return TLC_TRUE
+    %elseif TYPE(portTid) == "Vector"
+        %assign numPortTid = SIZE(portTid, 1)
+        %foreach currTidIdx = numPortTid
+            %assign currTid = portTid[currTidIdx]
+            %if ISEQUAL(currTid, tid)
+                %return TLC_TRUE
+            %endif
+        %endforeach
+    %endif
+
+    %return TLC_FALSE
+%endfunction
+
+%% Function: OutputsForTID =========================================================================
+%%
+%% Output function called when block has multiple ports (virtual buses) and
+%% we are in model reference multitasking.
+%%
+%function OutputsForTID(block, system, tid) Output
+    %assign useTgtConn = SupportsTargetConAQs(block)
+    %assign useInline = SupportsInlineAQs(block)
+    %if useInline && useTgtConn && ShouldTAQBlockLog()
+        %<OutputTargetConCheck(block, system)>
+        {
+            %<OutputsForTIDAccel(block, system, tid)>
+        } else {
+            %<OutputsForTIDTgtConn(block, system, tid)>
+        }
+    %elseif useInline && ShouldTAQBlockLog()
+        %<OutputsForTIDAccel(block, system, tid)>
+    %elseif useTgtConn && ShouldTAQBlockLog()
+        %<OutputsForTIDTgtConn(block, system, tid)>
+    %elseif UseSLRTLoggingService(block)
+        %<OutputsForTIDSLRT(block, system, tid)>
+    %endif
+%endfunction %% OutputsForTID
+
+%% Function: OutputsForTIDAccel ====================================================================
+%%
+%% Output function called when block has multiple ports (virtual buses) and
+%% we are in model reference multitasking.
+%%
+%function OutputsForTIDAccel(block, system, tid) Output
+    %assign bAddedGuard = TLC_FALSE
+    %foreach portIdx = block.NumDataInputPorts
+        %assign portDT = LibBlockInputSignalDataTypeId(portIdx)
+        %assign dtID = LibGetDataTypeIdAliasedThruToFromId(portDT)
+        %if portHasTid(block, system, portIdx, tid)
+            %assign tt = tid2time(block, system, tid)
+            %assign u = LibBlockInputSignalAddr(portIdx, "", "", 0)
+
+            %% For NV bus inside V bus, each port may be multiple queues
+            %assign numAQ = 1
+            %assign uOffset = 0
+            %assign aqIdx = portIdx
+            %if !ISEMPTY(ParamSettings.PortAQMapStartIdx)
+                %assign numAQ = ParamSettings.PortNumAQs[portIdx]
+                %assign aqIdx = ParamSettings.PortAQMapStartIdx[portIdx]
+            %endif
+
+            %foreach aqNum = numAQ
+                %if ParamSettings.UsingJetstreamRapidAccelStreaming
+                    slexecRecordLiveOutputData( %<SLibGetSimStruct()>, %<LibBlockDWork(Index, "", "", 0)>, %<tt>, (char*)%<u> + %<uOffset>);
+                %else
+                    %% Pwork contains AQ
+                    %assign pwork = LibBlockPWork(AQHandles, "", "", aqIdx)
+
+                    %% See if we need to add a guard for sample hit
+                    %if !bAddedGuard && SLibInitResetTermEventTID(tid)
+                        if(sdiIsQueueStreaming(%<pwork>)) {
+                            %assign bAddedGuard = TLC_TRUE
+                    %elseif !bAddedGuard && IsModelReferenceSimTarget()
+                        %assign ssToCheck = "MdlRefSfcnS"
+                        if(%<pwork> && ssGetLogOutput(%<RTMsGet(system, "MdlRefSfcnS")>)) {
+                            %assign bAddedGuard = TLC_TRUE
+                    %elseif !bAddedGuard
+                        if(%<pwork> && %<RTMGet("LogOutput")>) {
+                            %assign bAddedGuard = TLC_TRUE
+                    %endif
+
+                    %% Log the actual time and data
+                    %if LibDataTypeIsDynamicMatrix(dtID)
+                        sdiWriteVarSizedSignal(%<pwork>, %<tt>, %<u>.data()[0] + %<uOffset>, %<u>.size()[0], false);
+                    %elseif LibGetIsInputPortVarDims(portIdx)
+                        %assign dimsPtr = SLibGetCurrentInputPortDimensions(portIdx, 0)
+                        sdiWriteVarSizedSignal(%<pwork>, %<tt>, (char*)%<u> + %<uOffset>, &%<dimsPtr>, false);
+                    %elseif (LibIsImageDataType(dtID))
+                        sdiWriteSignal(%<pwork>, %<tt>, (char*)imageGetDataFcn(%<u>) + %<uOffset>);
+                    %else
+                        sdiWriteSignal(%<pwork>, %<tt>, (char*)%<u> + %<uOffset>);
+                    %endif
+
+                    %% Increment index and offset for NV bus inside V bus
+                    %assign aqIdx = aqIdx + 1
+                    %if !ISEMPTY(ParamSettings.PortAQMapStartIdx) && aqNum < (numAQ - 1)
+                        %assign uOffset = ParamSettings.PortAQMapOffset[aqIdx]
+                    %endif
+                %endif
+            %endforeach
+        %endif
+    %endforeach
+
+    %if bAddedGuard
+    }
+    %endif
+%endfunction %% OutputsForTIDAccel
+
+%% Function: OutputsForTIDTgtConn ==================================================================
+%%
+%% Output function called when block has multiple ports (virtual buses) and
+%% we are in model reference multitasking.
+%%
+%function OutputsForTIDTgtConn(block, system, tid) Output
+    %assign int32Type = LibGetDataTypeNameFromId(::CompiledModel.tSS_INT32)
+    %% ToAsyncQueue blocks normally have a single input port, unless they
+    %% are connected to a port-expanded virtual bus in which case there is
+    %% one input port for every leaf node of the virtual bus.
+    %%
+    %foreach portIdx = block.NumDataInputPorts
+
+        %% Multi-rate blocks generate code separately for each each rate,
+        %% so check this particular input port's TID to see if it matches
+        %% the rate currently being generated.
+        %%
+        %% Triggered sample times are single-rate and always generate code.
+        %%
+        %if portHasTid(block, system, portIdx, tid)
+
+            %% Collect information about this particular input port's signal.
+            %%
+            %assign sigDataType = LibBlockInputSignalDataTypeId(portIdx)
+            %assign cmplx = LibBlockInputSignalIsComplex(portIdx)
+            %if !cmplx
+                %assign dataTypeName = LibGetDataTypeNameFromId(sigDataType)
+            %else
+                %assign dataTypeName = LibGetDataTypeComplexNameFromId(sigDataType)
+            %endif
+            %assign width = LibBlockInputSignalWidth(portIdx)
+
+            %if !LibDataTypeIsBus(sigDataType)
+                %% Built-in, enum, and fixed-point (including multi-word) types
+                %%
+                %assign inputPortIsAddressable = TLC_TRUE
+                %if (LibBlockInputSignalStorageClass(portIdx,0) == "Custom")
+                    %assign inputPortRec = FcnGetInputPortRecord(portIdx)
+                    %assign inputPortSignalSrcRec = SLibGetSourceRecord(inputPortRec,0)
+                    %assign inputPortIsAddressable = LibCustomDataIsAddressable(inputPortSignalSrcRec)
+                %endif
+
+                %% For simulation targets, we need to check LogOutput flag
+                %if SupportsInlineAQs(block)
+                    %if IsModelReferenceSimTarget()
+                        %if RTMMdlRefHasLocalSolver() && tid == 0
+                            %% Continuous signal should be logged at the local fixed step size (tid 1)
+                            %% when a local solver is used. Need to add a sample hit check at tid 1
+                            if(ssGetLogOutput(%<RTMsGet(system, "MdlRefSfcnS")>) && %<RTMsIsSampleHit(system,1)>) {
+                        %else
+                            if(ssGetLogOutput(%<RTMsGet(system, "MdlRefSfcnS")>)) {
+                        %endif
+                    %else
+                        if(%<RTMGet("LogOutput")>) {
+                    %endif
+                %else
+                    {
+                %endif
+
+                double time = %<tid2time(block, system, tid)>;
+                %if inputPortIsAddressable
+                    void *pData = (void *)%<LibBlockInputSignalAddr(portIdx,"","",0)>;
+                %else
+                    %<dataTypeName> data = %<LibBlockInputSignal(portIdx,"","",0)>;
+                    void *pData = &data;
+                %endif
+                %<int32Type> size = %<width>*sizeof(%<dataTypeName>);
+                sendToAsyncQueueTgtAppSvc(%<ParamSettings.uniqueId[portIdx]>, time, pData, size);
+            }
+            %endif
+        %endif
+    %endforeach
+
+%endfunction %% OutputsForTIDTgtConn
+
+%% Function: OutputsForTIDSLRT =====================================================================
+%%
+%% Output function for SLRT
+%%
+%function OutputsForTIDSLRT(block, system, tid) Output
+
+    %foreach portIdx = block.NumDataInputPorts
+
+        %% Multi-rate blocks generate code separately for each each rate,
+        %% so check this particular input port's TID to see if it matches
+        %% the rate currently being generated.
+        %%
+        %if portHasTid(block, system, portIdx, tid)
+
+            %% Log this port's signal to SLRT buffered logging service
+            %%
+            %assign sighandle = LibBlockPWork(SLRTSigHandles, "", "", portIdx)
+            %assign tt = tid2time(block, system, tid)
+            slrtLogSignal(%<sighandle>, %<tt>);
+        %endif
+    %endforeach
+%endfunction %% OutputsForTIDSLRT
+
+
+%% Function: Outputs ===============================================================================
+%%
+%% Output function for single port or model reference single tasking
+%%
+%function Outputs_internal(block, system) Output
+    %if Accelerator && !ParamSettings.IsVMSim && ISEQUAL(ParamSettings.SignalDomain, "outport")
+        %% For outport logging in non-VMSim accelerator mode, call into Simulink (currently
+        %% featured off)
+        %<SLibCallBlockInSimulink(system, block, "SS_CALL_MDL_OUTPUTS")>
+    %elseif SupportsInlineAQs(block) || SupportsTargetConAQs(block)
+
+        %% For targets, only send data at major time steps. For simulation,
+        %% checks for LogOutput (which supports refine) are in OutputsForTID
+        %if SupportsInlineAQs(block)
+            {
+        %elseif isRSimWithSolverModule
+            if (%<RTMGet("LogOutput")>) {
+        %elseif (SLibIsERTCodeFormat()) && (NumContStates > 0)
+            if (%<RTMIs("MajorTimeStep")>) {
+        %else
+            {
+        %endif
+
+        %if ISEQUAL(TID, "constant")
+            %% All constant sample rate signals processed in Start
+
+        %elseif LibTriggeredTID(TID)
+            %% Triggered sample time should always be processed
+            %<OutputsForTID(block, system, TID)>
+
+        %else
+            %foreach idx = SIZE(TID, 1)
+                %if block.TID[idx] != -2 && !SLibParameterChangeEventTID(block.TID[idx])
+                    %if SIZE(TID, 1) > 1 || !SLibSingleTasking()
+                        if (%<LibIsSampleHit(block.TID[idx])>) {
+                    %endif
+                    %% Process each block sample rate separately
+                    %<OutputsForTID(block, system, block.TID[idx])>
+                    %if SIZE(TID, 1) > 1 || !SLibSingleTasking()
+                    }
+                    %endif
+                %endif
+            %endforeach
+        %endif
+
+    }
+    %elseif UseSLRTLoggingService(block)
+
+        %% Generate Outputs for SLRT
+        %if ISEQUAL(TID, "constant") || LibTriggeredTID(TID)
+            %%Triggered and constant sample time should always be processed
+            %<OutputsForTIDSLRT(block, system, TID)>
+        %else
+            %foreach idx = SIZE(TID, 1)
+                %if block.TID[idx] >= 0
+                    %if SIZE(TID, 1) > 1 || !SLibSingleTasking()
+                        %<FcnGenerateTidGuardOpenCode(block.TID[idx])>
+                    %endif
+                    %% Process each block sample rate separately
+                    %<OutputsForTIDSLRT(block, system, block.TID[idx])>
+                    %if SIZE(TID, 1) > 1 || !SLibSingleTasking()
+                        %<FcnGenerateTidGuardCloseCode(block.TID[idx])>
+                    %endif
+                %endif
+            %endforeach
+        %endif
+
+    %elseif UseSLRTMessageLogging(block)
+        %foreach portIdx = block.NumDataInputPorts
+            %assign sigAddr = LibBlockInputSignalAddr(portIdx, "", "", 0)
+            %assign tt = tid2time(block, system, TID)
+
+            %if LibTriggeredTID(TID) && ISFIELD(block, "TriggerTimeKeepingTID")
+                %% If "triggered", get the actual tid
+                %assign currTid = getBaseTidForTimeKeepingIfUnion(block.TriggerTimeKeepingTID)
+                %if currTid > 0 && LibGetTID01EQ() %%LibGetTID01EQ is used to adjust the starting discrete tid
+                    %assign currTid = %<currTid> - 1
+                %endif
+                slrtLogMessage(%<currTid>, %<tt>, reinterpret_cast<uintptr_t>(%<sigAddr>));
+            %else
+                %foreach idx = SIZE(TID, 1)
+                    %if block.TID[idx] >= 0
+                        %assign currTid = block.TID[idx]
+                        %if currTid > 0 && LibGetTID01EQ()
+                            %assign currTid = %<currTid> - 1
+                        %endif
+                        slrtLogMessage(%<currTid>, %<tt>, reinterpret_cast<uintptr_t>(%<sigAddr>));
+                    %endif
+                %endforeach
+            %endif
+
+        %endforeach
+    %endif
+%endfunction %% Outputs
+
+%function Outputs(block, system) Output
+    %if !ParamSettings.UseTerminateFcn
+        %<Outputs_internal(block, system)>
+    %endif
+%endfunction
+
+%function Terminate(block, system) Output
+    %if ParamSettings.UseTerminateFcn
+        %<Outputs_internal(block, system)>
+    %endif
+%endfunction
+
+%% Function: CleanupRuntimeResources ===============================================================
+%%
+%% Block CleanupRuntimeResources method
+%%
+%function CleanupRuntimeResources(block, system) Output
+    %if SupportsInlineAQs(block) && ShouldTAQBlockLog()
+        %<OutputTargetConCheck(block, system)>
+        {
+            %foreach aqIdx = ParamSettings.NumAQs
+                %if !ParamSettings.UsingJetstreamRapidAccelStreaming
+                    %assign pwork = LibBlockPWork(AQHandles, "", "", aqIdx)
+                    if(%<pwork>) {
+                        sdiTerminateStreaming(&%<pwork>);
+                    }
+                %endif
+            %endforeach
+        }
+    %endif
+%endfunction %% CleanupRuntimeResources
+
+%% [EOF] toasyncqueue.tlc

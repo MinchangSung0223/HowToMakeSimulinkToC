@@ -1,0 +1,97 @@
+%%
+%%
+%%
+%%
+%% Copyright 1994-2021 The MathWorks, Inc.
+%%
+%% Abstract: general roller target file
+
+%implements Roller "C"
+
+%%
+%% RollHeader
+%%
+%% C language:
+%%   {
+%%     int i;
+%%
+
+%function RollHeader(block, rollVars) Output
+    %assign intType = LibGetDataTypeNameFromId(::CompiledModel.tSS_INTEGER)
+    %assign ::CompiledModel.LoopControlIdx = ::CompiledModel.LoopControlIdx + 1
+    %assign loopVariable = "i%<LoopControlIdx>"
+    {
+        %<intType> %<loopVariable>;
+        %return loopVariable
+    %%}
+%endfunction %% Outputs
+
+%%
+%% LoopHeader
+%%
+%%     double non-scalarU's;
+%%     double non-scalarP's;
+%%     double non-scalarY's;
+%%
+%% C language:
+%%     for(i = 0; i < numIterations; i++) {
+%%
+
+%function LoopHeader(block, sigOffset, numIterations, rolledCount, rollVars) Output
+    %assign loopVariable = "i%<LoopControlIdx>"
+    %if 1 == block.HasSymbolicDims
+        %if !ISEMPTY(RollRegionTypes)
+            %assign numIterations = ...
+                "(" + LibCGTypeSymbolicWidth(RollRegionTypes[rolledCount]) + ")"
+            %assign symLoopOffset = ""
+            %foreach rollIdx = rolledCount
+                %if 0 == rollIdx
+                    %assign symLoopOffset = ...
+                        "(" + LibCGTypeSymbolicWidth(RollRegionTypes[rollIdx]) + ")"
+                %else
+                    %assign symLoopOffset = symLoopOffset + ...
+                        "+(" + LibCGTypeSymbolicWidth(RollRegionTypes[rollIdx]) + ")"
+                %endif
+            %endforeach
+            %assign ::CompiledModel.CurrentSymbolicLoopOffset = symLoopOffset
+        %else
+            %% errout as Rollregion can't be used here, as block has un-supported  Input and output
+            %% configuration or vars with different ranges are rolled.
+            %<SLibReportErrorWithId("Simulink:SymbolicDims:RollRegionPortDimensionMismatch")>
+        %endif
+    %else
+        %assign ::CompiledModel.CurrentSymbolicLoopOffset = ""
+    %endif
+    %assign ::CompiledModel.CurrentLoopOffset = sigOffset
+    %<LibDeclareRollVariables(block, sigOffset, numIterations, rolledCount, rollVars)>
+    for (%<loopVariable>=0; %<loopVariable> < %<numIterations>; %<loopVariable>++) {
+    %%}
+%endfunction
+
+%%
+%% LoopTrailer
+%%
+%% C language:
+%%     }
+%%
+
+%function LoopTrailer(block, sigOffset, numIterations, rolledCount, rollVars) Output
+}
+%endfunction
+
+%%
+%% RollTrailer
+%%
+%% C language:
+%%     }
+%%
+
+%function RollTrailer(block, rollVars) Output
+}
+%assign ::CompiledModel.LoopControlIdx = ::CompiledModel.LoopControlIdx - 1
+%if LoopControlIdx < 0
+    %assign errTxt = "Something is wrong with loop rolling. " ...
+        "LoopControlIdx = %<LoopControlIdx>"
+    %<LibReportFatalError(errTxt)>
+%endif
+%endfunction

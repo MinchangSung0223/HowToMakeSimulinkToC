@@ -1,0 +1,106 @@
+%% ==============================================================================
+%% Abstract:
+%%    Utilities to help with generation of external mode main.c file for
+%%    Windows NativeThreads example
+%%
+%% Copyright 2020 The MathWorks, Inc.
+%%
+
+%% Include guard
+%if EXISTS(_EXTMODEWINTHREADUTILS_) == 0
+%assign _EXTMODEWINTHREADUTILS_ = 1
+%selectfile NULL_FILE
+
+%%=========================================================================
+%function FcnDefineTaskSampleTimesInMs() Output
+
+    %if LibIsDeploymentDiagram()
+        %% For the explicit partitioning case, we also need to count
+        %% event handlers where an entry point is directly linked
+        %% to the trigger instead of via a task.
+        %assign numTasks = 0
+        %assign buildInitString = ""
+        %assign sep = ""
+
+        %% First count the tasks
+        %foreach ehIdx = LibGetNumTriggers()
+            %assign evType = LibGetTriggerType(ehIdx)
+            %if ISEQUAL(evType, "AperiodicTrigger")
+                %continue
+            %endif
+            %assign tg = LibDeploymentGetTaskGroup(ehIdx)
+            %foreach innerTaskIdx = LibGetNumTriggerTasks(ehIdx)
+                %assign task = tg.Task[innerTaskIdx]
+                %assign numTasks = numTasks + 1
+                %assign sampleTime = task.Period
+                %assign sampleTimeInMs = CAST("Unsigned", sampleTime * 1000)
+                %assign buildInitString = "%<buildInitString>%<sep>%<sampleTimeInMs>"
+                %assign sep = ", "
+            %endforeach
+        %endforeach %% ehIdx
+
+        %% Now count the triggers with a direct entry point
+        %foreach ehIdx = LibGetNumTriggers()
+            %assign evType = LibGetTriggerType(ehIdx)
+            %if ISEQUAL(evType, "AperiodicTrigger")
+                %continue
+            %endif
+            %assign tg = LibDeploymentGetTaskGroup(ehIdx)
+            %if ISEQUAL(LibGetNumTriggerTasks(ehIdx), 0)
+                %assign numTasks = numTasks + 1
+                %assign sampleTime = LibGetTriggerBaseRate(ehIdx)
+                %assign sampleTimeInMs = CAST("Unsigned", sampleTime * 1000)
+                %% Empirically, "CAST" rounds using "floor".  But we want to
+                %% round using "ceil".
+                %if CAST("Real", sampleTimeInMs) < CAST("Real", sampleTime * 1000)
+                    %assign sampleTimeInMs = sampleTimeInMs + 1
+                %endif
+                %assign buildInitString = "%<buildInitString>%<sep>%<sampleTimeInMs>"
+                %assign sep = ", "
+            %endif
+        %endforeach %% ehIdx
+
+        %if numTasks > 0
+            DWORD taskSampleTimesInMs[%<numTasks>] = { %<buildInitString> };
+        %endif
+    %else
+        %% For the implicit partitioning case, the number of periodic tasks
+        %% is simply the number of periodic tasks
+        %assign numPeriodicTasks = SLibGetNumPeriodicTasks()
+        %if numPeriodicTasks > 0
+            DWORD taskSampleTimesInMs[%<numPeriodicTasks>] = {
+                %foreach idx = numPeriodicTasks
+                    %assign sampleTime = LibGetSampleTimePeriodAndOffset(idx, 0)
+                    %assign sampleTimeInMs = CAST("Unsigned", sampleTime * 1000)
+                    %% Empirically, "CAST" rounds using "floor".  But we want to
+                    %% round using "ceil".
+                    %if CAST("Real", sampleTimeInMs) < CAST("Real", sampleTime * 1000)
+                        %assign sampleTimeInMs = sampleTimeInMs + 1
+                    %endif
+                    %<sampleTimeInMs>\
+                    %if idx < (numPeriodicTasks - 1)
+                        , \
+                    %endif
+                %endforeach
+        %endif
+    };
+    %endif
+%endfunction
+
+%%=========================================================================
+%function FcnRunWindowsBackgroundTask() Output
+    /* Main thread becomes background task */
+    {
+        HANDLE mainThread = GetCurrentThread();
+        CHECK_STATUS(SetThreadPriority(mainThread, THREAD_MODE_BACKGROUND_BEGIN) == false, "SetThreadPriority");
+
+        /* Run background task */
+        backgroundTask();
+
+        /* Restore priority of main thread when background task loop terminates. */
+        CHECK_STATUS(SetThreadPriority(mainThread, THREAD_MODE_BACKGROUND_END) == false, "SetThreadPriority");
+    }
+%endfunction
+
+
+%endif

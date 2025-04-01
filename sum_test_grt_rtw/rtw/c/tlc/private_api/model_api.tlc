@@ -1,0 +1,11 @@
+%if EXISTS(::_MODEL_API_PRIVATE_) == 0
+%assign ::_MODEL_API_PRIVATE_ = 1
+%%
+%% Copyright 2022 The MathWorks, Inc.
+%%
+
+%function SLibModelIsLinearlyImplicit() void
+    %return (::CompiledModel.ModelIsLinearlyImplicit == "yes")
+%endfunction
+
+%endif %% _MODEL_API_PRIVATE_

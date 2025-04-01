@@ -1,0 +1,69 @@
+%%
+%%
+%%
+%%
+%% Abstract: This file contains all the generate file mappings.
+%%
+%% Copyright 1994-2018 The MathWorks, Inc.
+
+%%
+%% TLC includes
+%%
+
+%include "compilestats.tlc"
+
+%% Call the SetCompileStatsEnabled function
+%<SetCompileStatsEnabled()>
+
+%<SLibAddTLCCompileStatsCheckPoint(TLC_TRUE,"Loading TLC files")>
+
+%generatefile   Actuator                       "actuator.tlc"
+%generatefile   Constant                       "constant.tlc"
+%generatefile   Demux                          "virtual.tlc"
+%generatefile   DiscreteStateSpace             "dss.tlc"
+%generatefile   DiscreteZeroPole               "dzp.tlc"
+%generatefile   FlatRoller                     "flat_roller.tlc"
+%generatefile   From                           "virtual.tlc"
+%generatefile   FromFile                       "fromfile.tlc"
+%generatefile   FromSpreadsheet                "fromspreadsheet.tlc"
+%generatefile   FromWorkspace                  "fromwks.tlc"
+%generatefile   Goto                           "virtual.tlc"
+%generatefile   GotoTagVisibility              "virtual.tlc"
+%generatefile   Ground                         "virtual.tlc"
+%generatefile   IntrusiveAccessor              "intrusive_accessor.tlc"
+%generatefile   IPCPort                        "IPCPort.tlc"
+%generatefile   IPCRead                        "IPCRead.tlc"
+%generatefile   IPCWrite                       "IPCWrite.tlc"
+%generatefile   Lookup                         "look_up.tlc"
+%generatefile   Lookup2D                       "lookup2d.tlc"
+%generatefile   "Lookup_n-D"                   "lookup_nd.tlc"
+%generatefile   MATLABFcn                      "matlabfn.tlc"
+%generatefile   MATLABScripting                "mlscript.tlc"
+%generatefile   "M-S-Function"                 "msfunction.tlc"
+%generatefile   ModelReference                 "modelref.tlc"
+%generatefile   Mux                            "virtual.tlc"
+%generatefile   Opaque                         "opaque.tlc"
+%generatefile   Outport                        "outport.tlc"
+%generatefile   PMComponent                    "pmcomponent.tlc"
+%generatefile   PMIOPort                       "pmioport.tlc"
+%generatefile   Roller                         "roller.tlc"
+%generatefile   Scope                          "scope.tlc"
+%generatefile   TimeScope                      "scope.tlc"
+%generatefile   WebTimeScopeBlock              "scope.tlc"
+%generatefile   ArrayPlot                      "arrayplot.tlc"
+%generatefile   ArrayPlotBlock                 "arrayplot.tlc"
+%generatefile   ArrayPlotDemoBlock             "arrayplot.tlc"
+%generatefile   SignalViewerScope              "signalviewerscope.tlc"
+%generatefile   Sensor                         "sensor.tlc"
+%generatefile   "S-Function"                   "gensfun.tlc"
+%generatefile   SubSystem                      "subsystm.tlc"
+%generatefile   ToFile                         "tofile.tlc"
+%generatefile   ToWorkspace                    "towks.tlc"
+%generatefile   SignalToWorkspace              "towks.tlc"
+%generatefile   Terminator                     "virtual.tlc"
+%generatefile   TransportDelay                 "tdelay.tlc"
+%generatefile   VariableTransportDelay         "vtdelay.tlc"
+%generatefile   ToAsyncQueueBlock              "toasyncqueue.tlc"
+
+%<SLibAddTLCCompileStatsCheckPoint(TLC_FALSE,"Loading TLC files")>
+%% EOF: genmap.tlc

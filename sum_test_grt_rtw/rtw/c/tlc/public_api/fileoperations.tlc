@@ -1,0 +1,18 @@
+%if EXISTS(_FILEOPERATIONS_) == 0
+%assign _FILEOPERATIONS_ = 1
+%%
+%% Copyright 2019 The MathWorks, Inc.
+%%
+
+%% Function: LibCacheSystemCodeToFile ==============================================================
+%% Abstract:
+%%     Caches subsystem code to the correct file's correct section.
+%function LibCacheSystemCodeToFile(codeGroupName, sysIdx, buffer) void
+    %if !WHITE_SPACE(buffer) && !ISEMPTY(buffer)
+        %assign aBuffer = STRING(buffer)
+        %assign fileIdx = CGMODEL_ACCESS("FileRepository.AddCodeToSubsystemFile", codeGroupName, sysIdx, aBuffer)
+        %return LibUpdateCompiledModelFiles(fileIdx)
+    %endif
+%endfunction
+
+%endif %% _FILEOPERATIONS_

@@ -1,0 +1,2096 @@
+%%
+%% Copyright 2020-2023 The MathWorks, Inc.
+%%
+%% Abstract:
+%%   This Thin TLC library file contains the general purpose utility functions
+%%   for accessing data type information.
+%%
+%if EXISTS(_DTYPE_PRIVATE_API_) == 0
+%assign _DTYPE_PRIVATE_API_ = 1
+
+%function LibGetNumBuiltInDataTypesInModel() void
+    %return CGMODEL_ACCESS("CGModel.DataTypes.NumOfBuiltInDataTypes")
+%endfunction
+
+%function SLibGetNumPredefinedDataTypesInModel() void
+    %return CGMODEL_ACCESS("CGModel.DataTypes.NumOfPredefinedDataTypes")
+%endfunction
+
+%function SLibGetIdForDynamicallyAssignedStandardType(typeName) void
+    %return CGMODEL_ACCESS("CGModel.DataTypes.GetIdForDynamicallyAssignedStandardType", typeName)
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibGetBasicTypeSymbolFixInt ==================
+%% Abstract:
+%%      Return the name (symbol used in generated code) of a fixed-width integer platform type
+%%      according to the specified width and sign
+%%
+%function LibGetBasicTypeSymbolFixInt(width, isSigned) void
+    %return CGMODEL_ACCESS("DataTypes.GetBasicTypeSymbolFixInt", width, isSigned)
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibGetInvalidDataTypeId ==================
+%% Abstract:
+%%      Returns the Invalid Data Type Id
+%%
+%function LibGetInvalidDataTypeId() void
+    %return CGMODEL_ACCESS("CGModel.DataTypes.InvalidDataTypeId")
+%endfunction
+
+%% Function{Other Useful Functions}: SLibGetDataTypeName ===============
+%% Abstract:
+%%   Return the data type name corresponding to a data type ID. Logic
+%%   different from LibGetDataTypeNameFromId which doesn't return "string"
+%%
+%function SLibGetDataTypeName(id) void
+    %return CGMODEL_ACCESS("DataTypes.GetName", id)
+%endfunction
+
+%function SLibPopulateDoubleDataType(dt) void
+    %<SLibSetDataTypeEnum(dt, "SS_DOUBLE")>
+    %<SLibSetDataTypeConvertBetweenTLCFcnName(dt, "SLibConvertBetweenBuiltin")>
+    %<SLibSetDataTypeIsPositiveTLCFcnName(dt, "SLibIsPositiveBuiltin")>
+    %<SLibSetDataTypeSignTLCFcnName(dt, "SLibSignBuiltin")>
+    %assign gndName = LibGetModelName() + "_RGND"
+    %<SLibSetDataTypeGroundName(dt, gndName)>
+    %<SLibSetDataTypeGroundValue(dt, "0.0")>
+    %<SLibSetDataTypeGroundHasFloats(dt, 1)>
+    %<SLibSyncDataTypeComplexName(dt)>
+    %<SLibSetDataTypeComplexGroundName(dt, gndName + "_Complex")>
+%endfunction
+
+%function SLibPopulateSingleDataType(dt) void
+    %<SLibSetDataTypeEnum(dt, "SS_SINGLE")>
+    %<SLibSetDataTypeConvertBetweenTLCFcnName(dt, "SLibConvertBetweenBuiltin")>
+    %<SLibSetDataTypeIsPositiveTLCFcnName(dt, "SLibIsPositiveBuiltin")>
+    %<SLibSetDataTypeSignTLCFcnName(dt, "SLibSignBuiltin")>
+    %assign gndName = LibGetModelName() + "_R32GND"
+    %<SLibSetDataTypeGroundName(dt, gndName)>
+    %<SLibSetDataTypeGroundValue(dt, "0.0F")>
+    %<SLibSetDataTypeGroundHasFloats(dt, 1)>
+    %<SLibSyncDataTypeComplexName(dt)>
+    %<SLibSetDataTypeComplexGroundName(dt, gndName + "_Complex")>
+%endfunction
+
+%function SLibPopulateHalfDataType(dt) void
+    %<SLibSetDataTypeEnum(dt, "SS_HALF")>
+    %<SLibSetDataTypeConvertBetweenTLCFcnName(dt, "Fixpt_HalfPrecisionConvertBetween")>
+    %<SLibSetDataTypeIsPositiveTLCFcnName(dt, "Fixpt_HalfPrecisionIsPositive")>
+    %<SLibSetDataTypeSignTLCFcnName(dt, "Fixpt_HalfPrecisionSign")>
+    %if !EXISTS(::CompiledModel.tSS_HALF)
+        %<LibAddToCompiledModel("tSS_HALF", dt.Id)>
+    %else
+        %assign ::CompiledModel.tSS_HALF = dt.Id
+    %endif
+    %assign gndName = LibGetModelName() + "_R16GND"
+    %<SLibSetDataTypeGroundName(dt, gndName)>
+    %<SLibSetDataTypeGroundHasFloats(dt, 1)>
+    %<SLibSetDataTypeComplexName(dt, "creal16_T")>
+    %<SLibSetDataTypeComplexGroundName(dt, gndName + "_Complex")>
+%endfunction
+
+%function SLibPopulateBooleanDataType(dt) void
+    %<SLibSetDataTypeEnum(dt, "SS_BOOLEAN")>
+    %<SLibSetDataTypeConvertBetweenTLCFcnName(dt, "SLibConvertBetweenBuiltin")>
+    %<SLibSetDataTypeIsPositiveTLCFcnName(dt, "SLibIsPositiveBuiltin")>
+    %<SLibSetDataTypeSignTLCFcnName(dt, "SLibSignBuiltin")>
+    %assign gndName = LibGetModelName() + "_BGND"
+    %<SLibSetDataTypeGroundName(dt, gndName)>
+    %<SLibSetDataTypeGroundValue(dt, "%<SLibGetTypeIdReplacement("false")>")>
+%endfunction
+
+%function SLibPopulateInt8DataType(dt) void
+    %<SLibSetDataTypeEnum(dt, "SS_INT8")>
+    %<SLibSetDataTypeConvertBetweenTLCFcnName(dt, "SLibConvertBetweenBuiltin")>
+    %<SLibSetDataTypeIsPositiveTLCFcnName(dt, "SLibIsPositiveBuiltin")>
+    %<SLibSetDataTypeSignTLCFcnName(dt, "SLibSignBuiltin")>
+    %assign gndName = LibGetModelName() + "_I8GND"
+    %<SLibSetDataTypeGroundName(dt, gndName)>
+    %<SLibSetDataTypeGroundValue(dt, "0")>
+    %<SLibSyncDataTypeComplexName(dt)>
+    %<SLibSetDataTypeComplexGroundName(dt, gndName + "_Complex")>
+%endfunction
+
+%function SLibPopulateUInt8DataType(dt) void
+    %<SLibSetDataTypeEnum(dt, "SS_UINT8")>
+    %<SLibSetDataTypeConvertBetweenTLCFcnName(dt, "SLibConvertBetweenBuiltin")>
+    %<SLibSetDataTypeIsPositiveTLCFcnName(dt, "SLibIsPositiveBuiltin")>
+    %<SLibSetDataTypeSignTLCFcnName(dt, "SLibSignBuiltin")>
+    %assign gndName = LibGetModelName() + "_U8GND"
+    %<SLibSetDataTypeGroundName(dt, gndName)>
+    %<SLibSetDataTypeGroundValue(dt, "0U")>
+    %<SLibSyncDataTypeComplexName(dt)>
+    %<SLibSetDataTypeComplexGroundName(dt, gndName + "_Complex")>
+%endfunction
+
+%function SLibPopulateInt16DataType(dt) void
+    %<SLibSetDataTypeEnum(dt, "SS_INT16")>
+    %<SLibSetDataTypeConvertBetweenTLCFcnName(dt, "SLibConvertBetweenBuiltin")>
+    %<SLibSetDataTypeIsPositiveTLCFcnName(dt, "SLibIsPositiveBuiltin")>
+    %<SLibSetDataTypeSignTLCFcnName(dt, "SLibSignBuiltin")>
+    %assign gndName = LibGetModelName() + "_I16GND"
+    %<SLibSetDataTypeGroundName(dt, gndName)>
+    %<SLibSetDataTypeGroundValue(dt, "0")>
+    %<SLibSyncDataTypeComplexName(dt)>
+    %<SLibSetDataTypeComplexGroundName(dt, gndName + "_Complex")>
+%endfunction
+
+%function SLibPopulateUInt16DataType(dt) void
+    %<SLibSetDataTypeEnum(dt, "SS_UINT16")>
+    %<SLibSetDataTypeConvertBetweenTLCFcnName(dt, "SLibConvertBetweenBuiltin")>
+    %<SLibSetDataTypeIsPositiveTLCFcnName(dt, "SLibIsPositiveBuiltin")>
+    %<SLibSetDataTypeSignTLCFcnName(dt, "SLibSignBuiltin")>
+    %assign gndName = LibGetModelName() + "_U16GND"
+    %<SLibSetDataTypeGroundName(dt, gndName)>
+    %<SLibSetDataTypeGroundValue(dt, "0U")>
+    %<SLibSyncDataTypeComplexName(dt)>
+    %<SLibSetDataTypeComplexGroundName(dt, gndName + "_Complex")>
+%endfunction
+
+%function SLibPopulateInt32DataType(dt) void
+    %<SLibSetDataTypeEnum(dt, "SS_INT32")>
+    %<SLibSetDataTypeConvertBetweenTLCFcnName(dt, "SLibConvertBetweenBuiltin")>
+    %<SLibSetDataTypeIsPositiveTLCFcnName(dt, "SLibIsPositiveBuiltin")>
+    %<SLibSetDataTypeSignTLCFcnName(dt, "SLibSignBuiltin")>
+    %assign gndName = LibGetModelName() + "_I32GND"
+    %<SLibSetDataTypeGroundName(dt, gndName)>
+    %<SLibSetDataTypeGroundValue(dt, "0")>
+    %<SLibSyncDataTypeComplexName(dt)>
+    %<SLibSetDataTypeComplexGroundName(dt, gndName + "_Complex")>
+%endfunction
+
+%function SLibPopulateUInt32DataType(dt) void
+    %<SLibSetDataTypeEnum(dt, "SS_UINT32")>
+    %<SLibSetDataTypeConvertBetweenTLCFcnName(dt, "SLibConvertBetweenBuiltin")>
+    %<SLibSetDataTypeIsPositiveTLCFcnName(dt, "SLibIsPositiveBuiltin")>
+    %<SLibSetDataTypeSignTLCFcnName(dt, "SLibSignBuiltin")>
+    %assign gndName = LibGetModelName() + "_U32GND"
+    %<SLibSetDataTypeGroundName(dt, gndName)>
+    %<SLibSetDataTypeGroundValue(dt, "0U")>
+    %<SLibSyncDataTypeComplexName(dt)>
+    %<SLibSetDataTypeComplexGroundName(dt, gndName + "_Complex")>
+%endfunction
+
+%% Function: SLibGetTypeIdReplacement ==============================================================
+%%
+%% Look up symbol for integer min/max value or boolean true/false. The
+%% classicLimitSymbol should be one of true, false, MAX_uint8_T, ...,
+%% MAX_uint64_T, MAX_int8_T, ..., MAX_int64_T, MIN_int8_T, ..., MIN_int64_T.
+%% The return value is determined according to the current configuration of
+%% data type replacement and language standard types. If classicLimitSymbol
+%% does not match any of the above names, it is passed through unchanged.
+%function SLibGetTypeIdReplacement(classicLimitSymbol)
+    %return CGMODEL_ACCESS("CGModel.GetBasicTypeLimitName", classicLimitSymbol)
+%endfunction
+
+%% Function: SLibGetDtGroundName ===================================================================
+%% Abstract:
+%%   Returns the name used for a ground or complex ground depending the
+%%   data type ID, the value of reim and complexity. See LibGetGroundName for
+%%   more details.
+%% TopTester: test/toolbox/simulink/blocks/lib_Sources/Ground/rtw/tStringSupport.m
+%%
+%function SLibGetDtGroundName(dtID, isComplex, reim)
+    %assign dtRec = ::CompiledModel.DataTypes.DataType[dtID]
+
+    %assign isGroundComplex = ...
+        (reim == "" && isComplex)
+
+    %% Complex grounds are not expected from IR
+    %if SLibHasDataTypeGroundVariableName(dtID) && ...
+        !isGroundComplex
+        %assign name = SLibGetDataTypeGroundVariableName(dtID)
+    %else
+        %assign name = CGMODEL_ACCESS("DataTypes.GetComplexGroundNameOrGetDataTypeGroundName", dtID, isGroundComplex)
+        %if name == ""
+            %assign strTxt = reim == "" ? "Complex" : ""
+            %assign errTxt = "The name for ground has been requested, however, " ...
+                "it has not been set by SLibSetDataType%<strTxt>GroundName()."
+            %<LibReportFatalError(errTxt)>
+        %endif
+    %endif
+    %<SLibUpdateLocalSymbolForCurrentFunction(name)>
+    %return name
+%endfunction
+
+%%
+%% Setup all built-in and pre-defined (fcn_call, pointer, integer
+%% and action) types.
+%%
+%function SLibSetupBuiltInAndPreDefinedDataTypes() void
+    %assign namesOfDataTypes = CGMODEL_ACCESS("DataTypes.DataTypesNames")
+    %foreach dtIdx = CGMODEL_ACCESS("DataTypes.GetNumDataTypes")
+
+        %assign dt = ::CompiledModel.DataTypes.DataType[dtIdx]
+
+        %% The Name property might still be used by custom TLC code
+        %% that is not yet updated to call LibGetDataTypeNameFromId
+        %<LibAddIdentifier(dt, "Name", namesOfDataTypes[dtIdx])>
+
+        %if ISFIELD(dt, "RegistrationComplete") && dt.RegistrationComplete==TLC_TRUE
+            %continue
+        %endif
+
+        %% Ground is defined for each built-in data type.
+        %% Custom data types can be defined similarly from within a block's
+        %% BlockInstanceSetup or BlockTypeSetup function.  Again, an error
+        %% will occur if a block sources to an undefined ground.
+        %%
+        %<LibAddIdentifier(dt, "ConvertBetweenTLCFcnName", "")>
+        %<LibAddIdentifier(dt, "IsPositiveTLCFcnName", "")>
+        %<LibAddIdentifier(dt, "SignTLCFcnName", "")>
+        %<LibAddIdentifier(dt, "ConvertBetweenTLCFcnFile", "")>
+        %<LibAddIdentifier(dt, "IsPositiveTLCFcnFile", "")>
+        %<LibAddIdentifier(dt, "SignTLCFcnFile", "")>
+
+        %if !ISFIELD(dt, "Enum")
+            %<LibAddIdentifier(dt, "Enum", "")>
+        %endif
+
+
+        %% mark the behaviour in compiler as comments, refer dtypelib.tlc
+
+        %% For the Compiler GroundName is already setup for string types, do not reset it here
+        %<LibAddIdentifier(dt, "GroundName", "")>
+
+        %% For the Compiler
+        %% GroundValue and GroundInit is already setup for half, do not reset it here
+        %% For string, only GroundValue is already set in rtwgen_datatypes.cpp
+        %<LibAddIdentifier(dt, "GroundValue", "")>
+        %<LibAddIdentifier(dt, "GroundInit", "")>
+
+        %%
+        %<LibAddIdentifier(dt, "GroundHasFloats", 0)>
+        %<LibAddIdentifier(dt, "ComplexName", "")>
+        %<LibAddIdentifier(dt, "ComplexGroundName", "")>
+        %<LibAddIdentifier(dt, "ComplexGroundReqInMemory", 0)>
+
+        %assign DTName = CGMODEL_ACCESS("DataTypes.GetDataTypeDTName", dtIdx)
+
+        %switch DTName
+          %case "double" %% sbcheck:ok:tlctypes
+            %<SLibPopulateDoubleDataType(dt)>
+            %break
+          %case "single"
+            %<SLibPopulateSingleDataType(dt)>
+            %break
+          %case "half"
+            %<SLibPopulateHalfDataType(dt)>
+            %break
+          %case "boolean"
+            %<SLibPopulateBooleanDataType(dt)>
+            %% complex boolean undefined
+            %break
+          %case "int8"
+            %<SLibPopulateInt8DataType(dt)>
+            %break
+          %case "uint8"
+            %<SLibPopulateUInt8DataType(dt)>
+            %break
+          %case "int16"
+            %<SLibPopulateInt16DataType(dt)>
+            %break
+          %case "uint16"
+            %<SLibPopulateUInt16DataType(dt)>
+            %break
+          %case "int32"
+            %<SLibPopulateInt32DataType(dt)>
+            %break
+          %case "uint32"
+            %<SLibPopulateUInt32DataType(dt)>
+            %break
+            %% pre-defined types
+          %case "fcn_call"
+            %<CGMODEL_ACCESS("DataTypes.SetName", dtIdx, "fcn_call_T")>
+            %<CGMODEL_ACCESS("DataTypes.SetDataTypeEnum", dtIdx, "SS_FCN_CALL")>
+            %break
+          %case "integer"
+            %% Name for this pre-defined type is set in C++
+            %<CGMODEL_ACCESS("DataTypes.SetDataTypeEnum", dtIdx, "SS_INTEGER")>
+            %<LibAddToCompiledModel("tSS_INTEGER", dt.Id)>
+            %break
+          %case "pointer"
+            %assign pointerName=CGMODEL_ACCESS("DataTypes.GetBasicTypeSymbolFromName", "pointer")
+            %<CGMODEL_ACCESS("DataTypes.SetName", dtIdx, pointerName)>
+            %<CGMODEL_ACCESS("DataTypes.SetDataTypeEnum", dtIdx, "SS_POINTER")>
+            %<SLibSetDataTypeGroundValue(dt, "0")>
+            %break
+          %case "action"
+            %% Only "Name" field needs to be set
+            %<CGMODEL_ACCESS("DataTypes.SetName", dtIdx, "action_T")>
+            %break
+          %case "timer_uint32_pair"
+            %<CGMODEL_ACCESS("DataTypes.SetName", dtIdx, "timer_uint32_pair_T")>
+            %<CGMODEL_ACCESS("DataTypes.SetDataTypeEnum", dtIdx, "SS_TIMER_UINT32_PAIR")>
+            %break
+          %case "std::string"
+          %case "string"
+            %<CGMODEL_ACCESS("DataTypes.SetName", dtIdx, DTName)>
+            %break
+          %default
+
+            %% Name property in CGModel is not yet populated
+            %if ISEMPTY(LibGetDataTypeNameFromId(dtIdx))
+                %<CGMODEL_ACCESS("DataTypes.SetName", dtIdx, DTName)>
+            %endif
+
+            %% handle enumerated types which are aliased thru to
+            %assign aIdx = CGMODEL_ACCESS("DataTypes.GetDataTypeIdAliasedThruToForNonBusDtype", dtIdx)
+            %if CGMODEL_ACCESS("DataTypes.GetDataTypeRegistrationFlag", dtIdx) || FixPt_DataTypeIsMultiWord(dt)
+                %%If Registration flag set (eg. Multiword types etc) - do nothing
+                %% Enumerated type
+            %elseif LibIsEnumDataType(dtIdx)
+                %<CGMODEL_ACCESS("DataTypes.SetDataTypeConvertBetweenTLCFcnName", dtIdx, "SLibConvertBetweenEnumType")>
+                %assign gndName = ::CompiledModel.Name + "_" + SLibGetDataTypeName(dtIdx) + "GND"
+                %<CGMODEL_ACCESS("DataTypes.SetDataTypeGroundName", dtIdx, gndName)>
+                %assign gValue = FcnGetEnumTypeDefaultCodeGenString(dtIdx)
+                %<CGMODEL_ACCESS("DataTypes.SetDataTypeGroundValue", dtIdx, STRING(gValue))>
+                %% Structure type
+            %elseif LibIsStructDataType(dtIdx)
+                %assign gndName = ::CompiledModel.Name + "_rtZ" + SLibGetDataTypeName(dtIdx)
+                %<CGMODEL_ACCESS("DataTypes.SetDataTypeGroundName", dtIdx, "%<gndName>")>
+                %<CGMODEL_ACCESS("DataTypes.SetDataTypeGroundValue", dtIdx, "%<gndName>")>
+                %assign gndHasFloats = 0
+                %foreach eIdx = dt.NumElements
+                    %assign eDtId = LibDataTypeElementDataTypeId(dtIdx, eIdx)
+                    %assign gndHasFloats = gndHasFloats || ...
+                        CGMODEL_ACCESS("DataTypes.GetDataTypeGroundHasFloats", eDtId)
+                %endforeach
+                %<CGMODEL_ACCESS("DataTypes.SetDataTypeGroundHasFloats", dtIdx, CAST("Number", gndHasFloats))>
+                %addtorecord dt NeedGroundInit 1
+            %elseif LibIsSimulinkPointerDataType(dtIdx)
+                %<CGMODEL_ACCESS("DataTypes.SetDataTypeGroundValue", dtIdx, SLibGetNullDefinitionFromTfl())>
+                %% Image type
+            %elseif LibIsImageDataType(dtIdx)
+                %% Request for image type header
+                %<DeclareImageTypeUsage(TLC_TRUE)>
+                %<fcnSetDataTypeName(dt, FcnGetImageImplementationTypeName(), TLC_FALSE)>
+                %assign gndName = ::CompiledModel.Name + "_rtZ_" + CGMODEL_ACCESS("DataTypes.GetDataTypeDTName",dtIdx)
+                %<CGMODEL_ACCESS("DataTypes.SetDataTypeGroundName", dtIdx, gndName)>
+                %<CGMODEL_ACCESS("DataTypes.SetDataTypeGroundValue", dtIdx, "%<gndName>")>
+            %elseif LibDoesDataTypeNeedConstructor(dtIdx) && !LibIsStringDataType(dtIdx)
+                %assign gndName = ::CompiledModel.Name + "_rtZ_" + SLibGetDataTypeName(dt.Id)
+                %assign gndName = STRREP(gndName, "::", "_")
+                %<CGMODEL_ACCESS("DataTypes.SetDataTypeGroundName", dtIdx, gndName)>
+                %<CGMODEL_ACCESS("DataTypes.SetDataTypeGroundValue", dtIdx, "%<gndName>")>
+                %% Alias type
+            %elseif aIdx != dtIdx
+                %<CGMODEL_ACCESS("DataTypes.UpdateAliasTypeFields", dtIdx, aIdx)>
+                %% Simulink.OpaqueType
+            %elseif LibPackageForDataType(dt) == "Simulink" && ...
+                LibClassForDataType(dt) == "OpaqueType"
+                %<CGMODEL_ACCESS("DataTypes.SetDataTypeGroundValue", dtIdx, "0")>
+            %endif
+            %<FcnMapIfEquivToTargetInt(dtIdx)>
+            %break
+            %% end default
+        %endswitch
+
+        %<SetupFixPt(dtIdx)>
+    %endforeach
+
+%endfunction %% SLibSetupBuiltInAndPreDefinedDataTypes
+
+%function FcnUseNative64BitIntegers()
+    %% Use native (not multi-word) 64-bit integers only if long is 64-bit or long
+    %% long is 64-bit AND long long support is enabled
+    %return ::IntegerSizes.LongNumBits==64 || \
+    (::IntegerSizes.LongLongMode==1 && ::IntegerSizes.LongLongNumBits==64)
+%endfunction
+
+%% Function: FcnUpdate64BitIntegerType =============================================================
+%% Abstract:
+%%   Update fields needed for native 64-bit integer types. For non-native, fixed-point
+%%   types, the corresponding updates are done in fixptlib.tlc.
+%%
+%function FcnUpdate64BitIntegerType(dtName, idVal, enumVal) void
+
+    %assign dtId = SLibGetIdForDynamicallyAssignedStandardType(dtName)
+
+    %% Initialize tSS_INT64/tSS_UINT64
+    %<LibAddToCompiledModel(idVal, dtId)>
+
+    %if dtId == ::CompiledModel.tSS_INVALID_DATA_TYPE_ID
+        %% No 64-bit integer to initialize
+        %return
+    %endif
+
+    %assign dt = ::CompiledModel.DataTypes.DataType[dtId]
+    %addtorecord dt ActualBits 64
+    %addtorecord dt Enum enumVal
+    %addtorecord dt DataTypeName dtName
+    %addtorecord dt NativeType LibGetDataTypeNameFromId(dtId)
+    %<CGMODEL_ACCESS("DataTypes.SetDataTypeEnum", dtId, enumVal)>
+%endfunction
+
+
+%% Function: FcnUpdate64BitIntegerTypes ============================================================
+%% Abstract:
+%%   Identify and update 64-bit integer types
+%%
+%function FcnUpdate64BitIntegerTypes() void
+
+    %<FcnUpdate64BitIntegerType("int64", "tSS_INT64", "SS_INT64")>
+    %<FcnUpdate64BitIntegerType("uint64", "tSS_UINT64", "SS_UINT64")>
+
+%endfunction
+
+%% Function: LibCacheFixptOddSizeTypedefs ==========================================================
+%% Abstract:
+%%   Typedefs for types with "odd" wordlengths, i.e. not any of 8, 16, 32
+%%
+%function LibCacheFixptOddSizeTypedefs(buffer) void
+    %if !ISFIELD(::CompiledModel, "FixptOddSizeTypedefs")
+        %addtorecord ::CompiledModel FixptOddSizeTypedefs ""
+    %endif
+    %assign ::CompiledModel.FixptOddSizeTypedefs = ::CompiledModel.FixptOddSizeTypedefs + buffer
+%endfunction
+
+%% Function: FcnRegisterBuiltInLongType ============================================================
+%% Abstract:
+%%   Register ulong, long, ulonglong or longlong type
+%%
+%function FcnRegisterBuiltInLongType(dtName) void
+    %switch dtName
+      %case "ulong"
+        %assign numBits = ::IntegerSizes.LongNumBits
+        %assign signPrefixLC = "u"
+        %assign signPrefixUC = "U"
+        %assign compiledModel_tSS_record = "::CompiledModel.tSS_ULONG"
+        %break
+      %case "long" %% sbcheck:ok:tlctypes
+        %assign numBits = ::IntegerSizes.LongNumBits
+        %assign signPrefixLC = ""
+        %assign signPrefixUC = ""
+        %assign compiledModel_tSS_record = "::CompiledModel.tSS_LONG"
+        %break
+      %case "ulonglong"
+        %assign numBits = ::IntegerSizes.LongLongNumBits
+        %assign signPrefixLC = "u"
+        %assign signPrefixUC = "U"
+        %assign compiledModel_tSS_record = "::CompiledModel.tSS_ULONG_LONG"
+        %break
+      %case "longlong"
+        %assign numBits = ::IntegerSizes.LongLongNumBits
+        %assign signPrefixLC = ""
+        %assign signPrefixUC = ""
+        %assign compiledModel_tSS_record = "::CompiledModel.tSS_LONG_LONG"
+        %break
+      %default
+        %% Invalid data type name
+        %assert TLC_FALSE
+    %endswitch
+
+    %if EXISTS(::CompiledModel.tSS_%<signPrefixUC>INT%<numBits>)
+        %assign nativeIdExists = TLC_TRUE
+        %assign nativeId = ::CompiledModel.tSS_%<signPrefixUC>INT%<numBits>
+    %else
+        %assign nativeIdExists = TLC_FALSE
+        %assign nativeId = -1
+    %endif
+
+    %% fetch the index (register new / return existing) of the datatype we are trying to register
+    %assign newDTIdx = CGMODEL_ACCESS("DataTypes.RegisterBuiltInLongTypeHelper",...
+        dtName, ::IntegerSizes.CharNumBits, numBits, nativeIdExists, nativeId)
+
+    %% add the tSS token
+    %assign %<compiledModel_tSS_record> = newDTIdx
+
+    %% Cache definitions for SS_UINT64, SS_INT64 (needed by C-API)
+    %%
+    %% TopTester: test/toolbox/simulink/sl_datatypes/int64/t64BitIntegerSL.m
+    %% TopTester: test/toolbox/coder/lang/datatypes/fixedpoint/tmisc3.m
+    %assign enumVal = CGMODEL_ACCESS("DataTypes.GetDataTypeEnum", newDTIdx)
+    %openfile utilityDef
+    #ifndef %<enumVal>
+    #define %<enumVal> %<newDTIdx>
+    #endif
+    %closefile utilityDef
+    %<LibCacheFixptOddSizeTypedefs(utilityDef)>\
+    %undef utilityDef
+
+    %% Fixed-width types, uint64, int64 must be aliased to the corresponding
+    %% long or long long type to support inline usage. For non-native fixed-width
+    %% types, this is done in fixptlib.tlc.
+    %%
+    %% TopTester: test/toolbox/simulink/sl_datatypes/int64/t64BitIntegerSLModelRef3.m
+    %assign isSigned = CGMODEL_ACCESS("DataTypes.IsSigned", newDTIdx)
+    %if numBits==64 && isSigned
+        %<SLibSetIdAliasedToForDataType(::CompiledModel.tSS_INT64, newDTIdx)>
+    %elseif numBits==64 && !isSigned
+        %<SLibSetIdAliasedToForDataType(::CompiledModel.tSS_UINT64, newDTIdx)>
+    %endif
+
+    %% if the registration is already complete, dont add the datatype in the runtime
+    %% the registration is marked complete after the record is added to the
+    %% reduced RTW File in the TLCServer
+    %if CGMODEL_ACCESS("DataTypes.GetDataTypeRegistrationFlag", newDTIdx)
+        %return
+    %endif
+
+    %% increment number of datatypes
+    %assign ::CompiledModel.DataTypes.NumDataTypes = ::CompiledModel.DataTypes.NumDataTypes + 1
+
+    %%
+    %% Register the long type
+    %%
+    %assign nativeName = CGMODEL_ACCESS("DataTypes.GetNativeType", newDTIdx)
+    %assign groundName = CGMODEL_ACCESS("DataTypes.GetDataTypeGroundName", newDTIdx)
+    %assign groundValue = CGMODEL_ACCESS("DataTypes.GetDataTypeGroundValue", newDTIdx)
+    %assign complexName = CGMODEL_ACCESS("DataTypes.GetDataTypeComplexName", newDTIdx)
+    %assign complexGroundName = CGMODEL_ACCESS("DataTypes.GetDataTypeComplexGroundName", newDTIdx)
+    %assign dtSize = numBits / ::IntegerSizes.CharNumBits
+
+    %% This is done only for reduced RTW File.
+    %addtorecord ::CompiledModel.DataTypes          \
+    DataType {                                      \
+        DTName                        dtName        \
+        Id                            newDTIdx      \
+        Size                          dtSize        \
+        IdAliasedThruTo               newDTIdx      \
+        IdAliasedTo                   -10           \
+        RequiredBits                  numBits       \
+        StorageId                     newDTIdx      \
+        IsSigned                      isSigned      \
+        NativeType                    nativeName    \
+        Enum                          enumVal       \
+        ComplexGroundReqInMemory      0             \
+        GroundName                    groundName    \
+        GroundValue                   groundValue   \
+        ComplexName                   complexName   \
+        ComplexGroundName             complexGroundName \
+        RegistrationComplete          TLC_TRUE      \
+    }
+
+    %% after adding the record to the reduced RTW File, mark it as registered
+    %<CGMODEL_ACCESS("DataTypes.SetDataTypeRegistrationFlag", newDTIdx, TLC_TRUE)>
+
+%endfunction
+
+%%
+%% Function: SLibSetupDataTypeInfo =================================================================
+%% Abstract:
+%%   Setup tSS_DataTypeId and other fields pertaining to Datatype information
+%%
+%function SLibSetupDataTypeInfo() void
+    %% Mapping  DataType Table
+    %assign LargestMultiwordBits = %<SLibGetLargestMultiwordDataTypeNeeded()>
+    %<LibAddToCompiledModel("LargestMultiwordBits", LargestMultiwordBits)>
+
+    %% Native 64-bit integer types must be fully configured before registering
+    %% long and long long types
+    %<FcnUpdate64BitIntegerTypes()>
+
+    %% Register long types
+    %if ::IntegerSizes.LongNumBits != 32
+        %<FcnRegisterBuiltInLongType("ulong")>
+        %<FcnRegisterBuiltInLongType("long")> %% sbcheck:ok:tlctypes
+    %endif
+
+    %% Register long long types
+    %if (::IntegerSizes.LongLongMode == 1) && \
+        (::IntegerSizes.LongLongNumBits != ::IntegerSizes.LongNumBits)
+        %<FcnRegisterBuiltInLongType("ulonglong")>
+        %<FcnRegisterBuiltInLongType("longlong")>
+    %endif
+
+    %% Register tSS_UINTEGER
+    %<RegisterUintType()>
+
+    %% Register tSS_CHAR, tSS_UCHAR
+    %<RegisterCharTypes()>
+
+    %% Register tSS_TIME
+    %<RegisterTimeType()>
+
+    %% Add scopes for runtime DTs registered in CGModel
+    %assign numDataTypes = ::CompiledModel.DataTypes.NumDataTypes
+    %assign numUnregisteredDataTypes = ...
+        CGMODEL_ACCESS("DataTypes.GetNumDataTypes") - numDataTypes
+    %foreach idx = numUnregisteredDataTypes
+        %assign dtIdx = numDataTypes + idx
+        %<SLibAddDTFromModel(dtIdx)>
+    %endforeach
+
+    %<SLibSetupBuiltInAndPreDefinedDataTypes()>
+
+%endfunction %% SLibSetupDataTypeInfo
+
+%function SLibAddDTFromModel(idx) void
+    %createrecord dtype {\
+        Id      idx      \
+        RecordIdx [%<idx>] \
+    }
+    %assign ::CompiledModel.DataTypes.NumDataTypes = ::CompiledModel.DataTypes.NumDataTypes + 1
+    %addtorecord ::CompiledModel.DataTypes DataType {}
+    %mergerecord ::CompiledModel.DataTypes.DataType[idx] dtype
+    %mergerecord ::CompiledModel.DataTypes.DataType[idx] ::CompiledModel.DataTypes.DataTypeDefaults
+
+%endfunction
+
+%% Function: SLibGetEnumTypeIndexFromValue =========================================================
+%% Abstract:
+%%   For enumerated data types, get index from underlying value
+%%
+%function SLibGetEnumTypeIndexFromValue(id, enumValue) void
+    %assign enumIdx = CGMODEL_ACCESS("DataTypes.EnumTypeIndexFromValue", id, enumValue)
+    %if (enumIdx > -1)
+        %return enumIdx
+    %endif
+    %<LibReportFatalError("Enumeration value not found in enumerated data type")>
+%endfunction
+
+%% Function: SLibGetEnumTypeCodeGenStringFromIndex =================================================
+%% Abstract:
+%%   For enumerated data types, get code generation string for a specific enumeration
+%%   (may include class name as prefix, depending on how type is defined)
+%%
+%function SLibGetEnumTypeCodeGenStringFromIndex(id, enumIdx) void
+    %return CGMODEL_ACCESS("DataTypes.EnumTypeCodeGenStringFromIndex", id, enumIdx)
+%endfunction
+
+%function SLibSetIdAliasedToForDataType(dataTypeIdx, idAliasedTo) void
+    %<CGMODEL_ACCESS("DataTypes.SetIdAliasedTo", dataTypeIdx, idAliasedTo)>
+%endfunction
+
+%% Function: SLibDataTypeConstructFcnName ==========================================================
+%% Abstract:
+%%   Return the name of Construct TLC function for this data type
+%%
+%function SLibDataTypeConstructFcnName(id) void
+    %return CGMODEL_ACCESS("DataTypes.DataTypeConstructFcnName", id)
+%endfunction
+
+%% Function: SLibDeclareImageTypeUsage =============================================================
+%% Abstract:
+%%   Returns TLC_TRUE if image datatype is registered, else
+%%   returns TLC_FALSE
+%%
+%function SLibDeclareImageTypeUsage() void
+    %return CGMODEL_ACCESS("CGModel.DeclaredImageTypeUsage")
+%endfunction
+
+%% Function: SLibSetDataTypeEnum ===================================================================
+%% Abstract:
+%%   Set the data type enum for a specified record.
+%%
+%function SLibSetDataTypeEnum(dataTypeRec, enum) void
+    %% error out if the record doesn't exist
+    %if !ISFIELD(dataTypeRec, "Enum")
+        %assign dtName = CGMODEL_ACCESS("DataTypes.GetDataTypeDTName", dataTypeRec.Id)
+        %assign errTxt = "Unable to find 'Enum' field in the data type record for %<dtName>"
+        %<LibReportFatalError(errTxt)>
+    %endif
+
+    %% if the record exists
+    %% populate the cgmodel and RTW File
+    %<CGMODEL_ACCESS("DataTypes.SetDataTypeEnum", dataTypeRec.Id, enum)>
+    %assign dataTypeRec.Enum = enum
+
+%endfunction %% SLibSetDataTypeEnum
+
+%% Function: SLibSyncDataTypeComplexName ===========================================================
+%% Abstract:
+%%   Synchronize the TLC record value of complex name with the value from cgModel
+%%
+%function SLibSyncDataTypeComplexName(dataTypeRec) void
+    %assign dataTypeRec.ComplexName = \
+    CGMODEL_ACCESS("DataTypes.GetDataTypeComplexName", dataTypeRec.Id)
+%endfunction %% SLibSetDataTypeComplexName
+
+%% Function: SLibSetDataTypeComplexName ============================================================
+%% Abstract:
+%%   Set the complex data type name for a specified record.  For example,
+%%   complex double is set to "creal_T".
+%%
+%function SLibSetDataTypeComplexName(dataTypeRec, complexName) void
+    %% populate the cgModel and RTW File
+    %<CGMODEL_ACCESS("DataTypes.SetDataTypeComplexName", dataTypeRec.Id, complexName)>
+    %assign dataTypeRec.ComplexName = complexName
+%endfunction %% SLibSetDataTypeComplexName
+
+%% Function: SLibSetDataTypeGroundName =============================================================
+%% Abstract:
+%%   Set the name to be used for ground for a particular data type.  Note that
+%%   an error is produced if you attempt to change the name.
+%%
+%function SLibSetDataTypeGroundName(dataTypeRec, gndName) void
+    %% populate the cgModel and RTW File
+    %<CGMODEL_ACCESS("DataTypes.SetDataTypeGroundName", dataTypeRec.Id, gndName)>
+    %assign dataTypeRec.GroundName = gndName
+%endfunction
+
+%% Function: SLibSetDataTypeConvertBetweenTLCFcnName ===============================================
+%% Abstract:
+%%   Set the ConvertBetween TLC function type name for a specified record.
+%% TopTester: test/toolbox/simulink/variants/var-vss-sigobj/tVSSSigObj.m
+%%
+%function SLibSetDataTypeConvertBetweenTLCFcnName(dataTypeRec, name) void
+    %% error out if the record doesn't exist
+    %if !ISFIELD(dataTypeRec, "ConvertBetweenTLCFcnName")
+        %assign dtName = CGMODEL_ACCESS("DataTypes.GetDataTypeDTName", dataTypeRec.Id)
+        %assign errTxt = "Unable to find 'ConvertBetweenTLCFcnName' field in the data type record for %<dtName>"
+        %<LibReportFatalError(errTxt)>
+    %endif
+
+    %% if the record exists
+    %% populate the cgModel and RTW File
+    %<CGMODEL_ACCESS("DataTypes.SetDataTypeConvertBetweenTLCFcnName", dataTypeRec.Id, name)>
+    %assign dataTypeRec.ConvertBetweenTLCFcnName = name
+
+%endfunction %% SLibSetDataTypeConvertBetweenTLCFcnName
+
+%% Function: SLibSetDataTypeConvertBetweenTLCFcnFile ===============================================
+%% Abstract:
+%%   Set the ConvertBetween TLC function type file for a specified record.
+%% TopTester: test/toolbox/simulink/variants/var-inline-vsrc-systemtests/tmFunctionCallSplitBlock_hidden_VC1.m
+%%
+%function SLibSetDataTypeConvertBetweenTLCFcnFile(dataTypeRec, file) void
+    %% error out if the record doesn't exist
+    %if !ISFIELD(dataTypeRec, "ConvertBetweenTLCFcnFile")
+        %assign dtName = CGMODEL_ACCESS("DataTypes.GetDataTypeDTName", dataTypeRec.Id)
+        %assign errTxt = "Unable to find 'ConvertBetweenTLCFcnFile' field in the data type record for %<dtName>"
+        %<LibReportFatalError(errTxt)>
+    %endif
+
+    %% if the record exists
+    %% populate the cgModel and RTW File
+    %<CGMODEL_ACCESS("DataTypes.SetDataTypeConvertBetweenTLCFcnFile", dataTypeRec.Id, file)>
+    %assign dataTypeRec.ConvertBetweenTLCFcnFile = file
+
+%endfunction %% SLibSetDataTypeConvertBetweenTLCFcnFile
+
+%% Function: SLibSetDataTypeIsPositiveTLCFcnName ===================================================
+%% Abstract:
+%%   Set the IsPositive TLC function type name for a specified record.
+%% TopTester: test/toolbox/simulink/variants/var-vss-sigobj/tVSSSigObj.m
+%%
+%function SLibSetDataTypeIsPositiveTLCFcnName(dataTypeRec, name) void
+    %% error out if the record doesn't exist
+    %if !ISFIELD(dataTypeRec, "IsPositiveTLCFcnName")
+        %assign dtName = CGMODEL_ACCESS("DataTypes.GetDataTypeDTName", dataTypeRec.Id)
+        %assign errTxt = "Unable to find 'IsPositiveTLCFcnName' field in the data type record for %<dtName>"
+        %<LibReportFatalError(errTxt)>
+    %endif
+
+    %% if the record exists
+    %<CGMODEL_ACCESS("DataTypes.SetDataTypeIsPositiveTLCFcnName", dataTypeRec.Id, name)>
+    %assign dataTypeRec.IsPositiveTLCFcnName = name
+%endfunction %% SLibSetDataTypeIsPositiveTLCFcnName
+
+%% Function: SLibSetDataTypeIsPositiveTLCFcnFile ===================================================
+%% Abstract:
+%%   Set the IsPositive TLC function type file for a specified record.
+%% TopTester: test/toolbox/simulink/variants/var-inline-vsrc-systemtests/tmFunctionCallSplitBlock_hidden_VC1.m
+%%
+%function SLibSetDataTypeIsPositiveTLCFcnFile(dataTypeRec, file) void
+    %if !ISFIELD(dataTypeRec, "IsPositiveTLCFcnFile")
+        %assign dtName = CGMODEL_ACCESS("DataTypes.GetDataTypeDTName", dataTypeRec.Id)
+        %assign errTxt = "Unable to find 'IsPositiveTLCFcnFile' field in the data type record for %<dtName>"
+        %<LibReportFatalError(errTxt)>
+    %endif
+
+    %% if the record exists
+    %% populate the cgModel and RTW File
+    %<CGMODEL_ACCESS("DataTypes.SetDataTypeIsPositiveTLCFcnFile", dataTypeRec.Id, file)>
+    %assign dataTypeRec.IsPositiveTLCFcnFile = file
+
+%endfunction %% SLibSetDataTypeIsPositiveTLCFcnFile
+
+%% Function: SLibSetDataTypeSignTLCFcnName =========================================================
+%% Abstract:
+%%   Set the Sign TLC function type name for a specified record.
+%% TopTester: test/toolbox/simulink/variants/var-inline-vsrc-systemtests/tmFunctionCallSplitBlock_hidden_VC1.m
+%%
+%function SLibSetDataTypeSignTLCFcnName(dataTypeRec, name) void
+    %if !ISFIELD(dataTypeRec, "SignTLCFcnName")
+        %assign dtName = CGMODEL_ACCESS("DataTypes.GetDataTypeDTName", dataTypeRec.Id)
+        %assign errTxt = "Unable to find 'SignTLCFcnName' field in the data type record for %<dtName>"
+        %<LibReportFatalError(errTxt)>
+    %endif
+
+    %% if the record exists
+    %% populate the cgModel and RTW File
+    %<CGMODEL_ACCESS("DataTypes.SetDataTypeSignTLCFcnName", dataTypeRec.Id, name)>
+    %assign dataTypeRec.SignTLCFcnName = name
+%endfunction %% SLibSetDataTypeSignTLCFcnName
+
+%% Function: SLibSetDataTypeSignTLCFcnFile =========================================================
+%% Abstract:
+%%   Set the Sign TLC function type file for a specified record.
+%%
+%function SLibSetDataTypeSignTLCFcnFile(dataTypeRec, file) void
+    %if !ISFIELD(dataTypeRec, "SignTLCFcnFile")
+        %assign dtName = CGMODEL_ACCESS("DataTypes.GetDataTypeDTName", dataTypeRec.Id)
+        %assign errTxt = "Unable to find 'SignTLCFcnFile' field in the data type record for %<dtName>"
+        %<LibReportFatalError(errTxt)>
+    %endif
+
+    %% if the record exists
+    %% populate the cgModel and RTW File
+    %<CGMODEL_ACCESS("DataTypes.SetDataTypeSignTLCFcnFile", dataTypeRec.Id, file)>
+    %assign dataTypeRec.SignTLCFcnFile = file
+%endfunction %% SLibSetDataTypeSignTLCFcnFile
+
+%% Function: SLibSetDataTypeComplexGroundName ======================================================
+%% Abstract:
+%%   Set the name to be used for ground for a particular complex data type.
+%%   Note that an error is produced if you attempt to change the name.
+%% TopTester: test/toolbox/simulink/variants/var-vss-sigobj/tVSSSigObj.m
+%%
+%function SLibSetDataTypeComplexGroundName(dataTypeRec, name) void
+    %% populate the cgModel and RTW File
+    %<CGMODEL_ACCESS("DataTypes.SetDataTypeComplexGroundName", dataTypeRec.Id, name)>
+    %assign dataTypeRec.ComplexGroundName = name
+%endfunction %% SLibSetDataTypeComplexGroundName
+
+%% Function: SLibSetDataTypeGroundValue ============================================================
+%% Abstract:
+%%   Set the ground value to be used for a particular data type.  An error
+%%   is produced if you attempt to change the value of a particular ground.
+%% TopTester: test/toolbox/simulink/variants/var-vss-sigobj/tVSSSigObj.m
+%%
+%function SLibSetDataTypeGroundValue(dataTypeRec, value) void
+    %% populate the cgModel and RTW File
+    %<CGMODEL_ACCESS("DataTypes.SetDataTypeGroundValue", dataTypeRec.Id, STRING(value))>
+    %assign dataTypeRec.GroundValue = value
+%endfunction %% SLibSetDataTypeGroundValue
+
+%% Function: SLibSetDataTypeGroundInit =============================================================
+%% Abstract:
+%%   Set the initialization ground value to be used for a particular data type.
+%%   An error is produced if you attempt to change the value of a particular
+%%   ground.
+%% TopTester: test/toolbox/simulink/blocks/lib_Sources/Ground/rtw/tStringSupport.m
+%%
+%function SLibSetDataTypeGroundInit(dataTypeRec, value) void
+    %% populate the cgModel and RTW File
+    %<CGMODEL_ACCESS("DataTypes.SetDataTypeGroundInit", dataTypeRec.Id, value)>
+    %assign dataTypeRec.GroundInit = value
+%endfunction %% SLibSetDataTypeGroundInit
+
+%% DocFunction{Other Useful Functions}: LibSetUnboundedFieldsInStructTypeGroundReqInMemory  =======
+%% Abstract:
+%%   If a bus type contains unbounded fields (coder::array), set the dynamic
+%% matrix type ground value required in memory as well.
+%%   Another option is to move this logic in C++ function SetDataTypeGroundReqInMemory
+%% TopTester: test/toolbox/rtw/targets/ert/dynamicarrays/tBusElementGroundValue.m
+%function LibSetUnboundedFieldsInStructTypeGroundReqInMemory(dataTypeId) void
+    %assign dt = ::CompiledModel.DataTypes.DataType[dataTypeId]
+    %assign cgt = ::CompiledModel.CGTypes
+    %foreach eIdx = dt.NumElements
+        %if LibDataTypeIsBus(dataTypeId) && LibStructElementIsDynamicArray(dataTypeId, eIdx)
+            %assign eCGType = cgt.CGType[dt.Elements[eIdx].CGTypeIdx]
+            %assign eDataTypeIdx = eCGType.SLTypeIdx
+            %<SLibSetDataTypeGroundReqInMemory(eDataTypeIdx)>
+        %endif
+    %endforeach
+%endfunction %%LibSetStructTypeGroundReqInMemory
+
+%% Function: SLibSetDataTypeGroundReqInMemory ======================================================
+%% Abstract:
+%%   Mark a ground required in memory.
+%%
+%function SLibSetDataTypeGroundReqInMemory(dataTypeId) void
+    %<CGMODEL_ACCESS("DataTypes.SetDataTypeGroundReqInMemory", dataTypeId, TLC_TRUE)>
+    %% If dataTypeId is a bus object with unbounded field, mark the dynamic matrix
+    %% type as well
+    %if %<LibIsStructDataType(dataTypeId)>
+        %<LibSetUnboundedFieldsInStructTypeGroundReqInMemory(dataTypeId)>
+    %endif
+%endfunction %% SLibSetDataTypeGroundReqInMemory
+
+%% Function: SLibGetDataTypeGroundReqInMemory ======================================================
+%% Abstract:
+%%   is a ground required in memory?
+%%
+%function SLibGetDataTypeGroundReqInMemory(dataTypeId) void
+    %return CGMODEL_ACCESS("DataTypes.GetDataTypeGroundReqInMemory", dataTypeId)
+%endfunction %% SLibGetDataTypeGroundReqInMemory
+
+%% Function: SLibSetDataTypeComplexGroundReqInMemory ===============================================
+%% Abstract:
+%%   Mark a complex ground required in memory.
+%%
+%function SLibSetDataTypeComplexGroundReqInMemory(dataTypeId) void
+    %<CGMODEL_ACCESS("DataTypes.SetDataTypeComplexGroundReqInMemory", dataTypeId, TLC_TRUE)>
+    %if ISFIELD(::CompiledModel.DataTypes.DataType[dataTypeId], "ComplexGroundReqInMemory")
+        %assign ::CompiledModel.DataTypes.DataType[dataTypeId].ComplexGroundReqInMemory = 1
+    %endif
+%endfunction
+
+%function SLibSetDataTypeGroundHasFloats(dataTypeRec, gndHasFloats) void
+    %<CGMODEL_ACCESS("DataTypes.SetDataTypeGroundHasFloats", dataTypeRec.Id, gndHasFloats)>
+    %assign dataTypeRec.GroundHasFloats = gndHasFloats
+%endfunction %% SLibSetDataTypeGroundHasFloats
+
+%% Function: SLibGetCastedValueFromId ==============================================================
+%% Abstract:
+%%   This function casts a numeric value based on its data type.  Non built-in
+%%   data types are returned "untouched".  Note that this function is useful
+%%   for making appropriate TLC types.
+%%
+%%   For example,
+%%
+%%     SLibGetCastedValue(tSS_INT8, 2)
+%%       ==> returns 2 as a TLC "Number" if Gain is an "signed integer"
+%%
+%%     SLibGetCastedValue(tSS_UINT16, 2)
+%%       ==> returns 2 as a TLC "Unsigned" if Gain is an "unsigned integer"
+%%
+%%     SLibGetCastedValue(tSS_DOUBLE, 2)
+%%       ==> returns 2.0 as a TLC "Real" if Gain is a "real" data type
+%%
+%%     SLibGetCastedValue(myDTid, 2)
+%%       ==> returns 2 as a TLC "String" if Gain is an unknown data type
+%%
+%%   Arguments:
+%%     dtypeId      = data type id
+%%     numericValue = numeric value to format
+%% TopTester: variants/var-inline-vsrc-systemtests/tmg1317695_VC1.m
+%% TopTester: test/toolbox/simulink/blocks/lib_Discrete/DiscreteTimeIntegrator/rtw/tNumerics_dtdiscints.m
+%%
+%function SLibGetCastedValueFromId(dTypeId, numericValue)
+    %% See Also:
+    %%   SLibGetFormattedValue
+    %%
+    %switch LibGetDataTypeIdAliasedThruToFromId(dTypeId)
+      %case ::CompiledModel.tSS_DOUBLE
+
+        %% real
+        %return CAST("Real", numericValue)
+
+      %case ::CompiledModel.tSS_SINGLE
+
+        %% real32
+        %return CAST("Real32", numericValue)
+
+      %case ::CompiledModel.tSS_UINT8
+      %case ::CompiledModel.tSS_UINT16
+      %case ::CompiledModel.tSS_UINT32
+      %case ::CompiledModel.tSS_BOOLEAN
+
+        %% unsigned integer
+        %return CAST("Unsigned", numericValue)
+
+      %case ::CompiledModel.tSS_INT8
+      %case ::CompiledModel.tSS_INT16
+      %case ::CompiledModel.tSS_INT32
+
+        %% signed integer
+        %return CAST("Number", numericValue)
+
+      %default
+        %if LibIsHalfDataType(LibGetDataTypeIdAliasedThruToFromId(dTypeId))
+            %% real16
+            %return CAST("Real16", numericValue)
+        %endif
+        %% unknown type
+        %return numericValue
+
+    %endswitch
+%endfunction
+
+%% Function: SLibSetDataTypeGroundVariableName =====================================================
+%% Abstract:
+%%   Set the ground variable name to be used for a particular data type.  An error
+%%   is produced if you attempt to change the value of a particular ground.
+%%
+%function SLibSetDataTypeGroundVariableName(dataTypeRec, value) void
+    %% populate the cgModel and RTW File
+    %<CGMODEL_ACCESS("DataTypes.SetDataTypeGroundVariableName", dataTypeRec.Id, STRING(value))>
+%endfunction %% SLibSetDataTypeGroundVariableName
+
+%% Function: SLibHasDataTypeGroundVariableName =====================================================
+%% Abstract:
+%%   %% Returns true if datatype has ground variable name
+%%   %% Else returns false
+%%
+%function SLibHasDataTypeGroundVariableName(dataTypeId) void
+    %return CGMODEL_ACCESS("DataTypes.HasDataTypeGroundVariableName", dataTypeId)
+%endfunction %% SLibHasDataTypeGroundVariableName
+
+%% Function: SLibGetDataTypeGroundVariableName =====================================================
+%% Abstract:
+%%   %% Get the ground variable name
+%%
+%function SLibGetDataTypeGroundVariableName(dataTypeId) void
+    %return CGMODEL_ACCESS("DataTypes.GetDataTypeGroundVariableName", dataTypeId)
+%endfunction %% SLibGetDataTypeGroundVariableName
+
+%% Function SLibGetIRorTLCGround
+%% Abstract:
+%%   Extend LibGetGroundValueFromId
+%%   with an option to be "strict" or "robust" about the registration of
+%%   grounds by custom data types.
+%%       In "strict" mode, an error will
+%%   occur if ground has not been properly registered in TLC for
+%%   the data type.
+%%       In "robust" mode, if ground has not been properly registered
+%%   then a default value of zero will be return (with no error or
+%%   warning).
+%%       If "onlyGetTLCGround" is true, IR ground name will not be considered
+%% TopTester: test/toolbox/simulink/blocks/buses/tbus.m
+%% TopTester: test/toolbox/simulink/blocks/lib_Sources/Ground/rtw/-tStringSupport.m
+%%
+%function SLibGetIRorTLCGround(dTypeId, isStrict, onlyGetTLCGround, hasSideEffects) void
+    %if isStrict
+        %% If dataTypeId is a bus object with unbounded field, mark the dynamic matrix
+        %% type as well
+        %if %<LibIsStructDataType(dTypeId)>
+            %<LibSetUnboundedFieldsInStructTypeGroundReqInMemory(dTypeId)>
+        %endif
+
+        %return CGMODEL_ACCESS("DataTypes.GetIRorTLCGround", dTypeId, TLC_TRUE, onlyGetTLCGround, hasSideEffects)
+    %else
+        %return CGMODEL_ACCESS("DataTypes.GetIRorTLCGround", dTypeId, TLC_FALSE, onlyGetTLCGround, hasSideEffects)
+    %endif
+%endfunction
+
+%% Function: LibIsDataTypeMultiWordFixpt=======================================
+%% Abstract:
+%% fixpt type is generated as a struct of multiword
+%function LibIsDataTypeMultiWordFixpt(dTypeId)
+    %if LibIsBuiltInDataType(dTypeId)
+        %return 0
+    %else
+        %assign curDT = FixPt_GetDataTypeFromIndex(dTypeId)
+        %%
+        %return FixPt_DataTypeIsMultiWord(curDT)
+    %endif
+%endfunction
+
+%% Function:LibIsDataTypeNewLongestFixpt =======================================
+%% Abstract:
+%% Any non-built-in type with 33+ or 24 bits, and is of the same length of target long
+%% or long long. This also means target longs can not be represented by  built-in-types,
+%% and tSS_LONG/tSS_ULONG or tSS_LONG_LONG/tSS_ULONG_LONG have been added(defined) for them.
+%function LibIsDataTypeNewLongestFixpt(dTypeId)
+    %if LibIsBuiltInDataType(dTypeId)
+        %return 0
+    %else
+        %%can handle case where ::IntegerSizes.LongNumBits == 24 or ::IntegerSizes.LongLongNumBits == 64
+        %%any fixpt type of same size as a none built-in long/long long is aliased to the new type
+        %%so that they can be inlined if necessary; only mulitword can't be inlined
+        %if !LibIsBuiltInWordSize(::IntegerSizes.LongNumBits) && ...
+            CGMODEL_ACCESS("DataTypes.IsDataTypeNewLongestFixpt", dTypeId, ::CompiledModel.tSS_LONG, ::CompiledModel.tSS_ULONG)
+            %return 1
+        %elseif !LibIsBuiltInWordSize(::IntegerSizes.LongLongNumBits) && ...
+            CGMODEL_ACCESS("DataTypes.IsDataTypeNewLongestFixpt", dTypeId, ::CompiledModel.tSS_LONG_LONG, ::CompiledModel.tSS_ULONG_LONG)
+            %return 1
+        %else
+            %return 0
+        %endif
+    %endif
+%endfunction
+
+%% Function: LibIsBuiltInWordSize=======================================
+%% Abstract:
+%% test if the input is of any size of the built-in data type
+%function LibIsBuiltInWordSize(wordSize)
+    %if wordSize == 8 || wordSize == 16 || wordSize == 32
+        %return 1
+    %endif
+    %return 0
+%endfunction
+
+%function RegisterCharTypes() void
+
+    %assign charDTIdx = CGMODEL_ACCESS("DataTypes.RegisterCharTypeHelper",...
+        ::IntegerSizes.CharNumBits, TLC_FALSE)
+    %assign uCharDTIdx = CGMODEL_ACCESS("DataTypes.RegisterCharTypeHelper",...
+        ::IntegerSizes.CharNumBits, TLC_TRUE)
+
+    %assign ::CompiledModel.tSS_CHAR = charDTIdx
+    %assign ::CompiledModel.tSS_UCHAR = uCharDTIdx
+
+    %if charDTIdx == ::CompiledModel.DataTypes.NumDataTypes
+
+        %createrecord charType {\
+            Id      charDTIdx      \
+            RecordIdx [%<charDTIdx>] \
+        }
+        %assign ::CompiledModel.DataTypes.NumDataTypes = ::CompiledModel.DataTypes.NumDataTypes + 1
+        %addtorecord ::CompiledModel.DataTypes DataType {}
+        %mergerecord ::CompiledModel.DataTypes.DataType[charDTIdx] charType
+        %mergerecord ::CompiledModel.DataTypes.DataType[charDTIdx] ::CompiledModel.DataTypes.DataTypeDefaults
+
+    %endif
+    %if uCharDTIdx == ::CompiledModel.DataTypes.NumDataTypes %%not yet added to compiledmodel
+
+        %createrecord ucharType {\
+            Id      uCharDTIdx      \
+            RecordIdx [%<uCharDTIdx>] \
+        }
+        %assign ::CompiledModel.DataTypes.NumDataTypes = ::CompiledModel.DataTypes.NumDataTypes + 1
+        %addtorecord ::CompiledModel.DataTypes DataType {}
+        %mergerecord ::CompiledModel.DataTypes.DataType[uCharDTIdx] ucharType
+        %mergerecord ::CompiledModel.DataTypes.DataType[uCharDTIdx] ::CompiledModel.DataTypes.DataTypeDefaults
+    %endif
+
+    %return [%<charDTIdx>, %<uCharDTIdx>]
+%endfunction
+
+%function RegisterTimeType() void
+
+    %if ::IsUsingLanguageStandardTypes
+        %assign nativeType = LibGetDataTypeNameFromId(::CompiledModel.tSS_DOUBLE)
+        %assign timeTypeName = nativeType
+    %else
+        %assign timeTypeName = "time_T" %% sbcheck:ok:tlctypes
+    %endif
+
+    %assign timeDTIdx = CGMODEL_ACCESS("DataTypes.RegisterTimeTypeHelper",...
+        timeTypeName, ::CompiledModel.tSS_DOUBLE)
+
+    %assign ::CompiledModel.tSS_TIME = timeDTIdx
+    %if timeDTIdx == ::CompiledModel.DataTypes.NumDataTypes %%not yet added to compiledmodel
+
+        %createrecord timeType {\
+            Id      timeDTIdx      \
+            RecordIdx [%<timeDTIdx>] \
+        }
+        %assign ::CompiledModel.DataTypes.NumDataTypes = ::CompiledModel.DataTypes.NumDataTypes + 1
+        %addtorecord ::CompiledModel.DataTypes DataType {}
+        %mergerecord ::CompiledModel.DataTypes.DataType[timeDTIdx] timeType
+        %mergerecord ::CompiledModel.DataTypes.DataType[timeDTIdx] ::CompiledModel.DataTypes.DataTypeDefaults
+
+    %endif
+    %return timeDTIdx
+%endfunction
+
+%function RegisterUintType() void
+
+    %assign uintID = CGMODEL_ACCESS("DataTypes.RegisterUintTypeHelper",...
+        ::IntegerSizes.IntNumBits)
+    %assign ::CompiledModel.tSS_UINTEGER = uintID
+
+    %if uintID == ::CompiledModel.DataTypes.NumDataTypes %%not yet added to compiledmodel
+
+        %createrecord uintType {\
+            Id      uintID      \
+            RecordIdx [%<uintID>] \
+            IsNumericType SLibGetDataTypeIsNumeric(uintID) \
+        }
+        %assign ::CompiledModel.DataTypes.NumDataTypes = ::CompiledModel.DataTypes.NumDataTypes + 1
+        %addtorecord ::CompiledModel.DataTypes DataType {}
+        %mergerecord ::CompiledModel.DataTypes.DataType[uintID] uintType
+        %mergerecord ::CompiledModel.DataTypes.DataType[uintID] ::CompiledModel.DataTypes.DataTypeDefaults
+    %endif
+
+    %return uintID
+%endfunction
+
+%% Function: LibMaxCodeGenWordSize=======================================
+%% Abstract:
+%% Based on the enabled feature, determing the valid word size
+%function LibMaxCodeGenWordSize()
+    %%assign maxBits = 128
+    %return 128
+%endfunction
+
+%% Function: fcnSetDataTypeName ====================================================================
+%% Abstract:
+%%   Set the data type name for a specified record.  For example, double is
+%%   is set to "real_T".
+%% TopTester: test/toolbox/simulink/blocks/lib_Sources/Ground/rtw/tStringSupport.m
+%%
+%function fcnSetDataTypeName(dataTypeRec, name, aSetCGTypeName) void
+
+    %% For custom TLC code with user-defined datatype, the Name field might still be
+    %% required
+    %% TopTester: test/toolbox/simulink/cgir/tlc/tcgir_tlc_types.m
+    %assign typname = "%<CGMODEL_ACCESS("DataTypes.GetName", dataTypeRec.Id)>"
+    %assign dtName = "%<CGMODEL_ACCESS("DataTypes.GetDataTypeDTName", dataTypeRec.Id)>"
+
+    %if ISEQUAL(typname,"") || ISEQUAL(typname,dtName)
+        %if ISFIELD(dataTypeRec, "Name")
+            %assign dataTypeRec.Name = name
+        %endif
+    %elseif !ISEQUAL(typname, name)
+        %% Can occur if an s-function renames the data type more than once
+        %assign errTxt = "Invalid data type name change from " ...
+            "'%<typname>' to '%<name>'"
+        %<LibReportFatalError(errTxt)>
+    %endif
+
+    %% Populating the CGModel as well but keeping the RTW Record as is.
+    %<CGMODEL_ACCESS("DataTypes.SetName", dataTypeRec.Id, name)>
+
+    %if aSetCGTypeName
+        %assign cgTypeIdx = SLibGetCGTypeFromSLTypeId(dataTypeRec.Id)
+        %if 0 <= cgTypeIdx
+            %assert dataTypeRec.Id <= cgTypeIdx
+            %<CGMODEL_ACCESS("CGType.SetName", cgTypeIdx, name)>
+            %if ISFIELD(::CompiledModel, "CGTypes")
+                %assign cgTypeRec = ::CompiledModel.CGTypes.CGType[cgTypeIdx]
+                %assert cgTypeRec.SLTypeIdx == dataTypeRec.Id
+                %if ISFIELD(cgTypeRec, "Name")
+                    %assign cgTypeRec.Name = name
+                %endif
+            %endif
+        %endif
+    %endif
+
+%endfunction %% fcnSetDataTypeName
+
+
+%% Function: SLibGetFormattedIntegerValueFromId ====================================================
+%% Abstract:
+%%   For a built-in, integer, data type, this function returns the formatted value of
+%%   a numeric value based on its corresponding data type id.
+%%   Values not associated with a known built-in integer data type are
+%%   returned "untouched".
+%%
+%% TopTester: test/toolbox/simulink/slcg/tlc/tFormattedValueFromId.m
+%%
+%function SLibGetFormattedIntegerValueFromId(id, numericValue)
+    %% See Also:
+    %%   SLibGetFormattedValue, SLibGetCastedValue,
+    %%   SLibReplaceEnumLiteralValueWithTypeLimitId
+    %%
+    %assign aliasDtId = LibGetDataTypeIdAliasedThruToFromId(id)
+    %assign dTypeName = LibGetDataTypeNameFromId(aliasDtId)
+    %assign aliasDtName = CGMODEL_ACCESS("DataTypes.GetDataTypeDTName", aliasDtId)
+    %switch aliasDtName
+
+      %case "uint8"
+        %% unsigned character
+        %if ::IntegerSizes.IntNumBits == 8
+            %return "%<CAST("Unsigned", numericValue)>"
+        %elseif ::IntegerSizes.IntNumBits >= 8
+            %return "((%<dTypeName>)%<CAST("Unsigned", numericValue)>)"
+        %else
+            %return "((%<dTypeName>)%<CAST("Unsigned", numericValue)>L)"
+        %endif
+
+      %case "uint16"
+        %% unsigned short
+        %if ::IntegerSizes.IntNumBits == 16
+            %return "%<CAST("Unsigned", numericValue)>"
+        %elseif ::IntegerSizes.IntNumBits >= 16
+            %return "((%<dTypeName>)%<CAST("Unsigned", numericValue)>)"
+        %else
+            %return "((%<dTypeName>)%<CAST("Unsigned", numericValue)>L)"
+        %endif
+
+      %case "uint32"
+        %% unsigned integer
+        %if ::IntegerSizes.IntNumBits == 32
+            %return "%<CAST("Unsigned", numericValue)>"
+        %elseif ::IntegerSizes.IntNumBits >= 32
+            %return "((%<dTypeName>)%<CAST("Unsigned", numericValue)>)"
+        %else
+            %return "((%<dTypeName>)%<CAST("Unsigned", numericValue)>L)"
+        %endif
+
+      %case "int8"
+        %% signed character
+        %assign int8MaxValue = 127
+        %assign int8MinValue = -int8MaxValue - 1
+        %if ::IntegerSizes.IntNumBits <= 8 && numericValue == int8MinValue
+            %return "%<LibMinIntValue(id)>"
+        %elseif ::IntegerSizes.IntNumBits <= 8 && numericValue == int8MaxValue
+            %return "%<LibMaxIntValue(id)>"
+        %elseif ::IntegerSizes.IntNumBits >= 8
+            %return "%<CAST("Number", numericValue)>"
+        %else
+            %return "((%<dTypeName>)%<CAST("Number", numericValue)>L)"
+        %endif
+
+      %case "int16"
+        %% signed short
+        %assign int16MaxValue = 32767
+        %assign int16MinValue = -int16MaxValue - 1
+        %if ::IntegerSizes.IntNumBits <= 16 && numericValue == int16MinValue
+            %return "%<LibMinIntValue(id)>"
+        %elseif ::IntegerSizes.IntNumBits <= 16 && numericValue == int16MaxValue
+            %return "%<LibMaxIntValue(id)>"
+        %elseif ::IntegerSizes.IntNumBits >= 16
+            %return "%<CAST("Number", numericValue)>"
+        %else
+            %return "((%<dTypeName>)%<CAST("Number", numericValue)>L)"
+        %endif
+
+      %case "int32"
+        %% signed integer
+        %assign int32MaxValue = 2147483647
+        %assign int32MinValue = -int32MaxValue - 1
+        %if numericValue == int32MinValue
+            %% suppress compiler warning when using largest negative
+            %% 2s-complement number for 32-bit integers
+            %return "%<LibMinIntValue(id)>"
+        %elseif numericValue == int32MaxValue
+            %return "%<LibMaxIntValue(id)>"
+        %elseif ::IntegerSizes.IntNumBits >= 32
+            %return "%<CAST("Number", numericValue)>"
+        %else
+            %return "((%<dTypeName>)%<CAST("Number", numericValue)>L)"
+        %endif
+
+      %case "long" %% sbcheck:ok:tlctypes
+      %case "ulong"
+      %case "longlong"
+      %case "ulonglong"
+        %return  "%<numericValue>"
+
+      %default
+        %% Unknown type
+        %return "%<numericValue>"
+
+    %endswitch
+%endfunction
+
+%% Function: SLibGetCGTypeFromSLTypeId =============================================================
+%% Abstract:
+%%   Returns the CG type index for a Simulink type index.
+%% TopTester: test/toolbox/simulink/blocks/lib_Sources/Ground/rtw/tStringSupport.m
+%%
+%function SLibGetCGTypeFromSLTypeId(aSLTypeIdx)
+    %return %<CGMODEL_ACCESS("CGType.GetCGTypeFromSLType", aSLTypeIdx)>
+%endfunction
+
+%% Function: SLibGetLargestMultiwordDataTypeNeeded =================================================
+%% Abstract:
+%%   Determines the largest multiword datatype length needed in generated code.
+%% TopTester: test/toolbox/simulink/variants/var-vss-sigobj/tVSSSigObj.m
+%% TopTester: test/toolbox/rtw/targets/AUTOSAR/Variants/tValueVariants.m
+%% TopTester: test/toolbox/simulink/variants/var-general/tVariantGecks2.m
+%%
+%function SLibGetLargestMultiwordDataTypeNeeded() void
+    %with ::CompiledModel
+        %assign largestMultiwordBits = 0
+        %if SLibIsERTTarget() && (::CompiledModel.ModelReferenceTargetType != "SIM")
+            %%
+            %% ERT and not Model Reference sim - Check for multiword type
+            %% definition parameter to determine whether or not to include
+            %% multiword type definitions in rtwtypes.h.
+            %%
+            %if "%<CGMODEL_ACCESS("CGModel.ConfigSet", "MultiwordTypeDef")>" == "System defined"
+                %%
+                %% ERT Multiword type definition is "System defined" - Figure out
+                %% if multiword types are needed, and if so, use hardcoded value
+                %% of 256. If not needed, do not include multiword type definitions
+                %% in rtwtypes.h (by setting the maximum number of bits to 0).
+                %%
+                %assign needsMultiword = TLC_FALSE
+                %assign prodBitPerLargestInt = %<CGMODEL_ACCESS("CGModel.ConfigSet", "ProdBitPerLong")>
+                %assign targetBitPerLargestInt = %<CGMODEL_ACCESS("CGModel.ConfigSet", "TargetBitPerLong")>
+
+                %if (%<CGMODEL_ACCESS("CGModel.ConfigSet", "ProdLongLongMode")> == 1)
+                    %assign prodBitPerLargestInt = %<CGMODEL_ACCESS("CGModel.ConfigSet", "ProdBitPerLongLong")>
+                %endif
+
+                %if (%<CGMODEL_ACCESS("CGModel.ConfigSet", "TargetLongLongMode")> == 1)
+                    %assign targetBitPerLargestInt = %<CGMODEL_ACCESS("CGModel.ConfigSet", "TargetBitPerLongLong")>
+                %endif
+
+                %if prodBitPerLargestInt > targetBitPerLargestInt
+                    %assign needsMultiword = TLC_TRUE
+                %endif
+
+                %if "%<CGMODEL_ACCESS("CGModel.ConfigSet", "ProdHWDeviceType")>" == "ASIC/FPGA->ASIC/FPGA"
+                    %assign needsMultiword = TLC_TRUE
+                %endif
+
+                %foreach dtIdx = ::CompiledModel.DataTypes.NumDataTypes
+                    %assign dt = ::CompiledModel.DataTypes.DataType[dtIdx]
+                    %assign isFixed = %<CGMODEL_ACCESS("DataTypes.IsFixedPoint", dt.Id)>
+                    %assign reqBits = %<CGMODEL_ACCESS("DataTypes.GetRequiredBits", dt.Id)>
+                    %if isFixed && reqBits > targetBitPerLargestInt
+                        %assign needsMultiword = TLC_TRUE
+                        %break
+                    %endif
+                %endforeach
+
+                %if needsMultiword
+                    %assign largestMultiwordBits = 256
+                %else
+                    %assign largestMultiwordBits = 0
+                %endif
+            %else
+                %%
+                %% ERT Multiword type definition is User defined - Use the multiword
+                %% length specified by the user in the ConfigSet.
+                %%
+                %assign largestMultiwordBits = %<CGMODEL_ACCESS("CGModel.ConfigSet", "MultiwordLength")>
+            %endif
+        %else
+            %%
+            %% Not ERT or ERT and Model Reference sim - Always include multiword
+            %% type definitions in rtwtypes.h and use MultiwordLength parameter
+            %% from ConfigSet for maximum number of bits.
+            %%
+            %assign largestMultiwordBits = %<CGMODEL_ACCESS("CGModel.ConfigSet", "MultiwordLength")>
+        %endif
+
+        %return largestMultiwordBits
+    %endwith
+
+%endfunction %% SLibGetLargestMultiwordDataTypeNeeded
+
+
+
+%% Function: SLibGetMLDataTypeFromId ===============================================================
+%% Abstract:
+%%   This function returns the equivalent matlab data type to the specified
+%%   TLC datatype id.
+%% TopTester: test/toolbox/simulink/variants/commentthrough/tCommentThroughWireLoops.m
+%%
+%function SLibGetMLDataTypeFromId(id) void
+    %switch LibGetDataTypeIdAliasedThruToFromId(id)
+      %case ::CompiledModel.tSS_DOUBLE
+        %return "double" %% sbcheck:ok:tlctypes
+      %case ::CompiledModel.tSS_SINGLE
+        %return "single"
+      %case ::CompiledModel.tSS_UINT8
+        %return "uint8"
+      %case ::CompiledModel.tSS_UINT16
+        %return "uint16"
+      %case ::CompiledModel.tSS_UINT32
+        %return "uint32"
+      %case ::CompiledModel.tSS_BOOLEAN
+        %return "boolean"
+      %case ::CompiledModel.tSS_INT8
+        %return "int8"
+      %case ::CompiledModel.tSS_INT16
+        %return "int16"
+      %case ::CompiledModel.tSS_INT32
+        %return "int32"
+      %default
+        %return "numeric"
+    %endswitch
+%endfunction %% SLibGetMLDataTypeFromId
+
+
+%% Function: FcnIsDataTypeTargetInt ================================================================
+%% Abstract:
+%%    Any type that is equivalent to target integer type
+%%
+%function FcnIsDataTypeTargetInt(dTypeId)
+    %if ((dTypeId < 0) || (dTypeId >= CGMODEL_ACCESS("DataTypes.GetNumDataTypes")) ...
+        || (LibIsBuiltInDataType(dTypeId)))
+        %return 0
+    %else
+        %assign aliasDT = LibGetDataTypeIdAliasedToFromId(dTypeId)
+        %if ((aliasDT == ::CompiledModel.tSS_INTEGER) ...
+            || (aliasDT == ::CompiledModel.tSS_UINTEGER))
+            %return 1
+        %else
+            %return 0
+        %endif
+    %endif
+%endfunction%% FcnIsDataTypeTargetInt
+
+%% Function: SLibSetDataTypeName ===================================================================
+%% Abstract:
+%%   Set the data type name for a specified record.  For example, double is
+%%   is set to "real_T".
+%%
+%function SLibSetDataTypeName(dataTypeRec, name) void
+    %<fcnSetDataTypeName(dataTypeRec, name, TLC_TRUE)>
+%endfunction %% SLibSetDataTypeName
+
+%% Function: LibCGTypeIsSLString ===================================================================
+%% Abstract:
+%%   Return whether or not this is a SLString type
+%%
+%function LibCGTypeIsSLString(cgTypeIdx) void
+    %return CGMODEL_ACCESS("CGType.Constructor", cgTypeIdx) == "slstring"
+%endfunction
+
+%% Function: SLibGetEnumTypeCodeGenStringFromValue =================================================
+%% Abstract:
+%%   For enumerated data types, get code generation string from underlying value
+%%
+%function SLibGetEnumTypeCodeGenStringFromValue(id, enumValue) void
+    %return CGMODEL_ACCESS("DataTypes.EnumTypeCodeGenStringFromValue", id, enumValue)
+%endfunction
+
+%% Function: SLibGetFormattedValueFromId ===========================================================
+%% Abstract:
+%%   For a built-in data type, this function returns the formatted value of
+%%   a numeric value based on its corresponding data type id.
+%%   Values that are not associated with a known built-in data types are
+%%   returned "untouched".
+%%
+%%   For example,
+%%
+%%     SLibGetFormattedValueFromId(Gain, 2)
+%%       ==> returns 2 if Gain is an "signed integer" data type
+%%
+%%     SLibGetFormattedValueFromId(Gain, 2)
+%%       ==> returns 2U if Gain is an "unsigned integer" data type
+%%
+%%     SLibGetFormattedValueFromId(Gain, 2)
+%%       ==> returns 2.0 if Gain is a "real" data type
+%%
+%%     SLibGetFormattedValueFromId(Gain, 2)
+%%       ==> returns EnumName if Gain is an enumerated data type
+%%
+%%     SLibGetFormattedValueFromId(Gain, 2)
+%%       ==> returns 2 if Gain is an unknown data type
+%%
+%%   Arguments:
+%%     rec          = data type id
+%%     numericValue = numeric value to format
+%% Toptetser: test/toolbox/simulink/variants/var-inline-vsrc-systemtests/tmVSSfeedingInactiveVS_VC1.m
+%% TopTester: variants/var-inline-vsrc-systemtests/tmg1293017_VC1.m
+%% TopTester: test/toolbox/simulink/variants/var-vss-codevariants/tvss_code_variants.m
+%% TopTester: test/toolbox/rtw/targets/AUTOSAR/Variants/inlineVariants/tInlineVariants4.m
+%%
+%function SLibGetFormattedValueFromId(id, numericValue)
+    %% See Also:
+    %%   SLibGetFormattedValue, SLibGetCastedValue,
+    %%   SLibReplaceEnumLiteralValueWithTypeLimitId
+    %%
+    %assign aliasDtId = LibGetDataTypeIdAliasedThruToFromId(id)
+    %assign dTypeName = LibGetDataTypeNameFromId(aliasDtId)
+    %switch aliasDtId
+        %% For double and single, we need to track any usage of inf or nan
+      %case ::CompiledModel.tSS_DOUBLE
+
+        %% real
+        %<LibCheckValue(0, numericValue)>
+        %return "%<CAST("Real", numericValue)>"
+
+      %case ::CompiledModel.tSS_SINGLE
+
+        %% real32
+        %<LibCheckValue(0, numericValue)>
+        %return "%<CAST("Real32", numericValue)>"
+
+      %case ::CompiledModel.tSS_UINT8
+      %case ::CompiledModel.tSS_UINT16
+      %case ::CompiledModel.tSS_UINT32
+      %case ::CompiledModel.tSS_INT8
+      %case ::CompiledModel.tSS_INT16
+      %case ::CompiledModel.tSS_INT32
+      %case ::CompiledModel.tSS_LONG
+      %case ::CompiledModel.tSS_ULONG
+      %case ::CompiledModel.tSS_LONG_LONG
+      %case ::CompiledModel.tSS_ULONG_LONG
+        %return  SLibGetFormattedIntegerValueFromId(id, numericValue)
+
+      %case ::CompiledModel.tSS_BOOLEAN
+        %% boolean
+        %return  SLibGetTypeIdReplacement((numericValue != 0) ? "true" : "false")
+
+      %default
+        %% Handle half precision
+        %if LibIsHalfDataType(aliasDtId)
+            %% real16
+            %<LibCheckValue(0, numericValue)>
+            %return "%<CAST("Real16", numericValue)>"
+        %endif
+        %% use variable to hold zero value of a struct type
+        %% when bias!=0 we still need to use groundName as variable to intialize. But its value
+        %% could be fix64_gnd={3} instead of fix64_gnd={0}. Actual value are computed in fixptlib.tlc.
+        %% value can change but var name never changes, thus don't consider bias!= case here,
+        %% it should be taken care of in fixptlib.tlc when compute the ground value for the struct type.
+        %if LibIsDataTypeMultiWordFixpt(id) && TYPE(numericValue)=="Number" && numericValue == 0
+            %if LibIsStructDataType(id)
+                %<SLibSetDataTypeGroundReqInMemory(id)>
+            %endif
+            %return CGMODEL_ACCESS("DataTypes.GetDataTypeGroundName", id)
+        %endif
+        %% Write out enumeration string for enumerated values
+        %if LibIsEnumDataType(id)
+            %return SLibGetEnumTypeCodeGenStringFromValue(id, numericValue)
+        %endif
+        %% unknown type
+        %return "%<numericValue>"
+
+    %endswitch
+%endfunction
+
+
+%% Function: FcnGetImageImplementationTypeName =====================================================
+%% Abstract:
+%%   For image data types, get name of implementation type
+%%
+%function FcnGetImageImplementationTypeName() void
+    %if CGMODEL_ACCESS("CGModel.ConfigSet", "ImplementImageWithCVMat") == "1"
+        %return "cv::Mat"
+    %else
+        %return "images::datatypes::Image"
+    %endif
+%endfunction
+
+
+
+%% Function: FcnMapIfEquivToTargetInt ==============================================================
+%% Abstract:
+%%    Map non-builtin types to tSS_INTEGER/ tSS_UINTEGER
+%% TopTester: test/toolbox/rtw/targets/AUTOSAR/Variants/tValueVariants.m
+%%
+%function FcnMapIfEquivToTargetInt(dTypeId) void
+    %if (LibIsBuiltInDataType(dTypeId) || LibIsAliasDataType(dTypeId))
+        %return
+    %elseif CGMODEL_ACCESS("DataTypes.IsFixedPoint", dTypeId)
+        %assign intNumBitsStr = STRING(::IntegerSizes.IntNumBits)
+        %assign tgtIntBitStr = "sfix" + intNumBitsStr
+        %assign tgtUIntBitStr = "ufix" + intNumBitsStr
+        %assign dt = ::CompiledModel.DataTypes.DataType[dTypeId]
+        %assign dtName = CGMODEL_ACCESS("DataTypes.GetDataTypeDTName",dTypeId)
+        %if dtName == tgtIntBitStr
+            %if(ISFIELD(dt, "IdAliasedTo"))
+                %assign dt.IdAliasedTo = ::CompiledModel.tSS_INTEGER
+            %endif
+            %<SLibSetIdAliasedToForDataType(dt.Id, ::CompiledModel.tSS_INTEGER)>
+        %elseif dtName == tgtUIntBitStr
+            %if(ISFIELD(dt, "IdAliasedTo"))
+                %assign dt.IdAliasedTo = ::CompiledModel.tSS_UINTEGER
+            %endif
+            %<SLibSetIdAliasedToForDataType(dt.Id, ::CompiledModel.tSS_UINTEGER)>
+        %endif
+    %endif
+%endfunction%% FcnRegisterTargetIntType
+
+%function SLibUpdateScopeFromModel(dt, dtIdx) void
+    %if CGMODEL_ACCESS("DataTypes.GetNumElements", dtIdx) > 0
+        %assign chunkVals = CGMODEL_ACCESS("DataTypes.GetOversizeChunksForDTElement", dtIdx, 0)
+        %assign curNumChunks = chunkVals[0]
+        %assign chunkType = chunkVals[1]
+
+        %addtorecord dt   \
+        Elements {                                          \
+            Name             "chunks"                         \
+            NumDimensions    1                                \
+            Dimensions       %<curNumChunks>                  \
+            DataTypeId       %<chunkType>                     \
+            Padding          0                                \
+            IsComplex        0                                \
+            IsFixedPoint     0                                \
+            Width            %<curNumChunks>                  \
+            Offset           0                                \
+        }
+    %endif
+%endfunction
+
+%% Function: GET_TYPE_ID_REPLACEMENT ===============================================================
+%%
+%% Compatibility wrapper around SLibGetTypeIdReplacement
+%function GET_TYPE_ID_REPLACEMENT(classicLimitSymbol)
+    %return SLibGetTypeIdReplacement(classicLimitSymbol)
+%endfunction
+
+%% Function: LibDataTypeElementPadding =============================================================
+%% Abstract:
+%%   Return the padding of the idx'th element of datatype
+%%
+%function LibDataTypeElementPadding(id, idx) void
+    %return CGMODEL_ACCESS("DataTypes.GetElementPadding", id, idx)
+%endfunction
+
+%% Function: LibGetGroundInitFromId ================================================================
+%% Abstract:
+%%   Returns the value used for ground initialization for the data type id
+%%   passed in.
+%%   Specifically, return:
+%%
+%%   value - ground value of data type id passed in
+%%   ERROR - ground value requested for a data type that has not set it's ground
+%%           value
+%%
+%%   Note the value may be a string or an actual numeric value.  For example,
+%%   ground is 0.0 for tSS_DOUBLE, but it may be "0x08" for a fixed-point
+%%   8-bit integer with a bias.
+%%
+%%   Arguments:
+%%     dTypeId  - data type Id whose ground value is desired
+%% TopTester: test/toolbox/simulink/variants/var-vss-codevariants/tcodevariants1.m
+%% TopTester: test/toolbox/simulink/variants/var-vss-sigobj/tVSSSigObj.m
+%%
+%function LibGetGroundInitFromId(dTypeId) void
+    %assign dtRec = ::CompiledModel.DataTypes.DataType[dTypeId]
+    %assign groundInit = CGMODEL_ACCESS("DataTypes.GetGroundInit", dTypeId)
+    %if ISEMPTY(groundInit) && ...
+        (LibIsStructDataType(dTypeId) && ISFIELD(dtRec, "NeedGroundInit") && dtRec.NeedGroundInit)
+        %<FcnCacheGroundInitForStruct(dTypeId)>
+        %assign groundInit = CGMODEL_ACCESS("DataTypes.GetGroundInit", dTypeId)
+    %endif
+    %if ISEMPTY(groundInit)
+        %assign groundInit = LibGetGroundValueFromId(dTypeId)
+    %endif
+    %return groundInit
+%endfunction
+
+
+%% Function: FcnCacheGroundInitForStruct
+%% TopTester: test/toolbox/simulink/variants/var-vss-codevariants/tcodevariants1.m
+%% TopTester: test/toolbox/simulink/variants/var-bus-general/tVariantBusGecks.m
+%% TopTester: test/toolbox/simulink/variants/var-bus-general/tBusErrors.m
+%% TopTester: test/toolbox/simulink/variants/var-inline-general/-tGotoFromWithVariableConditions.m
+%% TopTester: test/toolbox/simulink/blocks/lib_Sources/Ground/rtw/tStringSupport.m
+%%
+%function FcnCacheGroundInitForStruct(dtIdx) void
+    %assign dt = ::CompiledModel.DataTypes.DataType[dtIdx]
+    %assert (LibIsStructDataType(dtIdx) && ISFIELD(dt, "NeedGroundInit") && dt.NeedGroundInit)
+
+    %assign numElements = CGMODEL_ACCESS("DataTypes.GetNumElements", dtIdx)
+    %assign padded = 0
+    %assign gndHasFloats = 0
+    %openfile gndValue
+    %foreach eIdx = numElements
+        %assign eName = LibDataTypeElementName(dtIdx, eIdx)
+        %assign padding = LibDataTypeElementPadding(dtIdx, eIdx)
+        %if eIdx < (numElements - 1) || padding > 0
+            %assign comma = ","
+        %else
+            %assign comma = ""
+        %endif
+%%}}
+%<SLibGetGroundInitForStructElem(dtIdx, eIdx)> \
+%<comma> /* %<eName> */
+%%{{
+        %if padding > 0
+            %if eIdx < (numElements - 1)
+                %assign comma = ", "
+            %else
+                %assign comma = ""
+            %endif
+            %if padding == 1
+%%}}}}
+0U%<comma> /* sl_padding%<padded> */
+%%{{{{
+            %else
+%%}}}}
+{
+    %foreach j = padding
+        %if j < (padding - 1)
+            %assign padcomma = ", "
+        %else
+            %assign padcomma = ""
+        %endif
+%%}}
+0U%<padcomma>\
+%%{{
+    %endforeach
+}%<comma> /* sl_padding%<padded> */
+%%{{{{
+            %endif
+            %assign padded = padded + 1
+        %endif
+    %endforeach
+    %closefile gndValue
+    %assign finalValue = "{\n" + gndValue + " }"
+    %if ISFIELD(dt, "GroundInit")
+        %assign dt.GroundInit = finalValue
+    %endif
+    %<CGMODEL_ACCESS("DataTypes.SetDataTypeGroundInit", dtIdx, finalValue)>
+    %assign dt.NeedGroundInit = 0
+%endfunction
+
+%function SLibGetGroundInitForStructElem(dtIdx, eIdx) void
+    %assign eDtId = LibDataTypeElementDataTypeId(dtIdx, eIdx)
+    %assign eIsComplex = LibDataTypeElementIsComplex(dtIdx, eIdx)
+    %assign groundInit = CGMODEL_ACCESS("DataTypes.GetGroundInit", eDtId)
+
+    %assign eDtRec = ::CompiledModel.DataTypes.DataType[eDtId]
+    %assign elemInit = ""
+    %openfile elemInit
+    %if ISEMPTY(groundInit) && (LibIsStructDataType(eDtId) && ...
+        ISFIELD(eDtRec, "NeedGroundInit") && eDtRec.NeedGroundInit)
+%%}}
+%<FcnCacheGroundInitForStruct(eDtId)>
+%%{{
+        %assign groundInit = CGMODEL_ACCESS("DataTypes.GetGroundInit", eDtId)
+    %endif
+    %%
+    %if !ISEMPTY(groundInit)
+        %% For struct data type, eGround here is GroundInit,
+        %% not GroundValue
+        %assign eGround = groundInit
+    %else
+        %assign eGround = SLibGetIRorTLCGround(eDtId, 1, TLC_TRUE, TLC_TRUE)
+    %endif
+    %if eIsComplex
+        %assign eGround = "{%<eGround>, %<eGround>}"
+    %endif
+    %assign eWidth = LibDataTypeElementWidth(dtIdx, eIdx)
+    %assign isStdContainer = LibDataTypeElementIsStdContainer(dtIdx, eIdx)
+    %%Special handling for string class (let else branch handle it)
+    %%What about other classes?
+    %if eWidth == 1 && !(LibIsDataTypeCGClassType(eDtId) && LibIsStringDataType(eDtId))
+%%}}
+%<eGround>\
+%%{{
+    %elseif LibStructElementIsDynamicArray(dtIdx, eIdx)
+        %% Bus element is a dynamic matrix and is lowered to coder::array
+%%}}
+%assign groundValue = LibGetGroundValueFromId(eDtId)
+%<groundValue>\
+%%{{
+    %else
+        %% Use empty string as ground value for string element
+        %if LibIsStringDataType(eDtId)
+%%}}}
+""\
+%%{{{
+        %else
+            %assign eNDims = LibDataTypeElementNumDimensions(dtIdx, eIdx)
+            %assign eDims  = LibDataTypeElementDimensions(dtIdx, eIdx)
+            %if (LibDataTypeIsBusND(dtIdx) && (LibIsOrientedVector(eNDims, eDims)==TLC_FALSE))
+                %assign eGroundStr = FcnGetGroundNDValue(eGround, eDims, eNDims, 0)
+%%}}}}
+%<eGroundStr>\
+%%{{{{
+            %else
+%%}}}}
+%<SLibGetGroundInitForStructMatrixElem(eDtId, eIsComplex, isStdContainer, eGround, eWidth)>
+%%{{{{
+            %endif
+        %endif
+    %endif
+    %closefile elemInit
+    %return elemInit
+%endfunction %% SLibGetGroundInitForStructElem
+
+%% Function: FcnGetGroundNDValue ===================================================================
+%% Abstract:
+%%   Returns the ND formatted ground value for the given
+%%   base ground value and dimension vector.
+%%
+%function FcnGetGroundNDValue(eGround, eDims, eNDims, currDimIdx) void
+    %assign isLastDim = currDimIdx == (eNDims - 1)
+    %assign currDim = eDims[currDimIdx]
+    %assign elemGround = isLastDim ? "%<eGround>" : ...
+        FcnGetGroundNDValue(eGround, eDims, eNDims, currDimIdx + 1)
+    %assign groundStr = REPLICATE_STRING(elemGround, ", ", currDim)
+    %if currDim > 0
+        %return "{" + groundStr + "}"
+    %endif
+    %return groundStr
+%endfunction
+
+%function SLibGetGroundInitForStructMatrixElem(eDtId, eIsComplex, isStdContainer, eGround, eWidth) void
+    %return CGMODEL_ACCESS("DataTypes.GetGroundInitForStructMatrixElem", CAST("Boolean",isStdContainer ),...
+        CAST("String",eGround), eWidth)
+%endfunction %% SLibGetGroundInitForStructMatrixElem
+
+%% Function: LibDataTypeElementIsComplex ===========================================================
+%% Abstract:
+%%   Return whether the idx'th element of datatype is complex
+%%
+%function LibDataTypeElementIsComplex(id, idx) void
+    %assign element = ::CompiledModel.DataTypes.DataType[id].Elements[idx]
+    %return LibGetRecordIsComplex(element)
+%endfunction
+
+
+%% Function: FcnGetEnumTypeIndexOfDefaultValue =====================================================
+%% Abstract:
+%%   For enumerated data types, get index of default value
+%%
+%function FcnGetEnumTypeIndexOfDefaultValue(id) void
+    %return CGMODEL_ACCESS("DataTypes.GetEnumTypeIndexOfDefaultValue", id)
+%endfunction
+
+%% Function: FcnGetEnumTypeDefaultCodeGenString ====================================================
+%% Abstract:
+%%   For enumerated data types, get default enumeration code generation string
+%%
+%function FcnGetEnumTypeDefaultCodeGenString(id) void
+    %if !LibIsEnumDataType(id)
+        %<LibReportFatalError("Enumeration value not found in enumerated data type")>
+    %endif
+    %return CGMODEL_ACCESS("DataTypes.GetEnumTypeDefaultCodeGenString", id)
+%endfunction
+
+%% Function: SLibGetFieldsFromModel ================================================================
+%% Abstract:
+%%   Get values for records from CGModel while setting up data types in TLC compiler.
+%%   Ensures updated field values if TLCServer was run, else default values.
+%%
+%function SLibGetFieldsFromModel(dt, dtIdx) void
+
+    %<LibAddIdentifier(dt, "ConvertBetweenTLCFcnName", CGMODEL_ACCESS("DataTypes.GetDataTypeConvertBetweenTLCFcnName",dtIdx ))>
+    %<LibAddIdentifier(dt, "IsPositiveTLCFcnName", CGMODEL_ACCESS("DataTypes.GetDataTypeIsPositiveTLCFcnName",dtIdx ))>
+    %<LibAddIdentifier(dt, "SignTLCFcnName", CGMODEL_ACCESS("DataTypes.GetDataTypeSignTLCFcnName",dtIdx ))>
+    %<LibAddIdentifier(dt, "ConvertBetweenTLCFcnFile", CGMODEL_ACCESS("DataTypes.GetConvertBetweenTLCFcnFile",dtIdx ))>
+    %<LibAddIdentifier(dt, "IsPositiveTLCFcnFile", CGMODEL_ACCESS("DataTypes.GetIsPositiveTLCFcnFile",dtIdx ))>
+    %<LibAddIdentifier(dt, "SignTLCFcnFile", CGMODEL_ACCESS("DataTypes.GetSignTLCFcnFile",dtIdx ))>
+
+    %assign modelVal = CGMODEL_ACCESS("DataTypes.GetDataTypeEnum",dtIdx )
+    %if !ISFIELD(dt, "Enum")
+        %<LibAddIdentifier(dt, "Enum", modelVal)>
+    %else
+        %assign dt.Enum= modelVal
+    %endif
+
+    %assign modelVal = CGMODEL_ACCESS("DataTypes.GetDataTypeGroundName",dtIdx )
+    %if !ISFIELD(dt, "GroundName")
+        %<LibAddIdentifier(dt, "GroundName", modelVal)>
+    %else
+        %assign dt.GroundName= modelVal
+    %endif
+
+    %assign modelVal = CGMODEL_ACCESS("DataTypes.GetDataTypeGroundValue",dtIdx )
+    %if !ISFIELD(dt, "GroundValue")
+        %<LibAddIdentifier(dt, "GroundValue", modelVal)>
+    %else
+        %assign dt.GroundValue= modelVal
+    %endif
+
+    %assign modelVal = CGMODEL_ACCESS("DataTypes.GetGroundInit",dtIdx )
+    %if !ISFIELD(dt, "GroundInit")
+        %<LibAddIdentifier(dt, "GroundInit", modelVal)>
+    %else
+        %assign dt.GroundInit=  modelVal
+    %endif
+
+    %<LibAddIdentifier(dt, "GroundHasFloats", CGMODEL_ACCESS("DataTypes.GetDataTypeGroundHasFloats",dtIdx ))>
+    %<LibAddIdentifier(dt, "ComplexName", CGMODEL_ACCESS("DataTypes.GetDataTypeComplexName",dtIdx ))>
+    %<LibAddIdentifier(dt, "ComplexGroundName", CGMODEL_ACCESS("DataTypes.GetDataTypeComplexGroundName",dtIdx ))>
+    %<LibAddIdentifier(dt, "ComplexGroundReqInMemory", CGMODEL_ACCESS("DataTypes.GetDataTypeComplexGroundReqInMemory",dtIdx ))>
+
+%endfunction
+
+%% Function: SLibGetDataTypeComplexGroundReqInMemory ===============================================
+%% Abstract:
+%%   Is a complex ground required in memory?
+%%
+%function SLibGetDataTypeComplexGroundReqInMemory(dataTypeId) void
+    %return CGMODEL_ACCESS("DataTypes.GetDataTypeComplexGroundReqInMemory",dataTypeId )
+%endfunction
+
+%function SLibGetDataTypeActualBits(dataTypeId) void
+    %return CGMODEL_ACCESS("DataTypes.GetActualBits", dataTypeId)
+%endfunction
+
+%function SLibGetDataTypeRequiredBits(dataTypeId) void
+    %return CGMODEL_ACCESS("DataTypes.GetRequiredBits", dataTypeId)
+%endfunction
+
+%function SLibGetDataTypeIsFixedPoint(dataTypeId) void
+    %return CGMODEL_ACCESS("DataTypes.IsFixedPoint", dataTypeId)
+%endfunction
+
+%function SLibGetDataTypeIsSigned(dataTypeId) void
+    %return CGMODEL_ACCESS("DataTypes.IsSigned", dataTypeId)
+%endfunction
+
+%function SLibGetDataTypeGroundInit(dataTypeId) void
+    %return CGMODEL_ACCESS("DataTypes.GetGroundInit", dataTypeId)
+%endfunction
+
+%function SLibGetDataTypeNativeType(dataTypeId) void
+    %return CGMODEL_ACCESS("DataTypes.GetNativeType", dataTypeId)
+%endfunction
+
+%function SLibGetDataTypeIsNumeric(dataTypeId) void
+    %return CGMODEL_ACCESS("DataTypes.IsNumericType", dataTypeId)
+%endfunction
+
+%% Function: SLibGetGroundValueFromId ==============================================================
+%% Abstract:
+%%   Returns the value used for ground for the data type id passed in.
+%%
+%function SLibGetGroundValueFromId(dTypeId) void
+    %return LibGetGroundValueFromId(dTypeId)
+%endfunction
+
+%% Function: SLibCGTypeSymbolicDimension ===========================================================
+%% Abstract:
+%%   Returns the symbolic dimension string for the specified CGType for the specified dimension index.
+%%
+%function SLibCGTypeSymbolicDimension(cgTypeIdx, elIdx) void
+    %assign symbDims = LibCGTypeSymbolicDimensions(cgTypeIdx)
+    %return symbDims[elIdx]
+%endfunction
+
+%% Function: SLibCGTypeIsDynamicMatrix =============================================================
+%% Abstract:
+%%   Returns true if the specified CGType is a Dynamic Matrix.
+%%
+%function SLibCGTypeIsDynamicMatrix(cgTypeIdx) void
+    %return CGMODEL_ACCESS("CGType.GetIsDynamicMatrix", cgTypeIdx)
+%endfunction
+
+%% Function: SLibGetSymbolicWidthForCGType =========================================================
+%% Abstract:
+%%   Returns the symbolic width string for the specified CGType.
+%%
+%function SLibGetSymbolicWidthForCGType(cgTypeIdx) void
+    %if SLibIsNdIndexingFeatureOn()
+        %return SLibGetSymbolicDimsForCGType(cgTypeIdx)
+    %elseif SLibCGTypeIsDynamicMatrix(cgTypeIdx)
+        %return "1"
+    %else
+        %return LibCGTypeSymbolicWidth(cgTypeIdx)
+    %endif
+%endfunction
+
+%% Function: SLibGetSymbolicDimsForCGType ==========================================================
+%% Abstract:
+%%   Returns the symbolic dims for the specified CGType.
+%%
+%function SLibGetSymbolicDimsForCGType(cgTypeIdx) void
+    %assign recWidth = LibCGTypeSymbolicWidth(cgTypeIdx)
+    %if recWidth == "1"
+        %return recWidth
+    %else
+        %return LibCGTypeSymbolicDims(cgTypeIdx)
+    %endif
+%endfunction
+
+%% Function: LibCGTypeSymbolicDims =================================================================
+%% Abstract:
+%%   Return the symbolic dimensions of a CGType
+%%
+%function LibCGTypeSymbolicDims(cgTypeIdx) void
+    %return CGMODEL_ACCESS("CGType.Dimensions", cgTypeIdx)
+%endfunction
+
+%% Function: SLibGetHalfTypeFileExtension===========================
+%% Abstract:
+%%   Utility function to figure out the correct half library file extension
+%%
+%function SLibGetHalfTypeFileExtension() void
+    %return CGMODEL_ACCESS("FileRepository.getHalfTypeFileExtension")
+%endfunction
+
+%function SLibCoderHalfTypeSrcFilename() void
+    %return CGMODEL_ACCESS("FileRepository.getHalfTypeSrcFileName")
+%endfunction
+
+%function SLibCGTypeIsMatrix(aCGTypeIdx) void
+    %return CGMODEL_ACCESS("CGType.IsMatrix", aCGTypeIdx)
+%endfunction
+
+%% DocFunction{Input Signal Functions}: LibBlockInputSignalIsMatrix ============
+%% Abstract:
+%%   Returns true if the given block input port (index) is connected to a
+%%   matrix or vector signal.
+%%
+%function LibBlockInputSignalIsMatrix(portIdx) void
+    %% See Also:
+    %%   LibBlockOutputSignalIsMatrix
+    %%
+    %assign cgTypeIdx = SLibBlockInputPortContainerCGTypeIdx(portIdx)
+    %return LibCGTypeIsMatrix(cgTypeIdx) && "1" != LibCGTypeSymbolicWidth(cgTypeIdx)
+%endfunction %% LibBlockInputSignalIsMatrix
+
+%% DocFunction{Output Signal Functions}: LibBlockOutputSignalIsMatrix ==========
+%% Abstract:
+%%   Returns true if the given block input port (index) is connected to a
+%%   matrix or vector signal.
+%%
+%function LibBlockOutputSignalIsMatrix(portIdx) void
+    %% See Also:
+    %%   LibBlockInputSignalIsMatrix
+    %%
+    %assign cgTypeIdx = SLibBlockOutputPortContainerCGTypeIdx(portIdx)
+    %return LibCGTypeIsMatrix(cgTypeIdx) && "1" != LibCGTypeSymbolicWidth(cgTypeIdx)
+%endfunction %% LibBlockOutputSignalIsMatrix
+
+%% Function: LibCGTypeIsMatrix =====================================================================
+%% Abstract:
+%%   Returns whether or not this is a matrix type or an alias of a matrix type.
+%%
+%function LibCGTypeIsMatrix(cgTypeIdx) void
+    %return CGMODEL_ACCESS("CGType.GetIsMatrix", cgTypeIdx)
+%endfunction
+
+%endif %% _DTYPE_PRIVATE_API_

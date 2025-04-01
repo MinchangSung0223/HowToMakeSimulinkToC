@@ -1,0 +1,37 @@
+%if EXISTS(_BLKIO_API_V3_) == 0
+%assign _BLKIO_API_V3_ = 1
+%%
+%% Copyright 2019-2024 The MathWorks, Inc.
+%%
+
+%%
+%% Block inputs and outputs access for the TLC interface V3
+%%
+%function LibBlockInputSignal(portIdx, ucv, lcv, sigIdx) void
+    %<SLibV3CallsiteValid("LibBlockInputSignal")>
+    %assign aPortIdx = CAST("Number", portIdx)
+    %return CGMODEL_ACCESS("Block.InputSignal", BlockIdx[0], BlockIdx[2], aPortIdx, ...
+        ::CurrentBlockFcn, ::CurrentBlockTid, ucv, lcv, "%<sigIdx>")
+%endfunction
+
+%function LibBlockInputSignalAddr(portIdx, ucv, lcv, sigIdx) void
+    %<SLibV3CallsiteValid("LibBlockInputSignalAddr")>
+    %return CGMODEL_ACCESS("Block.InputSignalAddr", BlockIdx[0], BlockIdx[2], portIdx, ...
+        ::CurrentBlockFcn, ::CurrentBlockTid, ucv, lcv, "%<sigIdx>")
+%endfunction
+
+%function LibBlockOutputSignal(portIdx, ucv, lcv, sigIdx) void
+    %<SLibV3CallsiteValid("LibBlockOutputSignal")>
+    %assign aPortIdx = CAST("Number", portIdx)
+    %return CGMODEL_ACCESS("Block.OutputSignal", BlockIdx[0], BlockIdx[2], aPortIdx, ...
+        ::CurrentBlockFcn, ::CurrentBlockTid, ucv, lcv, "%<sigIdx>")
+%endfunction
+
+%function LibBlockOutputSignalAddr(portIdx, ucv, lcv, sigIdx) void
+    %<SLibV3CallsiteValid("LibBlockOutputSignal")>
+    %assign aPortIdx = CAST("Number", portIdx)
+    %return CGMODEL_ACCESS("Block.OutputSignalAddr", BlockIdx[0], BlockIdx[2], aPortIdx, ...
+        ::CurrentBlockFcn, ::CurrentBlockTid, ucv, lcv, "%<sigIdx>")
+%endfunction
+
+%endif %% _BLKIO_API_V3_

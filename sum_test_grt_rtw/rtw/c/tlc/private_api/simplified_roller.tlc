@@ -1,0 +1,67 @@
+%%
+%% Copyright 2019-2023 The MathWorks, Inc.
+%%
+%% Abstract: simplified roller target file for TLC interface v3
+
+%implements Roller "C"
+
+%include "rollerlib.tlc"
+
+%%
+%% RollHeader
+%%
+%function RollHeader(block, rollVars) Output
+    %assign loopVariable = LibBlockLocalVar(block, "i", ::CompiledModel.tSS_INT32)
+    %<SLibBlockAddToIdentifierStack(block, loopVariable)>
+    %return loopVariable
+%endfunction
+%%
+%% LoopHeader
+%%
+%% C language:
+%%     for (i = sigOffset; i < numIterations; i++) {
+%%
+%function LoopHeader(block, loopStartIdx, numIterations, rolledCount, rollVars) Output
+    %assign loopVariable = SLibBlockGetCurrentIdentifierStackElement(block)
+
+    %if block.HasSymbolicDims
+        %if !ISEMPTY(RollRegionTypes)
+            %assign numIterations = ...
+                "(" + LibCGTypeSymbolicWidth(RollRegionTypes[rolledCount]) + ")"
+
+            %if loopStartIdx == 0
+                %assign loopEndIdx = numIterations
+            %else
+                %assign loopEndIdx = "(%<loopStartIdx> + " + numIterations + ")"
+            %endif
+        %else
+            %% errout as Rollregion can't be used here, as block has un-supported  Input and output
+            %% configuration or vars with different ranges are rolled.
+            %<SLibReportErrorWithId("Simulink:SymbolicDims:RollRegionPortDimensionMismatch")>
+        %endif
+    %else
+        %assign loopEndIdx = loopStartIdx + numIterations
+    %endif
+
+    for (%<loopVariable> = %<loopStartIdx>; %<loopVariable> < %<loopEndIdx>; %<loopVariable>++) {
+    %%}
+%endfunction
+%%
+%% LoopTrailer
+%%
+%% C language:
+%%     }
+%%
+%function LoopTrailer(block, sigOffset, numIterations, rolledCount, rollVars) Output
+    %%{
+    }
+%endfunction
+%%
+%% RollTrailer
+%%
+%% C language:
+%%     }
+%%
+%function RollTrailer(block, rollVars) Output
+    %<SLibBlockRemoveTopIdentifierStackEntry(block)>
+%endfunction

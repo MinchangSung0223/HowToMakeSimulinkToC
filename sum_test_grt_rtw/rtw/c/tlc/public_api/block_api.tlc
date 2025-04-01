@@ -1,0 +1,363 @@
+%if EXISTS(_BLOCK_API_) == 0
+%assign _BLOCK_API_ = 1
+%%
+%% Copyright 2019-2021 The MathWorks, Inc.
+%%
+
+%include "dtype_api.tlc"
+
+%% DocFunction{Block Functions}: LibBlockSetIsExpressionCompliant
+%% Abstract:
+%%   Specify that this block's TLC file is compliant with expression folding.
+%%   To be called in BlockInstanceSetup function.
+%%
+%function LibBlockSetIsExpressionCompliant(block) void
+    %% TLCExprCompliant
+    %<CGMODEL_ACCESS("Block.SetTLCExpressionCompliance", ...
+        block.BlockIdx[0], block.BlockIdx[2], TLC_TRUE)>
+%endfunction
+
+
+%% DocFunction{Block Functions}: LibBlockSetIntegerDowncastUnnecessary
+%% Abstract:
+%%   Specify that this block does not need to enforce integer downcasts for its
+%%   output expression
+%%
+%function LibBlockSetIntegerDowncastUnnecessary(block) void
+    %% EnforceIntegerDowncast
+    %<CGMODEL_ACCESS("Block.SetEnforceIntegerDowncast", ...
+        block.BlockIdx[0], block.BlockIdx[2], TLC_FALSE)>
+%endfunction
+
+
+%% DocFunction{Block Functions}: LibBlockSetCustomStorageComplianceLevel
+%% Abstract:
+%%   Set the custom storage compliance level of a block
+%%
+%function LibBlockSetCustomStorageComplianceLevel(block, level) void
+    %% CustomStorageClassCompliant
+    %<CGMODEL_ACCESS("Block.SetCSCComplianceLevel", ...
+        block.BlockIdx[0], block.BlockIdx[2], level)>
+%endfunction
+
+%% DocFunction{Block Functions}: LibBlockGetNumFcnCallOutputs
+%% Abstract:
+%%   returns the number of function call outputs
+%%
+%function LibBlockGetNumFcnCallOutputs(block) void
+    %return CGMODEL_ACCESS("Block.NumFcnCallOutputs", block.BlockIdx[0], block.BlockIdx[2])
+%endfunction
+
+%% DocFunction{Block Functions}: LibBlockGetNumFcnCallOutputDsts
+%% Abstract:
+%%   returns the number of function call output dsts
+%%
+%function LibBlockGetNumFcnCallOutputDsts(block) void
+    %return CGMODEL_ACCESS("Block.NumFcnCallOutputDsts", block.BlockIdx[0], block.BlockIdx[2])
+%endfunction
+
+%% DocFunction{Input Signal Functions}: LibBlockNumInputPorts ===================
+%% Abstract:
+%%   Returns the number of data input ports of a block (excludes control
+%%   ports)
+%%
+%% Function: LibBlockNumInputPorts(block) void
+%function LibBlockNumInputPorts(block) void
+    %return CGMODEL_ACCESS("Block.NumDataInputPorts",block.BlockIdx[0],block.BlockIdx[2])
+%endfunction
+
+%% DocFunction{Output Signal Functions}: LibBlockNumOutputPorts =================
+%% Abstract:
+%%   Returns the number of data output ports of a block (excludes control
+%%   and state ports)
+%%
+%% Function: LibBlockNumOutputPorts(block) void
+%function LibBlockNumOutputPorts(block) void
+    %return CGMODEL_ACCESS("Block.NumDataOutputPorts",block.BlockIdx[0],block.BlockIdx[2])
+%endfunction
+
+%% DocFunction{Parameter Functions}: LibBlockParamSetting ======================
+%% Abstract:
+%%   This function returns the string of a specified param setting for
+%%   a specified block type. If you pass an empty block type into this function,
+%%   the param setting will be assumed to be in the "ParamSettings" record
+%%   of the block. If a non-empty block type is passed into the function,
+%%   the param settings will be assumed to be in the "%<Btype>ParamSettings"
+%%   record of that block.
+%%
+%function LibBlockParamSetting(bType, psType) void
+    %if (bType != "")
+        %assign retVal = %<bType>ParamSettings.%<psType>
+    %else
+        %assign retVal = ParamSettings.%<psType>
+    %endif
+    %return (retVal)
+%endfunction %% LibBlockParamSetting
+
+%% DocFunction{BlkStateAndWorkVectFcns}: LibBlockDWorkName =====================
+%% Abstract:
+%%   Returns the name of specified block DWORK.
+%%
+%function LibBlockDWorkName(dwork) void
+    %if ISFIELD(dwork, "RecordIdx") && ISFIELD(dwork, "RecordType") && (dwork.RecordType == "BlockDWork")
+        %return CGMODEL_ACCESS("Block.DWorkName", dwork.RecordIdx[0], dwork.RecordIdx[1], dwork.RecordIdx[2])
+    %else
+        %return STRING(dwork.Name)
+    %endif
+%endfunction %% LibBlockDWorkName
+
+%% DocFunction{BlkStateAndWorkVectFcns}: LibBlockDWorkWidth ====================
+%% Abstract:
+%%   Returns the width of specified block DWORK.
+%%
+%function LibBlockDWorkWidth(dwork) void
+    %if ISFIELD(dwork, "RecordIdx") && ISFIELD(dwork, "RecordType") && (dwork.RecordType == "BlockDWork")
+        %return CGMODEL_ACCESS("Block.DWorkWidth", dwork.RecordIdx[0], dwork.RecordIdx[1], dwork.RecordIdx[2])
+    %else
+        %assign cgTypeIdx = ISFIELD(dwork, "CGTypeIdx") ? dwork.CGTypeIdx : ...
+            LibGetRecordCGTypeIdx(::CompiledModel.DWorks.DWork[dwork.FirstRootIdx])
+        %return LibCGTypeWidth(cgTypeIdx)
+    %endif
+%endfunction %% LibBlockDWorkWidth
+
+%% DocFunction{Output Signal Functions}: LibBlockOutputPortIndexMode ===========
+%% Purpose
+%%   Determines the index mode of a block's output port.
+%%
+%% Description
+%%   If a block's output port has been set as an index port and its indexing base is
+%%   marked as zero-based or one-based, this information gets written into the model.rtw
+%%   file. This function queries the indexing base in order to branch to different code
+%%   according to what the output port indexing base is.
+%%
+%% Returns
+%%   "" for a non-index port, and "Zero-based" or "One-based" otherwise.
+%%
+%% Arguments
+%%   block - block record
+%%   idx - port index
+%%
+%% Example
+%%   %if LibBlockOutputPortIndexMode(block, idx) == "Zero-based"
+%%      ...
+%%   %elseif LibBlockOutputPortIndexMode(block, idx) == "One-based"
+%%      ...
+%%   %else
+%%      ...
+%%   %endif
+%%
+%% See function in matlabroot/rtw/c/tlc/mw/blocklib.tlc.
+%%
+%function LibBlockOutputPortIndexMode(block, pidx) void
+    %return CGMODEL_ACCESS("Block.OutputPortIndexMode", block.BlockIdx[0], block.BlockIdx[2], pidx)
+%endfunction
+
+%% DocFunction{Input Signal Functions}: LibBlockInputPortIndexMode ===========
+%% Purpose
+%%   Determines the index mode of a block's input port.
+%%
+%% Description
+%%   If a block's input port has been set as an index port and its indexing base is
+%%   marked as zero-based or one-based, this information gets written into the model.rtw
+%%   file. This function queries the indexing base in order to branch to different code
+%%   according to what the input port indexing base is.
+%%
+%% Returns
+%%   "" for a non-index port, and "Zero-based" or "One-based" otherwise.
+%%
+%% Arguments
+%%   block - block record
+%%   idx - port index
+%%
+%% Example
+%%   %if LibBlockInputPortIndexMode(block, idx) == "Zero-based"
+%%      ...
+%%   %elseif LibBlockInputPortIndexMode(block, idx) == "One-based"
+%%      ...
+%%   %else
+%%      ...
+%%   %endif
+%%
+%% See function in matlabroot/rtw/c/tlc/mw/blocklib.tlc.
+%%
+%function LibBlockInputPortIndexMode(block, pidx) void
+    %return CGMODEL_ACCESS("Block.InputPortIndexMode", block.BlockIdx[0], block.BlockIdx[2], pidx)
+%endfunction
+
+%% LibBlockIsIndexZeroBased ====================================================
+%% Abstract:
+%%  Determines if the index mode of a block is "Zero-based"
+%%
+%function LibBlockIsIndexZeroBased(block) void
+    %if !(ISFIELD(block, "RecordType"))
+        return 0
+    %endif
+
+    %switch(block.RecordType)
+      %case "CompiledBlock"
+        %return CGMODEL_ACCESS("Block.IsIndexZeroBased", block.BlockIdx[0], block.BlockIdx[2])
+      %case "Block"
+        %return CGMODEL_ACCESS("Block.IsIndexZeroBased", block.BlockIdx[0], block.BlockIdx[2])
+      %case "ExternalInput"
+        %return CGMODEL_ACCESS("ExternalInput.IsIndexZeroBased", block.ExternalInputIdx)
+      %case "ExternalOutput"
+        %return CGMODEL_ACCESS("ExternalOutput.IsIndexZeroBased", block.ExternalOutputIdx)
+      %default
+        %return 0
+    %endswitch
+%endfunction
+
+%% LibBlockIsIndexOneBased ====================================================
+%% Abstract:
+%%  Determines if the index mode of a block is "One-based"
+%%
+%function LibBlockIsIndexOneBased(block) void
+    %if !(ISFIELD(block, "RecordType"))
+        return 0
+    %endif
+
+    %switch(block.RecordType)
+      %case "CompiledBlock"
+        %return CGMODEL_ACCESS("Block.IsIndexOneBased", block.BlockIdx[0], block.BlockIdx[2])
+      %case "Block"
+        %return CGMODEL_ACCESS("Block.IsIndexOneBased", block.BlockIdx[0], block.BlockIdx[2])
+      %case "ExternalInput"
+        %return CGMODEL_ACCESS("ExternalInput.IsIndexOneBased", block.ExternalInputIdx)
+      %case "ExternalOutput"
+        %return CGMODEL_ACCESS("ExternalOutput.IsIndexOneBased", block.ExternalOutputIdx)
+      %default
+        %return 0
+    %endswitch
+%endfunction
+
+
+%% Function: LibBlockPortSampleTime ================================================================
+%%
+%% TopTester: test/toolbox/simulink/variants/var-inline-vsrc/tmMultiRateAsyncTask_VC1.m
+%function LibBlockPortSampleTime(portTID)
+
+    %if !CGMODEL_ACCESS("Block.IsPortBasedSampleTimes", BlockIdx[0], BlockIdx[2])
+        %<LibReportFatalError("LibBlockPortSampleTime called for block that does not have port-based sample times")>
+    %endif
+
+    %if TYPE(portTID) != "String"
+        %<LibReportFatalError("Incorrect portTID argument")>
+    %endif
+
+    %% Assume case of "InputPortIdxI" or "OutputPortIdxI"
+    %assign portLocAndIdx = IDNUM(portTID)
+    %if SIZE(portLocAndIdx,1) == 2
+        %if portLocAndIdx[1] >= 0
+            %assign port = portLocAndIdx[1]
+            %if portLocAndIdx[0] == "InputPortIdx" && port < LibBlockNumInputPorts(SLibGetCurrentBlock())
+                %if LibBlockInputSignalSampleTime(port) == rtInf && LibBlockInputSignalOffsetime(port) == rtInf
+                    %return "constant"
+                %else
+                    %return LibBlockInputSignalSampleTimeIndex(port)
+                %endif
+            %elseif portLocAndIdx[0]=="OutputPortIdx" && port < LibBlockNumOutputPorts(SLibGetCurrentBlock())
+                %if LibBlockOutputSignalSampleTime(port) == rtInf && LibBlockOutputSignalOffsetTime(port) == rtInf
+                    %return "constant"
+                %else
+                    %return LibBlockOutputSignalSampleTimeIndex(port)
+                %endif
+            %else
+                %<LibReportFatalError("Incorrect portTID argument")>
+            %endif
+        %endif
+    %else
+        %<LibReportFatalError("Incorrect portTID argument")>
+    %endif
+
+%endfunction
+
+%% DocFunction{BlkStateAndWorkVectFcns}: LibBlockDWorkIsComplex ================
+%% Abstract:
+%%   Returns 1 if the specified block DWORK is complex, returns 0 otherwise.
+%%
+%function LibBlockDWorkIsComplex(dwork) void
+    %if ISFIELD(dwork, "RecordIdx") && ISFIELD(dwork, "RecordType") && (dwork.RecordType == "BlockDWork")
+        %return CGMODEL_ACCESS("Block.IsDWorkComplex", dwork.RecordIdx[0], dwork.RecordIdx[1], dwork.RecordIdx[2])
+    %else
+        %assign cgTypeIdx = ISFIELD(dwork, "CGTypeIdx") ? dwork.CGTypeIdx : ...
+            LibGetRecordCGTypeIdx(::CompiledModel.DWorks.DWork[dwork.FirstRootIdx])
+        %return LibCGTypeIsComplex(CGMODEL_ACCESS("CGType.DataTypeIdForCGType", cgTypeIdx))
+    %endif
+%endfunction %% LibBlockDWorkIsComplex
+
+%% DocFunction{BlkStateAndWorkVectFcns}: LibBlockDWorkDataTypeId ===============
+%% Abstract:
+%%   Returns the data type Id of specified block DWORK.
+%%
+%function LibBlockDWorkDataTypeId(dwork) void
+    %if ISFIELD(dwork, "RecordIdx") && ISFIELD(dwork, "RecordType") && (dwork.RecordType == "BlockDWork")
+        %return CGMODEL_ACCESS("Block.DWorkDataTypeId", dwork.RecordIdx[0], dwork.RecordIdx[1], dwork.RecordIdx[2])
+    %else
+        %assign cgTypeIdx = ISFIELD(dwork, "CGTypeIdx") ? dwork.CGTypeIdx : ...
+            LibGetRecordCGTypeIdx(::CompiledModel.DWorks.DWork[dwork.FirstRootIdx])
+        %return CGMODEL_ACCESS("CGType.DataTypeIdForCGType", cgTypeIdx)
+    %endif
+%endfunction %% LibBlockDWorkDataTypeId
+
+%% DocFunction{BlkStateAndWorkVectFcns}: LibBlockDWorkStorageTypeQualifer ======
+%% Abstract:
+%%   Returns the storage type qualifier of specified block DWORK.
+%%
+%% Function: LibBlockDWorkStorageTypeQualifier(dwork) void
+%function LibBlockDWorkStorageTypeQualifier(dwork) void
+    %if ISFIELD(dwork, "RecordIdx") && ISFIELD(dwork, "RecordType") && (dwork.RecordType == "BlockDWork")
+        %return CGMODEL_ACCESS("Block.DWorkStorageTypeQualifier", dwork.RecordIdx[0], dwork.RecordIdx[1], dwork.RecordIdx[2])
+    %else
+        %assign dwRec = ::CompiledModel.DWorks.DWork[dwork.FirstRootIdx]
+        %return dwRec.StorageTypeQualifier
+    %endif
+%endfunction %% LibBlockDWorkStorageTypeQualifier
+
+%% DocFunction{BlkStateAndWorkVectFcns}: LibBlockDWorkUsedAsDiscreteState ======
+%% Abstract:
+%%   Returns 1 if the specified block DWORK is used as a discrete state,
+%%   returns 0 otherwise.
+%%
+%function LibBlockDWorkUsedAsDiscreteState(dwork) void
+    %if ISFIELD(dwork, "RecordIdx") && ISFIELD(dwork, "RecordType") && (dwork.RecordType == "BlockDWork")
+        %assign usedAs = CGMODEL_ACCESS("Block.DWorkUsedAs", dwork.RecordIdx[0], dwork.RecordIdx[1], dwork.RecordIdx[2])
+    %else
+        %assign usedAs = ::CompiledModel.DWorks.DWork[dwork.FirstRootIdx].UsedAs
+    %endif
+
+    %return (usedAs == "DSTATE")
+%endfunction %% LibBlockDWorkUsedAsDiscreteState
+
+
+%% DocFunction{Sample Time Functions}: LibBlockSampleTime ======================
+%% Abstract:
+%%   Returns the block's sample time. The returned value depends on the sample
+%%   time classification of the block:
+%%
+%%      Block classification  Returned value
+%%      --------------------  --------------
+%%      Discrete blocks          A real number greater than zero,
+%%                               the block's actual sample time
+%%      Continuous blocks        0.0
+%%      Triggered blocks        -1.0
+%%      Constant blocks         -2.0
+%%
+%function LibBlockSampleTime(block) void
+    %return CGMODEL_ACCESS("Block.SampleTime", block.BlockIdx[0], block.BlockIdx[2])
+%endfunction %% LibBlockSampleTime
+
+%% DocFunction{BlkStateAndWorkVectFcns}: LibBlockDWorkDataTypeName =============
+%% Abstract:
+%%   Returns the data type name of specified block DWORK.
+%%
+%function LibBlockDWorkDataTypeName(dwork, reim) void
+    %if ISFIELD(dwork, "RecordIdx") && ISFIELD(dwork, "RecordType") && (dwork.RecordType == "BlockDWork")
+        %return CGMODEL_ACCESS("Block.DWorkDataTypeName", dwork.RecordIdx[0], dwork.RecordIdx[1], dwork.RecordIdx[2], reim)
+    %endif
+    %% The following code is onlyused when LibBlockDWorkDataTypeName is
+    %% called outside of a block on a model dwork record.
+    %assign dwRec = ::CompiledModel.DWorks.DWork[dwork.FirstRootIdx]
+    %return SLibGetRecordDataTypeName(dwRec, reim)
+%endfunction %% LibBlockDWorkDataTypeName
+
+%endif %% _BLOCK_API_

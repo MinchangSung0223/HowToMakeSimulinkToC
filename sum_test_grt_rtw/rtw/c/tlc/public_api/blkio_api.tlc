@@ -1,0 +1,1004 @@
+%if EXISTS(_BLKIO_API_) == 0
+%assign _BLKIO_API_ = 1
+%%
+%% Copyright 2018-2023 The MathWorks, Inc.
+%%
+
+%include "blkio_internalapi.tlc"
+
+%include "block_api.tlc"
+
+%% DocFunction{Input Signal Functions}: LibBlockInputSignalNumDimensions
+%% Abstract:
+%%   Returns the number of dimensions of the specified block input port.
+%%
+%function LibBlockInputSignalNumDimensions(aPortIdx) void
+    %% See Also:
+    %%   LibBlockInputSignalDimensions
+    %%
+    %assign portIdx = CAST("Number", aPortIdx)
+    %<LibGetInputPortRecordIsValid(portIdx)>
+    %return CGMODEL_ACCESS("Block.InputSignalNumDimensions", BlockIdx[0], BlockIdx[2], portIdx)
+%endfunction %% LibBlockInputSignalNumDimensions
+
+%% DocFunction{Input Signal Functions}: LibBlockInputSignalWidth ===============
+%% Abstract:
+%%   Returns the width of the specified block input port index.
+%%
+%function LibBlockInputSignalWidth(aPortIdx) void
+    %% See Also:
+    %%   LibBlockOutputSignalWidth
+    %%
+    %assign portIdx = CAST("Number", aPortIdx)
+    %return CGMODEL_ACCESS("Block.InputSignalWidth", BlockIdx[0], BlockIdx[2], portIdx)
+%endfunction %% LibBlockInputSignalWidth
+
+%% DocFunction{Input Signal Functions}: LibBlockInputSignalDimensions ==========
+%% Abstract:
+%%   Returns the dimensions vector of specified block input port, e.g. [2,3]
+%%
+%function LibBlockInputSignalDimensions(aPortIdx) void
+    %% See Also:
+    %%   LibBlockInputSignalNumDimensions
+    %%
+    %assign portIdx = CAST("Number", aPortIdx)
+    %return CGMODEL_ACCESS("Block.InputSignalDimensions", BlockIdx[0], BlockIdx[2], portIdx)
+%endfunction %% LibBlockInputSignalDimensions
+
+%% Function: LibCGTypeNumDimensions ================================================================
+%% Abstract:
+%%   Return number of dimensions
+%%
+%function LibCGTypeNumDimensions(idx) void
+    %return CGMODEL_ACCESS("CGType.GetNumDimensions", idx)
+%endfunction
+
+%% DocFunction{Input Signal Functions}: LibBlockInputSignalIsComplex
+%% Abstract:
+%%   Returns 1 if the specified block input port is complex, 0 otherwise.
+%%
+%function LibBlockInputSignalIsComplex(aPortIdx) void
+    %assign portIdx = CAST("Number", aPortIdx)
+    %<LibGetInputPortRecordIsValid(portIdx)>
+    %return CGMODEL_ACCESS("Block.InputSignalIsComplex", BlockIdx[0], BlockIdx[2], portIdx)
+%endfunction %% LibBlockInputSignalIsComplex
+
+
+%% DocFunction{Input Signal Functions}: LibBlockInputSignalDataTypeId
+%% Abstract:
+%%   Returns the numeric identifier (id) corresponding to the data type of the
+%%   specified block input port.
+%%
+%%   If the input port signal is complex, this function returns the data type
+%%   of the real part (or the imaginary part) of the signal.
+%%
+%function LibBlockInputSignalDataTypeId(aPortIdx) void
+    %assign portIdx = CAST("Number", aPortIdx)
+    %<LibGetInputPortRecordIsValid(portIdx)>
+    %return CGMODEL_ACCESS("Block.InputSignalDataTypeId", BlockIdx[0], BlockIdx[2], portIdx)
+%endfunction %% LibBlockInputSignalDataTypeId
+
+%% DocFunction{Input Signal Functions}: LibBlockInputSignalAllowScalarExpandedExpr
+%% Abstract:
+%%   Always allow the input signal to be an expression, even when any of the
+%%   output signals are wide.  To be called in BlockInstanceSetup function.
+%%
+%function LibBlockInputSignalAllowScalarExpandedExpr(block, aPortIdx) void
+    %assign portIdx = CAST("Number", aPortIdx)
+    %<CGMODEL_ACCESS("Block.SetInputAllowScalarExpandedExpr", ...
+        block.BlockIdx[0], block.BlockIdx[2], portIdx, TLC_TRUE)>
+%endfunction
+
+
+%% DocFunction{Input Signal Functions}: LibBlockInputSignalIsFrameData
+%% Abstract:
+%%   Returns 1 if the specified block input port is frame based, 0 otherwise.
+%%
+%function LibBlockInputSignalIsFrameData(aPortIdx) void
+    %assign portIdx = CAST("Number", aPortIdx)
+    %<LibGetInputPortRecordIsValid(portIdx)>
+    %return CGMODEL_ACCESS("Block.InputSignalIsFrameData", BlockIdx[0], BlockIdx[2], portIdx)
+%endfunction %% LibBlockInputSignalIsFrameData
+
+%% DocFunction{Output Signal Functions}: LibBlockOutputSignalIsFrameData
+%% Abstract:
+%%   Returns 1 if the specified block output port is frame based, 0 otherwise.
+%%
+%function LibBlockOutputSignalIsFrameData(aPortIdx) void
+    %assign portIdx = CAST("Number", aPortIdx)
+    %return CGMODEL_ACCESS("Block.OutputSignalIsFrameData", BlockIdx[0], BlockIdx[2], portIdx)
+%endfunction %% LibBlockOutputSignalIsFrameData
+
+%% DocFunction{Input Signal Functions}: LibBlockInputSignalIsExpr
+%% Abstract:
+%%   Returns 1 (true) if the input signal is an expression (versus a variable),
+%%   and 0 (false) otherwise.
+%%
+%function LibBlockInputSignalIsExpr(aPortIdx) void
+    %if ::CompiledModel.GeneratingOutputsCode
+        %assign portIdx = CAST("Number", aPortIdx)
+        %return CGMODEL_ACCESS("Block.InputSignalIsExpr", BlockIdx[0], BlockIdx[2], portIdx)
+    %else
+        %return TLC_FALSE
+    %endif
+%endfunction
+
+%% DocFunction{Input Signal Functions}: LibBlockInputSignalIsTrivialExpr
+%% Abstract:
+%%   Returns 1 (true) if the input signal is a trivial expression (versus a
+%%   variable), and 0 (false) otherwise.
+%%
+%function LibBlockInputSignalIsTrivialExpr(aPortIdx) void
+    %if ::CompiledModel.GeneratingOutputsCode
+        %assign portIdx = CAST("Number", aPortIdx)
+        %return CGMODEL_ACCESS("Block.InputSignalIsTrivialExpr", BlockIdx[0], BlockIdx[2], portIdx)
+    %else
+        %return TLC_FALSE
+    %endif
+%endfunction
+
+%% DocFunction{Output Signal Functions}: LibBlockOutputSignalIsTrivialExpr
+%% Abstract:
+%%   Returns 1 (true) if the output signal is a trivial expression, and 0
+%%   (false) otherwise.
+%%
+%function LibBlockOutputSignalIsTrivialExpr(aPortIdx) void
+    %if ::CompiledModel.GeneratingOutputsCode
+        %assign portIdx = CAST("Number", aPortIdx)
+        %return CGMODEL_ACCESS("Block.OutputSignalIsTrivialExpr", BlockIdx[0], BlockIdx[2], portIdx)
+    %else
+        %return 0
+    %endif
+%endfunction
+
+%% DocFunction{Output Signal Functions}: LibBlockOutputSignalIsConstExpr
+%% Abstract:
+%%   Returns 1 (true) if the output signal is a const expression, and 0
+%%   (false) otherwise.  Note that const expressions are always const,
+%%   whether called in a block Outputs function or not.
+%%
+%function LibBlockOutputSignalIsConstExpr(aPortIdx) void
+    %assign portIdx = CAST("Number", aPortIdx)
+    %return CGMODEL_ACCESS("Block.OutputSignalIsConstExpr", BlockIdx[0], BlockIdx[2], portIdx)
+%endfunction
+
+%% DocFunction{Output Signal Functions}: LibBlockOutputSignalIsNonConstExpr
+%% Abstract:
+%%   Returns 1 (true) if the output signal is an expression, and 0 (false)
+%%   otherwise.
+%%
+%function LibBlockOutputSignalIsNonConstExpr(aPortIdx) void
+    %if ::CompiledModel.GeneratingOutputsCode
+        %assign portIdx = CAST("Number", aPortIdx)
+        %return LibBlockOutputSignalIsExprInOutputs(portIdx) && ...
+            ! LibBlockOutputSignalIsConstExpr(portIdx)
+    %else
+        %return 0
+    %endif
+%endfunction
+
+%% DocFunction{Output Signal Functions}: LibBlockOutputSignalIsExpr
+%% Abstract:
+%%   Returns 1 (true) if the output signal is an expression, and 0 (false)
+%%   otherwise.
+%%
+%function LibBlockOutputSignalIsExpr(aPortIdx) void
+    %if ::CompiledModel.GeneratingOutputsCode
+        %if LibBlockNumOutputPorts(SLibGetCurrentBlock()) < 1
+            %assign warningString = "LibBlockOutputSignalIsExpr should only be called on a block with 1 or more output ports"
+            %<LibReportWarning(warningString)>
+            %return 0
+        %else
+            %assign portIdx = CAST("Number", aPortIdx)
+            %return LibBlockOutputSignalIsExprInOutputs(portIdx)
+        %endif
+    %else
+        %return 0
+    %endif
+%endfunction
+
+%% DocFunction{Output Signal Functions}: LibBlockOutputSignalIsExprInOutputs
+%% Abstract:
+%%   Returns 1 (true) if the output signal is an expression in the outputs
+%%   function, and 0 (false) otherwise.  This function is used as a low level
+%%   utility to get access to what the value will be when generating the
+%%   block's outputs code.  Should be used in BlockInstanceSetup function.
+%%
+%function LibBlockOutputSignalIsExprInOutputs(aPortIdx) void
+    %assign portIdx = CAST("Number", aPortIdx)
+    %return CGMODEL_ACCESS("Block.OutputSignalIsExpr", BlockIdx[0], BlockIdx[2], portIdx)
+%endfunction
+
+%% DocFunction{Input Signal Functions}: LibBlockInputSignalConnected ===========
+%% Abstract:
+%%   Returns 1 if the specified input port is connected to a block other than
+%%   the Ground block and 0 otherwise.
+%%
+%%
+%function LibBlockInputSignalConnected(aPortIdx) void
+    %assign portIdx = CAST("Number", aPortIdx)
+    %return CGMODEL_ACCESS("Block.InputSignalConnected", BlockIdx[0], BlockIdx[2], portIdx)
+%endfunction
+
+%% DocFunction{Output Signal Functions}: LibBlockOutputSignalConnected =========
+%% Abstract:
+%%   Returns 1 if the specified output port is connected to a block other than
+%%   the Terminator block and 0 otherwise.
+%%
+%function LibBlockOutputSignalConnected(aPortIdx) void
+    %assign portIdx = CAST("Number", aPortIdx)
+    %return CGMODEL_ACCESS("Block.OutputSignalConnected", BlockIdx[0], BlockIdx[2], portIdx)
+%endfunction %% LibBlockOutputSignalConnected
+
+%% DocFunction{Output Signal Functions}: LibBlockOutputHasSymbolicWidth ========
+%% Abstract:
+%%   Returns true if the specified block input port index has symbolic
+%%   dimensions.
+%%
+%function LibBlockOutputHasSymbolicWidth(aPortIdx) void
+    %assign portIdx = CAST("Number", aPortIdx)
+    %return CGMODEL_ACCESS("Block.OutputHasSymbolicWidth", BlockIdx[0], BlockIdx[2], portIdx)
+%endfunction %% LibBlockOutputHasSymbolicWidth
+
+%% DocFunction{Input Signal Functions}: LibBlockInputHasSymbolicWidth ==========
+%% Abstract:
+%%   Returns true if the specified block input port index has symbolic
+%%   dimensions.
+%%
+%function LibBlockInputHasSymbolicWidth(aPortIdx) void
+    %assign portIdx = CAST("Number", aPortIdx)
+    %return CGMODEL_ACCESS("Block.InputHasSymbolicWidth", BlockIdx[0], BlockIdx[2], portIdx)
+%endfunction %% LibBlockInputHasSymbolicWidth
+
+%% DocFunction{Input Signal Functions}: LibBlockInputPortIsContinuousQuantity ========
+%% Abstract:
+%%   Returns whether the input port accepts a co-sim signal.
+%%
+%function LibBlockInputPortIsContinuousQuantity(aPortIdx) void
+    %assign portIdx = CAST("Number", aPortIdx)
+    %return CGMODEL_ACCESS("Block.InputPortIsContinuousQuantity", BlockIdx[0], BlockIdx[2], portIdx)
+%endfunction %%LibBlockInputPortIsContinuousQuantity
+
+%% DocFunction{Output Signal Functions}: LibBlockOutputPortIsContinuousQuantity ========
+%% Abstract:
+%%   Returns whether the output port represents a co-sim signal.
+%%
+%function LibBlockOutputPortIsContinuousQuantity(aPortIdx) void
+    %assign portIdx = CAST("Number", aPortIdx)
+    %return CGMODEL_ACCESS("Block.OutputPortIsContinuousQuantity", BlockIdx[0], BlockIdx[2], portIdx)
+%endfunction %%LibBlockOutputPortIsContinuousQuantity
+
+%% DocFunction{Output Signal Functions}: LibBlockOutputSignalBeingMerged========
+%% Abstract:
+%%   Returns whether the specified output port is connected to a merge
+%%   block, returns 1 if connected , 0 if not & error in any other case
+%%
+%function LibBlockOutputSignalBeingMerged(aPortIdx) void
+    %% See Also:
+    %%      LibBlockInputSignalConnected, LibBlockOutputSignalConnected
+    %%
+    %assign portIdx = CAST("Number", aPortIdx)
+    %return CGMODEL_ACCESS("Block.OutputSignalBeingMerged", BlockIdx[0], BlockIdx[2], portIdx)
+%endfunction %% LibBlockOutputSignalBeingMerged
+
+%% DocFunction{Output Signal Functions}: LibBlockOutputSignalIsComplex
+%% Abstract:
+%%   Returns 1 if the specified block output port is complex, 0 otherwise.
+%%
+%function LibBlockOutputSignalIsComplex(aPortIdx) void
+    %assign portIdx = CAST("Number", aPortIdx)
+    %<LibGetInputPortRecordIsValid(portIdx)>
+    %return CGMODEL_ACCESS("Block.OutputSignalIsComplex", BlockIdx[0], BlockIdx[2], portIdx)
+%endfunction %% LibBlockOutputSignalIsComplex
+
+%% DocFunction{Input Signal Functions}: LibBlockInputSignalUnitId ==========
+%% Abstract:
+%%   Returns the numeric identifier (id) corresponding to the units of the
+%%   specified block input port.
+%%
+%function LibBlockInputSignalUnitId(aPortIdx) void
+    %% See Also:
+    %%   LibBlockInputSignalUnitExpr
+    %%   LibBlockOutputSignalUnitId
+    %%   LibBlockParameterUnitId
+    %%
+    %assign portIdx = CAST("Number", aPortIdx)
+    %return CGMODEL_ACCESS("Block.InputSignalUnitId", BlockIdx[0], BlockIdx[2], portIdx)
+%endfunction %% LibBlockInputSignalUnitId
+
+%% DocFunction{Input Signal Functions}: LibBlockInputSignalUnitExpr ========
+%% Abstract:
+%%   Returns the name of the units corresponding
+%%   to the specified block input port.
+%%
+%function LibBlockInputSignalUnitExpr(aPortIdx) void
+    %% See Also:
+    %%      LibBlockOutputSignalUnitExpr, LibBlockParameterUnitExpr
+    %%
+    %assign portIdx = CAST("Number", aPortIdx)
+    %return CGMODEL_ACCESS("Block.InputSignalUnitExpr", BlockIdx[0], BlockIdx[2], portIdx)
+%endfunction %% LibBlockInputSignalUnitExpr
+
+%% DocFunction{Input Signal Functions}: LibBlockInputSignalASCIIEscapedUnitExpr ========
+%% Abstract:
+%%   Returns the escaped name of the units corresponding
+%%   to the specified block input port.
+%%
+%function LibBlockInputSignalASCIIEscapedUnitExpr(aPortIdx) void
+    %% See Also:
+    %%      LibBlockInputSignalUnitExpr
+    %%
+    %assign portIdx = CAST("Number", aPortIdx)
+    %return CGMODEL_ACCESS("Block.InputSignalASCIIEscapedUnitExpr", BlockIdx[0], BlockIdx[2], portIdx)
+%endfunction %% LibBlockInputSignalASCIIEscapedUnitExpr
+
+%% DocFunction{Output Signal Functions}: LibBlockOutputSignalUnitId ========
+%% Abstract:
+%%   Returns the numeric ID corresponding to the units of the specified
+%%   block output port.
+%%
+%function LibBlockOutputSignalUnitId(aPortIdx) void
+    %% See Also:
+    %%   LibBlockOutputSignalUnitExpr, LibBlockInputSignalUnitId,
+    %%   LibBlockParameterUnitId
+    %%
+    %assign portIdx = CAST("Number", aPortIdx)
+    %return CGMODEL_ACCESS("Block.OutputSignalUnitId", BlockIdx[0], BlockIdx[2], portIdx)
+%endfunction %% LibBlockOutputSignalUnitId
+
+%% DocFunction{Output Signal Functions}: LibBlockOutputSignalUnitExpr ======
+%% Abstract:
+%%   Returns the type name string of the units
+%%   corresponding to the specified block output port.
+%%
+%function LibBlockOutputSignalUnitExpr(aPortIdx) void
+    %% See Also:
+    %%   LibBlockOutputSignalUnitId, LibBlockInputSignalUnitExpr,
+    %%   LibBlockParameterUnitExpr
+    %%
+    %assign portIdx = CAST("Number", aPortIdx)
+    %return CGMODEL_ACCESS("Block.OutputSignalUnitExpr", BlockIdx[0], BlockIdx[2], portIdx)
+%endfunction %% LibBlockOutputSignalUnitExpr
+
+%% DocFunction{Output Signal Functions}: LibBlockOutputSignalWidth =============
+%% Abstract:
+%%   Returns the width of specified block output port.
+%%
+%function LibBlockOutputSignalWidth(aPortIdx) void
+    %% See Also:
+    %%   LibBlockInputSignalWidth,
+    %%   LibBlockOutputSignalNumDimensions, LibBlockOutputSignalDimensions
+    %%
+    %assign portIdx = CAST("Number", aPortIdx)
+    %return CGMODEL_ACCESS("Block.OutputSignalWidth", BlockIdx[0], BlockIdx[2], portIdx)
+%endfunction %% LibBlockOutputSignalWidth
+
+%% DocFunction{Input Signal Functions}: LibBlockOutputSignalNumDimensions
+%% Abstract:
+%%   Returns the number of dimensions of the specified block output port.
+%%
+%function LibBlockOutputSignalNumDimensions(aPortIdx) void
+    %% See Also:
+    %%   LibBlockOutputSignalDimensions
+    %%
+    %assign portIdx = CAST("Number", aPortIdx)
+    %<LibGetOutputPortRecordIsValid(portIdx)>
+    %return CGMODEL_ACCESS("Block.OutputSignalNumDimensions", BlockIdx[0], BlockIdx[2], portIdx)
+%endfunction %% LibBlockOutputSignalNumDimensions
+
+%% DocFunction{Output Signal Functions}: LibBlockOutputSignalDimensions ========
+%% Abstract:
+%%   Returns the dimensions of specified block output port.
+%%
+%function LibBlockOutputSignalDimensions(aPortIdx) void
+    %% See Also:
+    %%   LibBlockInputSignalDimensions
+    %%
+    %assign portIdx = CAST("Number", aPortIdx)
+    %return CGMODEL_ACCESS("Block.OutputSignalDimensions", BlockIdx[0], BlockIdx[2], portIdx)
+%endfunction %% LibBlockOutputSignalDimensions
+
+%function LibGetIsInputPortVarDims(aPortIdx)
+    %assign portIdx = CAST("Number", aPortIdx)
+    %return CGMODEL_ACCESS("Block.InputPortIsVarDims", BlockIdx[0], BlockIdx[2], portIdx)
+%endfunction
+
+%function LibGetIsOutputPortVarDims(aPortIdx)
+    %assign portIdx = CAST("Number", aPortIdx)
+    %return CGMODEL_ACCESS("Block.OutputPortIsVarDims", BlockIdx[0], BlockIdx[2], portIdx)
+%endfunction
+
+%function FcnBlockHasVarDimsInput()
+    %return CGMODEL_ACCESS("Block.HasVarDimsInput", BlockIdx[0], BlockIdx[2])
+%endfunction
+
+%function FcnBlockHasVarDimsOutput()
+    %return CGMODEL_ACCESS("Block.HasVarDimsOutput", BlockIdx[0], BlockIdx[2])
+%endfunction
+
+%function FcnBlockNumVarDimsInput()
+    %return CGMODEL_ACCESS("Block.NumVarDimsInput", BlockIdx[0], BlockIdx[2])
+%endfunction
+
+%function FcnBlockNumVarDimsOutput()
+    %return CGMODEL_ACCESS("Block.NumVarDimsOutput", BlockIdx[0], BlockIdx[2])
+%endfunction
+
+%% DocFunction{Input Signal Functions}: LibBlockInputSignalSampleTime ======
+%% Abstract:
+%%   Returns the sample time corresponding to the specified block input port
+%%
+%function LibBlockInputSignalSampleTime(aPortIdx) void
+    %% See Also:
+    %%   LibBlockOutputSignalSampleTime
+    %%
+    %assign portIdx = CAST("Number", aPortIdx)
+    %return CGMODEL_ACCESS("Block.InputSignalSampleTime", BlockIdx[0], BlockIdx[2], portIdx)
+%endfunction %% LibBlockInputSignalSampleTime
+
+%% DocFunction{Output Signal Functions}: LibBlockOutputSignalSampleTime ======
+%% Abstract:
+%%   Returns the sample time corresponding to the specified block output port
+%%
+%function LibBlockOutputSignalSampleTime(aPortIdx) void
+    %% See Also:
+    %%   LibBlockInputSignalSampleTime
+    %%
+    %assign portIdx = CAST("Number", aPortIdx)
+    %return CGMODEL_ACCESS("Block.OutputSignalSampleTime", BlockIdx[0], BlockIdx[2], portIdx)
+%endfunction %% LibBlockOutputSignalSampleTime
+
+%% DocFunction{Input Signal Functions}: LibBlockInputSignalOffsetTime ======
+%% Abstract:
+%%   Returns the offset time corresponding to the specified block input port
+%%
+%function LibBlockInputSignalOffsetTime(aPortIdx) void
+    %% See Also:
+    %%   LibBlockOutputSignalOffsetTime
+    %%
+    %assign portIdx = CAST("Number", aPortIdx)
+    %return CGMODEL_ACCESS("Block.InputSignalOffsetTime", BlockIdx[0], BlockIdx[2], portIdx)
+%endfunction %% LibBlockInputSignalOffsetTime
+
+%% DocFunction{Output Signal Functions}: LibBlockOutputSignalOffsetTime ======
+%% Abstract:
+%%   Returns the offset time corresponding to the specified block output port
+%%
+%function LibBlockOutputSignalOffsetTime(aPortIdx) void
+    %% See Also:
+    %%   LibBlockInputSignalOffsetTime
+    %%
+    %assign portIdx = CAST("Number", aPortIdx)
+    %return CGMODEL_ACCESS("Block.OutputSignalOffsetTime", BlockIdx[0], BlockIdx[2], portIdx)
+%endfunction %% LibBlockOutputSignalOffsetTime
+
+%% DocFunction{Input Signal Functions}: LibBlockInputSignalSampleTimeIndex =====
+%% Abstract:
+%%   Returns the sample time index corresponding to the specified block input
+%%   port.
+%%
+%function LibBlockInputSignalSampleTimeIndex(aPortIdx) void
+    %% See Also:
+    %%      LibBlockOutputSignalSampleTimeIndex, LibBlockInputSignalSampleTime,
+    %%      LibBlockInputSignalOffsetTime
+    %%
+    %assign portIdx = CAST("Number", aPortIdx)
+    %return CGMODEL_ACCESS("Block.InputPortTID", BlockIdx[0], BlockIdx[2], portIdx)
+%endfunction %% LibBlockInputSignalSampleTimeIndex
+
+%% DocFunction{Output Signal Functions}: LibBlockOutputSignalSampleTimeIndex ===
+%% Abstract:
+%%   Returns the sample time index corresponding to the specified block output
+%%   port.
+%%
+%function LibBlockOutputSignalSampleTimeIndex(aPortIdx) void
+    %% See Also:
+    %%      LibBlockOutputSignalSampleTimeIndex, LibBlockOutputSignalSampleTime,
+    %%      LibBlockInputSignalOffsetTime
+    %%
+    %assign portIdx = CAST("Number", aPortIdx)
+    %return CGMODEL_ACCESS("Block.OutputPortTID", BlockIdx[0], BlockIdx[2], portIdx)
+%endfunction %% LibBlockOutputSignalSampleTimeIndex
+
+%% DocFunction{Input Signal Functions}: LibBlockInputSignalLocalSampleTimeIndex
+%% Abstract:
+%%   Returns the local sample time index corresponding to the specified block
+%%   input port.
+%%
+%function LibBlockInputSignalLocalSampleTimeIndex(aPortIdx) void
+    %% See Also:
+    %%      LibBlockOutputSignalSampleTimeIndex, LibBlockInputSignalSampleTime,
+    %%      LibBlockInputSignalOffsetTime,
+    %%      LibBlockOutputSignalLocalSampleTimeIndex
+    %%
+    %assign portIdx = CAST("Number", aPortIdx)
+    %return CGMODEL_ACCESS("Block.InputPortLocalTID", BlockIdx[0], BlockIdx[2], portIdx)
+%endfunction %% LibBlockInputSignalLocalSampleTimeIndex
+
+%% DocFunction{Output Signal Functions}: LibBlockOutputSignalLocalSampleTimeIndex
+%% Abstract:
+%%   Returns the local sample time index corresponding to the specified block
+%%   output port.
+%%
+%function LibBlockOutputSignalLocalSampleTimeIndex(aPortIdx) void
+    %% See Also:
+    %%      LibBlockOutputSignalSampleTimeIndex, LibBlockOutputSignalSampleTime,
+    %%      LibBlockOutputSignalOffsetTime,
+    %%      LibBlockOutputSignalLocalSampleTimeIndex
+    %%
+    %assign portIdx = CAST("Number", aPortIdx)
+    %return CGMODEL_ACCESS("Block.OutputPortLocalTID", BlockIdx[0], BlockIdx[2], portIdx)
+%endfunction %% LibBlockOutputSignalLocalSampleTimeIndex
+
+%% DocFunction{Input Signal Functions}: LibBlockInputSignalSampleTimeIndexExists ==========
+%% Abstract:
+%%   Returns if the sample time index of input signal exists for a specified block
+%%
+%function LibBlockInputSignalSampleTimeIndexExists(block) void
+    %% See Also:
+    %%      LibBlockOutputSignalSampleTimeIndexExists,
+    %%      LibBlockInputSignalLocalSampleTimeIndexExists,
+    %%      LibBlockOutputSignalLocalSampleTimeIndexExists
+    %%
+    %return CGMODEL_ACCESS("Block.InputPortTIDExists", block.BlockIdx[0], block.BlockIdx[2])
+%endfunction %% LibBlockInputSignalSampleTimeIndexExists
+
+%% DocFunction{Output Signal Functions}: LibBlockOutputSignalSampleTimeIndexExists ==========
+%% Abstract:
+%%   Returns if the sample time index of output signal exists for a specified block
+%%
+%function LibBlockOutputSignalSampleTimeIndexExists(block) void
+    %% See Also:
+    %%      LibBlockInputSignalSampleTimeIndexExists,
+    %%      LibBlockInputSignalLocalSampleTimeIndexExists,
+    %%      LibBlockOutputSignalLocalSampleTimeIndexExists
+    %%
+    %return CGMODEL_ACCESS("Block.OutputPortTIDExists", block.BlockIdx[0], block.BlockIdx[2])
+%endfunction %% LibBlockOutputSignalSampleTimeIndexExists
+
+%% DocFunction{Input Signal Functions}: LibBlockInputSignalLocalSampleTimeIndexExists ==========
+%% Abstract:
+%%   Returns if the local sample time index of input signal exists for a specified block
+%%
+%function LibBlockInputSignalLocalSampleTimeIndexExists(block) void
+    %% See Also:
+    %%      LibBlockInputSignalSampleTimeIndexExists,
+    %%      LibBlockOutputSignalSampleTimeIndexExists,
+    %%      LibBlockOutputSignalLocalSampleTimeIndexExists
+    %%
+    %return CGMODEL_ACCESS("Block.InputPortLocalTIDExists", block.BlockIdx[0], block.BlockIdx[2])
+%endfunction %% LibBlockInputSignalLocalSampleTimeIndexExists
+
+%% DocFunction{Output Signal Functions}: LibBlockOutputSignalLocalSampleTimeIndexExists ==========
+%% Abstract:
+%%   Returns if the local sample time index of output signal exists for a specified block
+%%
+%function LibBlockOutputSignalLocalSampleTimeIndexExists(block) void
+    %% See Also:
+    %%      LibBlockInputSignalSampleTimeIndexExists,
+    %%      LibBlockOutputSignalSampleTimeIndexExists,
+    %%      LibBlockInputSignalLocalSampleTimeIndexExists
+    %%
+    %return CGMODEL_ACCESS("Block.OutputPortLocalTIDExists", block.BlockIdx[0], block.BlockIdx[2])
+%endfunction %% LibBlockOutputSignalLocalSampleTimeIndexExists
+
+%% DocFunction{Input Signal Functions}: LibBlockNumInputPortSampleTimes ==========
+%% Abstract:
+%%   Returns the size of the input sample times vector
+%%
+%function LibBlockNumInputPortSampleTimes(block) void
+    %% See Also:
+    %%      LibBlockNumOutputPortSampleTimes,
+    %%      LibBlockNumInputPortOffsetTimes,
+    %%      LibBlockNumOutputPortOffsetTimes
+    %%
+    %return CGMODEL_ACCESS("Block.NumInputPortSampleTimes", block.BlockIdx[0], block.BlockIdx[2])
+%endfunction %% LibBlockNumInputPortSampleTimes
+
+%% DocFunction{Output Signal Functions}: LibBlockNumOutputPortSampleTimes ==========
+%% Abstract:
+%%   Returns the size of the output sample times vector
+%%
+%function LibBlockNumOutputPortSampleTimes(block) void
+    %% See Also:
+    %%      LibBlockNumInputPortSampleTimes,
+    %%      LibBlockNumInputPortOffsetTimes,
+    %%      LibBlockNumOutputPortOffsetTimes
+    %%
+    %return CGMODEL_ACCESS("Block.NumOutputPortSampleTimes", block.BlockIdx[0], block.BlockIdx[2])
+%endfunction %% LibBlockNumOutputPortSampleTimes
+
+%% DocFunction{Input Signal Functions}: LibBlockNumInputPortOffsetTimes ==========
+%% Abstract:
+%%   Returns the size of the input offset times vector
+%%
+%function LibBlockNumInputPortOffsetTimes(block) void
+    %% See Also:
+    %%      LibBlockNumInputPortSampleTimes,
+    %%      LibBlockNumOutputPortSampleTimes,
+    %%      LibBlockNumOutputPortOffsetTimes
+    %%
+    %return CGMODEL_ACCESS("Block.NumInputPortOffsetTimes", block.BlockIdx[0], block.BlockIdx[2])
+%endfunction %% LibBlockNumInputPortOffsetTimes
+
+%% DocFunction{Output Signal Functions}: LibBlockNumOutputPortOffsetTimes ==========
+%% Abstract:
+%%   Returns the size of the output offset times vector
+%%
+%function LibBlockNumOutputPortOffsetTimes(block) void
+    %% See Also:
+    %%      LibBlockNumInputPortSampleTimes,
+    %%      LibBlockNumOutputPortSampleTimes,
+    %%      LibBlockNumInputPortOffsetTimes
+    %%
+    %return CGMODEL_ACCESS("Block.NumOutputPortOffsetTimes", block.BlockIdx[0], block.BlockIdx[2])
+%endfunction %% LibBlockNumOutputPortOffsetTimes
+
+%% DocFunction{Input Signal Functions}: LibBlockNumInputPortTIDs ==========
+%% Abstract:
+%%   Returns the size of the input time indices vector
+%%
+%function LibBlockNumInputPortTIDs(block) void
+    %% See Also:
+    %%      LibBlockNumOutputPortTIDs,
+    %%      LibBlockNumInputPortLocalTIDs,
+    %%      LibBlockNumOutputPortLocalTIDs
+    %%
+    %return CGMODEL_ACCESS("Block.NumInputPortTIDs", block.BlockIdx[0], block.BlockIdx[2])
+%endfunction %% LibBlockNumInputPortTIDs
+
+%% DocFunction{Output Signal Functions}: LibBlockNumOutputPortTIDs ==========
+%% Abstract:
+%%   Returns the size of the output time indices vector
+%%
+%function LibBlockNumOutputPortTIDs(block) void
+    %% See Also:
+    %%      LibBlockNumInputPortTIDs,
+    %%      LibBlockNumInputPortLocalTIDs,
+    %%      LibBlockNumOutputPortLocalTIDs
+    %%
+    %return CGMODEL_ACCESS("Block.NumOutputPortTIDs", block.BlockIdx[0], block.BlockIdx[2])
+%endfunction %% LibBlockNumOutputPortTIDs
+
+%% DocFunction{Input Signal Functions}: LibBlockNumInputPortLocalTIDs ==========
+%% Abstract:
+%%   Returns the size of the input local time indices vector
+%%
+%function LibBlockNumInputPortLocalTIDs(block) void
+    %% See Also:
+    %%      LibBlockNumOutputPortTIDs,
+    %%      LibBlockNumInputPortTIDs,
+    %%      LibBlockNumOutputPortLocalTIDs
+    %%
+    %return CGMODEL_ACCESS("Block.NumInputPortLocalTIDs", block.BlockIdx[0], block.BlockIdx[2])
+%endfunction %% LibBlockNumInputPortLocalTIDs
+
+%% DocFunction{Output Signal Functions}: LibBlockNumOutputPortLocalTIDs ==========
+%% Abstract:
+%%   Returns the size of the output local time indices vector
+%%
+%function LibBlockNumOutputPortLocalTIDs(block) void
+    %% See Also:
+    %%      LibBlockNumInputPortTIDs,
+    %%      LibBlockNumOutputPortTIDs,
+    %%      LibBlockNumInputPortLocalTIDs
+    %%
+    %return CGMODEL_ACCESS("Block.NumOutputPortLocalTIDs", block.BlockIdx[0], block.BlockIdx[2])
+%endfunction %% LibBlockNumOutputPortLocalTIDs
+
+
+%% DocFunction{Output Signal Functions}: LibBlockOutputSignalDataTypeId ========
+%% Abstract:
+%%   Returns the numeric ID corresponding to the data type of the specified
+%%   block output port.
+%%
+%%   If the output port signal is complex, this function returns the data type
+%%   of the real (or the imaginary) part of the signal.
+%%
+%function LibBlockOutputSignalDataTypeId(aPortIdx) void
+    %% See Also:
+    %%   LibBlockOutputSignalDataTypeName, LibBlockInputSignalDataTypeId,
+    %%   LibBlockParameterDataTypeId
+    %%
+    %assign portIdx = CAST("Number", aPortIdx)
+    %return CGMODEL_ACCESS("Block.OutputSignalDataTypeId", BlockIdx[0], BlockIdx[2], portIdx)
+%endfunction %% LibBlockOutputSignalDataTypeId
+
+%% DocFunction{Output Signal Functions}: LibBlockOutputSignalDataTypeIsCoderArray
+%% Abstract:
+%%   Return true if a block output signal data type is coder::array
+%%   Return false if a block output signal data type is bus with unbounded-field
+%%   or other types;
+%function LibBlockOutputSignalDataTypeIsCoderArray(aPortIdx) void
+    %return CGMODEL_ACCESS("Block.OutputSignalDataTypeIsCoderArray", BlockIdx[0], BlockIdx[2], aPortIdx)
+%endfunction
+
+%% DocFunction{Output Signal Functions}: LibBlockSomeOutputSignalIsExpr =======
+%% Abstract:
+%%   Returns 1 (true) if some output signal is an expressions, and 0 (false)
+%%   otherwise.
+%%
+%function LibBlockSomeOutputSignalIsExpr() void
+    %foreach opIdx = LibBlockNumOutputPorts(SLibGetCurrentBlock())
+        %if LibBlockOutputSignalIsExpr(opIdx)
+            %return 1
+        %endif
+    %endforeach
+    %return 0
+%endfunction
+
+%% Function: LibBlockAllOutputSignalsAreExpr =======================================================
+%% Abstract:
+%%   Returns 1 (true) if all output signals are expressions, and 0 (false)
+%%   otherwise.
+%%
+%function LibBlockAllOutputSignalsAreExpr() void
+    %if Type == "Opaque"
+        %return 0
+    %endif
+
+    %assign numOutputs = LibBlockNumOutputPorts(SLibGetCurrentBlock())
+    %if numOutputs == 0
+        %return 0
+    %endif
+
+    %foreach opIdx = numOutputs
+        %if !LibBlockOutputSignalIsExpr(opIdx)
+            %return 0
+        %endif
+    %endforeach
+
+    %return 1
+%endfunction
+
+%% DocFunction{Sample Time Functions}: LibPortBasedSampleTimeBlockIsTriggered ==
+%% Abstract:
+%%  Determines if the port-based S-function block is triggered
+%%
+%function LibPortBasedSampleTimeBlockIsTriggered(block) void
+    %assign tid = block.TID
+    %if LibTriggeredTID(tid)
+        %return 1
+    %else
+        %return 0
+    %endif
+%endfunction %% LibSetVarNextHitTim
+
+%% DocFunction{Input Signal Functions}: LibBlockInputSignalAliasedThruDataTypeName ====
+%% Abstract:
+%%   Returns the name of the aliased thru data type (e.g., int_T, ... creal_T)
+%%   corresponding to the specified block input port.
+%%
+%%   Specify the reim argument as "" if you want the complete signal type name.
+%%   For example, if reim=="" and the first output port is real and complex,
+%%   the data type name placed in dtname will be creal_T.
+%%
+%%       %assign dtname = LibBlockInputSignalDataTypeName(0,"")
+%%
+%%   Specify the reim argument as tRealPart if you want the raw element type
+%%   name. For example, if reim==tRealPart and the first output port is real
+%%   and complex, the data type name returned will be real_T.
+%%
+%%       %assign dtname = LibBlockOutputSignalDataTypeName(0,tRealPart)
+%%
+%function LibBlockInputSignalAliasedThruDataTypeName(portIdx, reim) void
+    %% See Also:
+    %%      LibBlockOutputSignalAliasedThruDataTypeName
+    %%
+    %return CGMODEL_ACCESS("Block.InputSignalAliasedThruDataTypeName", BlockIdx[0], BlockIdx[2], portIdx, reim)
+%endfunction %% LibBlockInputSignalAliasedThruDataTypeName
+
+
+%% DocFunction{Output Signal Functions}: LibBlockOutputSignalAliasedThruDataTypeName ======
+%% Abstract:
+%%   Returns the type name string (e.g. int_T, ... creal_T) of the aliased
+%%   data type corresponding to the specified block output port.
+%%
+%%   Specify the reim argument as "" if you want the complete signal type name.
+%%   For example if reim=="" and the first output port is real and complex,
+%%   the data type  name placed in dtname will be creal_T:
+%%      %assign dtname = LibBlockOutputSignalDataTypeName(0x,"")
+%%
+%%   Specify the reim argument as tRealPart if you want the raw element type
+%%   name. For example if reim==tRealPart and the first output port is real
+%%   and complex, the data type name returned will be real_T.
+%%      %assign dtname = LibBlockOutputSignalDataTypeName(0,tRealPart)
+%%
+%function LibBlockOutputSignalAliasedThruDataTypeName(portIdx, reim) void
+    %% See Also:
+    %%   LibBlockInputSignalAliasedThruDataTypeName
+    %%
+    %return CGMODEL_ACCESS("Block.OutputSignalAliasedThruDataTypeName", BlockIdx[0], BlockIdx[2], portIdx, reim)
+%endfunction %% LibBlockOutputSignalAliasedThruDataTypeName
+
+%% DocFunction{Advanced Functions}: LibBlockSrcSignalBlock =====================
+%% Abstract:
+%%   Returns a reference to the block that is source of the specified block
+%%   input port element. The return argument one of the following:
+%%
+%%      [systemIdx, blockIdx] if unique block output or block state
+%%      "ExternalInput"       if external input (root inport)
+%%      "Ground"              if unconnected or connected to ground
+%%      "FcnCall"             if function-call output
+%%      0                     if not unique (i.e. sources to a Merge block
+%%                            or is a reused signal due to block I/O
+%%                            optimization)
+%%   Example:
+%%     If you want to find the block that drives the second input on
+%%     the first port of the current block.  Then, assign
+%%     the input signal of this source block to the variable y.  The
+%%     following code fragment does exactly this:
+%%
+%%     %assign srcBlock = LibBlockSrcSignalBlock(0, 1)
+%%     %% Make sure that the source is a block
+%%     %if TYPE(srcBlock) == "Vector"
+%%       %assign sys = srcBlock[0]
+%%       %assign blk = srcBlock[1]
+%%       %assign block = ::CompiledModel.System[sys].Block[blk]
+%%       %with block
+%%         %assign u = LibBlockInputSignal(0, "", "", 0)
+%%         y = %<u>;
+%%       %endwith
+%%     %endif
+%%
+%function LibBlockSrcSignalBlock(portIdx, sigIdx) void
+    %return CGMODEL_ACCESS("Block.SrcSignalBlock", BlockIdx[0], BlockIdx[2], portIdx, sigIdx)
+    %% Notice that the a input signal can't have "FcnCall" as a source
+%endfunction %% LibBlockSrcSignalBlock
+
+%% DocFunction{Input Signal Functions}: LibBlockInputSignalDataTypeName ========
+%% Abstract:
+%%   Returns the name of the data type (e.g., int_T, ... creal_T) corresponding
+%%   to the specified block input port.
+%%
+%%   Specify the reim argument as "" if you want the complete signal type name.
+%%   For example, if reim=="" and the first output port is real and complex,
+%%   the data type name placed in dtname will be creal_T.
+%%
+%%       %assign dtname = LibBlockInputSignalDataTypeName(0,"")
+%%
+%%   Specify the reim argument as tRealPart if you want the raw element type
+%%   name. For example, if reim==tRealPart and the first output port is real
+%%   and complex, the data type name returned will be real_T.
+%%
+%%       %assign dtname = LibBlockOutputSignalDataTypeName(0,tRealPart)
+%%
+%function LibBlockInputSignalDataTypeName(portIdx, reim) void
+    %% See Also:
+    %%      LibBlockOutputSignalDataTypeName, LibBlockParameterDataTypeName
+    %%
+    %return CGMODEL_ACCESS("Block.InputSignalDataTypeName", BlockIdx[0], BlockIdx[2], portIdx, reim)
+%endfunction %% LibBlockInputSignalDataTypeName
+
+%% DocFunction{Input Signal Functions}: LibBlockInputSignalDataTypeIsCoderArray ====
+%% Abstract:
+%%   Checks if the data type of input signal is coder::array. Returns true if
+%%   the type is coder::array, and false if it is a bus type containing var-sized
+%%   elements.
+%%
+%%
+%function LibBlockInputSignalDataTypeIsCoderArray(portIdx) void
+    %return CGMODEL_ACCESS("Block.InputSignalDataTypeIsCoderArray", BlockIdx[0], BlockIdx[2], portIdx)
+%endfunction
+
+%% DocFunction{Output Signal Functions}: LibBlockOutputSignalDataTypeName ======
+%% Abstract:
+%%   Returns the type name string (e.g. int_T, ... creal_T) of the data type
+%%   corresponding to the specified block output port.
+%%
+%%   Specify the reim argument as "" if you want the complete signal type name.
+%%   For example if reim=="" and the first output port is real and complex,
+%%   the data type  name placed in dtname will be creal_T:
+%%      %assign dtname = LibBlockOutputSignalDataTypeName(0x,"")
+%%
+%%   Specify the reim argument as tRealPart if you want the raw element type
+%%   name. For example if reim==tRealPart and the first output port is real
+%%   and complex, the data type name returned will be real_T.
+%%      %assign dtname = LibBlockOutputSignalDataTypeName(0,tRealPart)
+%%
+%function LibBlockOutputSignalDataTypeName(portIdx, reim) void
+    %% See Also:
+    %%   LibBlockOutputSignalDataTypeId, LibBlockInputSignalDataTypeName,
+    %%   LibBlockParameterDataTypeName
+    %%
+    %return CGMODEL_ACCESS("Block.OutputSignalDataTypeName", BlockIdx[0], BlockIdx[2], portIdx, reim)
+%endfunction %% LibBlockOutputSignalDataTypeName
+
+%% DocFunction{Advanced Functions}: LibBlockSrcSignalIsInvariant ===============
+%% Abstract:
+%%   Returns 1 if the source signal corresponding to the specified block input
+%%   port element is invariant (i.e. the signal does not change).
+%%   For example, a source block with a constant TID (or equivalently, an
+%%   infinite sample-time) would output an invariant signal.
+%%
+%function LibBlockSrcSignalIsInvariant(portIdx, sigIdx) void
+    %return CGMODEL_ACCESS("Block.SrcSignalIsInVariant", BlockIdx[0], BlockIdx[2], portIdx, sigIdx)
+%endfunction %% LibBlockSrcSignalIsInvariant
+
+
+%% DocFunction{Advanced Functions}: LibBlockInputSignalBufferDstPort ===========
+%% Abstract:
+%%   Returns the output port corresponding to input port (portIdx) which share
+%%   the same memory, otherwise (-1) is returned. You will need to use this
+%%   function when you specify ssSetInputPortOverWritable(S,portIdx,true) in
+%%   your S-function.
+%%
+%%   If an input port and some output port of a block are
+%%
+%%     1) not test points and
+%%     2) the input port is overwritable,
+%%
+%%   then the output port might reuse the same buffer as the input port.
+%%   In this case, LibBlockInputSignalBufferDstPort returns the index of the
+%%   output port that reuses the specified input port's buffer.  If none of
+%%   the block's output ports reuse the specified input port buffer, then
+%%   this function returns -1.
+%%
+%%   This function is the TLC implementation of the Simulink macro
+%%   ssGetInputPortBufferDstPort.
+%%
+%%   Example:
+%%     Assume you have a block that has two input ports, both of which receive
+%%     a complex number in 2-wide vectors.  The block outputs the product
+%%     of the two complex numbers.
+%%
+%%     %assign u1r = LibBlockInputSignal (0, "", "", 0)
+%%     %assign u1i = LibBlockInputSignal (0, "", "", 1)
+%%     %assign u2r = LibBlockInputSignal (1, "", "", 0)
+%%     %assign u2i = LibBlockInputSignal (1, "", "", 1)
+%%     %assign yr  = LibBlockOutputSignal (0, "", "", 0)
+%%     %assign yi  = LibBlockOutputSignal (0, "", "", 1)
+%%
+%%     %if (LibBlockInputSignalBufferDstPort(0) != -1)
+%%       %% The first input is going to get overwritten by yr so
+%%       %% we need to save the real part in a temporary variable.
+%%       {
+%%         real_T tmpRe = %<u1r>;
+%%         %assign u1r = "tmpRe";
+%%     %endif
+%%
+%%     %<yr> = %<u1r> * %<u2r> - %<u1i> * %<u2i>;
+%%     %<yi> = %<u1r> * %<u2i> + %<u1i> * %<u2r>;
+%%
+%%     %if (LibBlockInputSignalBufferDstPort(0) != -1)
+%%       }
+%%     %endif
+%%
+%%     Note that in this case, we could have equivalently used
+%%     (LibBlockInputSignalBufferDstPort(0) == 0) as the boolean condition
+%%     for the %if statements since there is only one output port.
+%%
+%function LibBlockInputSignalBufferDstPort(aPortIdx)
+    %assign portIdx = CAST("Number", aPortIdx)
+    %<LibGetInputPortRecordIsValid(portIdx)>
+    %return CGMODEL_ACCESS("Block.InputSignalBufferDstPort", BlockIdx[0], BlockIdx[2], portIdx)
+%endfunction %% LibBlockInputSignalBufferDstPort
+
+%% DocFunction{Input Signal Functions}: LibBlockInputSignalSymbolicWidth =======
+%% Abstract:
+%%   Returns the symbolic width of the specified block input port index.
+%%
+%function LibBlockInputSignalSymbolicWidth(portIdx) void
+    %return SLibGetSymbolicWidthForCGType(...
+        SLibBlockInputPortContainerCGTypeIdx(portIdx))
+%endfunction %% LibBlockInputSignalSymbolicWidth
+
+%% DocFunction{Output Signal Functions}: LibBlockOutputSignalSymbolicWidth =====
+%% Abstract:
+%%   Returns the symbolic width of specified block output port.
+%%
+%function LibBlockOutputSignalSymbolicWidth(portIdx) void
+    %% See Also:
+    %%   LibBlockInputSignalWidth,
+    %%   LibBlockOutputSignalNumDimensions, LibBlockOutputSignalDimensions
+    %%
+
+    %if CGMODEL_ACCESS("Block.IsOutputSignalFcnCall", RecordIdx[0], RecordIdx[1], portIdx)
+        %return LibBlockGetNumFcnCallOutputs(SLibGetCurrentBlock())
+    %endif
+
+    %return SLibGetSymbolicWidthForCGType(...
+        SLibBlockOutputPortContainerCGTypeIdx(portIdx))
+%endfunction %% LibBlockOutputSignalSymbolicWidth
+
+%endif %% _BLKIO_API_

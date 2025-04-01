@@ -1,0 +1,170 @@
+%% Copyright 2022 The MathWorks, Inc.
+
+%if EXISTS(::_MATH_API_) == 0
+%assign ::_MATH_API_ = 1
+
+%% Function: LibGetMathConstant ====================================================================
+%% Abstract:
+%%    Return a valid math constant expression with the proper datatype.
+%%    This function can only be called after funclib.tlc is included.
+%%
+%function LibGetMathConstant(ConstName,ioTypeId) void
+
+    %assign constInfo = SLibGetMathConstantInfo(ConstName,ioTypeId)
+    %if !ISEMPTY(constInfo)
+        %return constInfo.Expr
+    %else
+        %return ""
+    %endif
+
+%endfunction
+
+%% Function: LibGenMathFcnCall =====================================================================
+%% Abstract:
+%%    Return a complete callsite expression for a math function in the
+%%    target environment given the following function prototype info:
+%%
+%%       o) RTWFcnName - Generic function name
+%%       o) RTWFcnType - type needed for function I/O (e.g., tSS_DOUBLE)
+%%       o) input1Arg  - string expression of input arg 1 of type RTWFcnType
+%%       o) input2Arg  - if needed, addition input of type RTWFcnType
+%%
+%%    If no specification is found that exactly matches the
+%%    given prototype, this function returns the output name
+%%    along with the casts needed at each position (input, output).
+%%
+%%    If use of a function requires a #include of a file besides math.h
+%%    then the use of this function triggers the generation of the
+%%    include file associated with this function.  See LibAddToModelHeaders
+%%    to see how this mechanism works.
+%%
+%%
+%function LibGenMathFcnCall(RTWFcnName, RTWFcnTypeId, input1Arg, input2Arg) void
+    %if input2Arg != ""
+        %return LibGenTwoInputFcnCall(RTWFcnName, RTWFcnTypeId, input1Arg, input2Arg)
+    %else
+        %return LibGenOneInputFcnCall(RTWFcnName, RTWFcnTypeId, input1Arg)
+    %endif
+
+%endfunction %% LibGenMathFcnCall
+
+%% Function: LibGenTwoInputFcnCall =================================================================
+%% Abstract:
+%%    Return a complete callsite expression for a math function in the
+%%    target environment given the following function prototype info:
+%%
+%%       o) RTWFcnName - Generic function name
+%%       o) RTWFcnType - type needed for function I/O (e.g., tSS_DOUBLE)
+%%       o) input1Arg  - string expression of input arg 1 of type RTWFcnType
+%%       o) input2Arg  - if needed, addition input of type RTWFcnType
+%%
+%%    If no specification is found that exactly matches the
+%%    given prototype, this function returns the output name
+%%    along with the casts needed at each position (input, output).
+%%
+%function LibGenTwoInputFcnCall(RTWFcnName, RTWFcnTypeId, input1Arg, input2Arg) void
+
+    %assign fcnInfo = LibGenTwoInputFcnCallInfo(RTWFcnName, RTWFcnTypeId, input1Arg, input2Arg)
+    %if ISEMPTY(fcnInfo)
+        %return ""
+    %endif
+    %return fcnInfo.Expr
+%endfunction %% LibGenTwoInputFcnCall
+
+%% Function: LibGenTwoInputFcnCallInfo =============================================================
+%% Abstract:
+%%    Return a complete callsite expression for a math function
+%%    (along with the headerfile required to be included) in the
+%%    target environment given the following function prototype info:
+%%
+%%       o) RTWFcnName - Generic function name
+%%       o) RTWFcnType - type needed for function I/O (e.g., tSS_DOUBLE)
+%%       o) input1Arg  - string expression of input arg 1 of type RTWFcnType
+%%       o) input2Arg  - if needed, addition input of type RTWFcnType
+%%
+%%    If no specification is found that exactly matches the
+%%    given prototype, this function returns the output name
+%%    along with the casts needed at each position (input, output).
+%%
+%function LibGenTwoInputFcnCallInfo(RTWFcnName, RTWFcnTypeId, input1Arg, input2Arg) void
+
+    %createrecord FcnRec { Name RTWFcnName; RetTypeId RTWFcnTypeId; NumArgs 2 }
+    %addtorecord FcnRec ArgList { Expr input1Arg; TypeId RTWFcnTypeId; IsPtr 0; IsCplx 0; IsConst 0 }
+    %addtorecord FcnRec ArgList { Expr input2Arg; TypeId RTWFcnTypeId; IsPtr 0; IsCplx 0; IsConst 0 }
+    %return SLibGenFcnCallInfo(FcnRec)
+%endfunction %% LibGenTwoInputFcnCallInfo
+
+
+%% Function: LibGenFcnCall =========================================================================
+%% Abstract:
+%%  Generate an expression to perform the requested generic run-time function
+%%  consuming the required arguments contained in the FcnRec record's ArgList.
+%%  This API does NOT support function inlining and returns a function expr (call)
+%%  even if the corresponding TflCustom entry exists for the given function and
+%%  has InlineFcn parameter set to true. This API is kept for legacy support.
+%%  The resulting string is not an lvalue.  If the requested generic function
+%%  is not supported, the empty string "" is returned.
+%%
+%%  If output type does not match generic output type, an output cast is added.
+%%  If an input arg type does not match the generic input type, a cast is
+%%  added to the input argument.
+%%
+%%  FcnRec record definition:
+%%    Name      - generic function name
+%%    RetTypeId - generic function return type (tSS_DOUBLE, etc.)
+%%    NumArgs   - length of ArgList
+%%    ArgList   - record array containing these fields:
+%%                Expr    - Expression for argument instance (string)
+%%                TypeId  - datatype ID of argument instance
+%%                IsPtr   - arg is a pointer
+%%                IsCplx  - arg is complex
+%%                IsConst - arg is const (read-only)
+%%
+%function LibGenFcnCall(FcnRec) void
+    %assign fcnInfo = SLibGenFcnCallInfo(FcnRec)
+    %if ISEMPTY(fcnInfo)
+        %return ""
+    %endif
+    %return fcnInfo.Expr
+%endfunction %% LibGenFcnCall
+
+%% Function: LibGenOneInputFcnCall =================================================================
+%% Abstract:
+%%    Return a complete callsite expression for a math function in the
+%%    target environment given the following function prototype info:
+%%
+%%       o) RTWFcnName - Generic function name
+%%       o) RTWFcnType - type needed for function I/O (e.g., tSS_DOUBLE)
+%%       o) inputArg   - string expression of input arg of type RTWFcnType
+%%
+%%    If no specification is found that exactly matches the
+%%    given prototype, this function returns the output name
+%%    along with the casts needed at each position (input, output).
+%%
+%function LibGenOneInputFcnCall(RTWFcnName, RTWFcnTypeId, inputArg) void
+
+    %createrecord FcnRec { Name RTWFcnName; RetTypeId RTWFcnTypeId; NumArgs 1 }
+    %addtorecord FcnRec ArgList { Expr inputArg; TypeId RTWFcnTypeId; IsPtr 0; IsCplx 0; IsConst 0 }
+
+    %return LibGenFcnCall(FcnRec)
+%endfunction %% LibGenOneInputFcnCall
+%endif
+
+%% Function: LibGenMemFcnCall ======================================================================
+%% Abstract:
+%%    Return a complete callsite expression for a memxxx() function of string.h
+%%
+%%       o) fcnName    - Name of the memxxx() function
+%%       o) input0Arg  - string expression of input arg 0
+%%       o) input1Arg  - string expression of input arg 1
+%%       o) input2Arg  - string expression of input arg 2
+%%
+%%
+%function LibGenMemFcnCall(fcnName, input0Arg, input1Arg, input2Arg) void
+    %assign fcnInfo = SLibGenMemFcnCallInfo(fcnName, input0Arg, input1Arg, input2Arg)
+    %if ISEMPTY(fcnInfo)
+        %return ""
+    %else
+        %return fcnInfo.Expr
+    %endif
+%endfunction

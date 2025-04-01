@@ -1,0 +1,17 @@
+%if EXISTS(_SETUP_LIB_V3_) == 0
+%assign _SETUP_LIB_V3_ = 1
+%%
+%% Copyright 2020 The MathWorks, Inc.
+%%
+
+%function SLibSetupGlobalVariablesV3() void
+    %%
+    %% Setup global SimStruct and SimStruct type variables
+    %%
+    %if !EXISTS(tSimStruct)
+        %assign ::tSimStruct = "__MW_SIMSTRUCT_NAME__"
+    %endif
+
+%endfunction
+
+%endif %% _SETUP_LIB_V3_

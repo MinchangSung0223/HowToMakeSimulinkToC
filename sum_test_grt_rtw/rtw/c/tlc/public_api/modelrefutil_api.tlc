@@ -1,0 +1,91 @@
+%% Copyright 2020-2022 The MathWorks, Inc.
+%%
+
+%if EXISTS(_MODELREFUTIL_API_) == 0
+%assign _MODELREFUTIL_API_ = 1
+
+%% Function:IsModelReferenceTarget ============================================
+%% Abstract:
+%%    Return true if we are generating code for model reference target
+%%
+%function IsModelReferenceTarget()
+    %if "NONE" != ::CompiledModel.ModelReferenceTargetType
+        %return TLC_TRUE
+    %else
+        %return TLC_FALSE
+    %endif
+%endfunction
+
+%% Function: IsModelReferenceSimTarget =============================================================
+%% Abstract:
+%%    Return true if we are generating code for model reference Sim target
+%%
+%function IsModelReferenceSimTarget()
+    %if "SIM" == ::CompiledModel.ModelReferenceTargetType
+        %return TLC_TRUE
+    %else
+        %return TLC_FALSE
+    %endif
+%endfunction
+
+%% Function: IsModelReferenceForASimstructBasedTarget ==============================================
+%function IsModelReferenceForASimstructBasedTarget()
+    %return (IsModelReferenceTarget() && IsSimstructBasedTarget())
+%endfunction
+
+%% Function: IsModelReferenceNonSimstructBasedRTWTarget ============================================
+%%
+%%  Is this a non-simstruct based target (i.e., this is not RSIM)
+%function IsModelReferenceNonSimstructBasedRTWTarget()
+    %return IsModelReferenceRTWTarget() && !IsModelReferenceForASimstructBasedTarget()
+%endfunction
+
+%% Function: IsModelReferenceRTWTarget =============================================================
+%% Abstract:
+%%    Return true if we are generating code for model reference
+%function IsModelReferenceRTWTarget()
+    %if "RTW" == ::CompiledModel.ModelReferenceTargetType
+        %return TLC_TRUE
+    %else
+        %return TLC_FALSE
+    %endif
+%endfunction %% IsModelReferenceRTWTarget
+
+%% Function: IsVariableStepModelReferenceTarget ====================================================
+%% Abstract:
+%%  Returns true if the solver type is variable step and we are building
+%% a model reference target.  Note that only simstruct based are allowed.
+%function IsVariableStepModelReferenceTarget()
+    %return IsModelReferenceForASimstructBasedTarget() && ...
+        ::CompiledModel.SolverType == "VariableStep"
+%endfunction
+
+%% Function: IsModelReferenceBaseSys ===============================================================
+%% Abstract:
+%%    Return true if we are generating code for model reference target
+%%    and the system is the hidden root system
+%function IsModelReferenceBaseSys(ss)
+    %return CGMODEL_ACCESS("CGModel.System.IsModelReferenceBaseSys", ss.SystemIdx)
+%endfunction
+
+%% Function: IsModelRefScalableBuild ===============================================================
+%% Abstract:
+%%    Return true if we are generating code for model reference target
+%%    and the generated code is scalable (logic written into .rtw file)
+%function IsModelRefScalableBuild()
+    %return CGMODEL_ACCESS("CGModel.isModelRefScalableBuild")
+%endfunction
+
+%% Function: GetBaseSystemIdx ======================================================================
+%% Abstract:
+%%  Get base system Idx. For standalone code generation, this is root system
+%%  idx. For model reference, this is the hidden model reference subsystem.
+%function GetBaseSystemIdx()
+    %assign baseSysIdx = IsModelReferenceTarget() ? ...
+        ::CompiledModel.NumSystems - 2 : ::CompiledModel.NumSystems - 1
+    %return baseSysIdx
+%endfunction
+
+%endif %%_MODELREFUTIL_API_
+
+%% [EOF] modelrefutil_api.tlc

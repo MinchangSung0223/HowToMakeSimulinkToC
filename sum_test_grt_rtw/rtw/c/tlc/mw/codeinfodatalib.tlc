@@ -1,0 +1,2248 @@
+%% ============================================================================
+%% Abstract:
+%%      Library of functions for generating codeInfo object and its components.
+%%
+%% Copyright 1994-2023 The MathWorks, Inc.
+%%
+%%
+
+%if EXISTS(_CIINFODATALIB_) == 0
+%assign _CIINFODATALIB_ = 1
+
+%include "codeinfolib.tlc"
+%include "autosarsup.tlc"
+%include "paramlib.tlc"
+
+%selectfile NULL_FILE
+
+%function FcnReplaceIdentifierToken(fcnName, identifier)
+    %assign fcnName = STRREP( fcnName, "$N", identifier)
+    %return fcnName
+%endfunction
+
+%% Function SLibCreateInportInterfaces ========================================
+%% Abstract :
+%%   This function loops through Inports and creates a RTW.DataInterface
+%%   object for each of them.
+%%   The process of creation here means emitting out the MATLAB syntax which can
+%%   create a MATLAB object.
+%%   The MATLAB syntax is
+%%       inportObj = RTW.DataInterface(sid,
+%%                                     signalName,
+%%                                     implementation,
+%%                                     timing)
+%%
+%%       sid            - SID of the inport block
+%%       signalName     - Label of the signal from inport (or blockName)
+%%       implementation - code implementation, either a RTW.Variable object
+%%                        or a RTW.StructExpression object.
+%%       timing         - A RTW.TimingInterface object, giving the sample rate
+%%                        of the inport
+%%
+%%   This function will be called in codeinfo.tlc which writes out MATLAB code.
+%%   The MATLAB syntax emitted by this function will be part of that file
+%%
+%function SLibCreateInportInterfaces() Output
+    %% Flag to determine if memory for Inport will be defined by
+    %% generated code
+    %assign IsInportDefined = ...
+        !(SLibFcnProtoCtrlActive() || IsMultiInstanceERTOrModelReference() || ...
+        SLibAutosarActive())
+    %%
+    %% Flag to determine if memory forInport is typed as ExternalInputs structure
+    %assign IsInportStructure = ...
+        ( IsInportDefined || (MultiInstanceERTCode && RootIOStructures) )
+
+    %%
+    %% Start looping over Inports
+    %with ::CompiledModel.ExternalInputs
+        %assign unsetEIIdx = FcnGetUnsetEIIdxFromIRInfo()
+        %foreach idx = SIZE(unsetEIIdx, 1)
+            %assign ei     = ExternalInput[unsetEIIdx[idx]]
+            %assign regObj = "RTW.DataImplementation.empty"
+            %if ((ei.StorageClass != "Auto") && (ei.StorageClass != "SimulinkGlobal")) || ...
+                SLibIsLegacyStorageClassForDataRecord(ei)
+                %% Process storage class data
+                %assign cgTypeIdx = ei.CGTypeIdx
+                %assign sigID     = LibGetRecordIdentifier(ei)
+                %assert (ei.StorageClass == "Custom" || SLibIsLegacyStorageClassForDataRecord(ei))
+
+                %% Process CSC - custom storage class inputs
+                %assign msDefn  = SLibGetMemorySectionDefForData(ei)
+                %assign cscDefn = SLibGetCSCDefForData(ei)
+                %assign isR13CSC = ((SLibGetDataAccess(cscDefn, ei) == "unknown") ? 1 : 0)
+                %assign isPtr = ((SLibGetDataAccess(cscDefn, ei)=="Pointer") ? 1 : 0)
+                %assign isMPTVar = ISEQUAL(cscDefn.TLCFileName,"MPTUnstructured.tlc")
+                %% Determine type qualifers
+                %assign ei_const  = (msDefn.IsConst ? 1 : 0)
+                %assign ei_vol    = (msDefn.IsVolatile ? 1 : 0)
+                %if (!isR13CSC)
+                    %% Only the following CSC are supported
+                    %%   - Not a pre-R14 CSC
+                    %%   - Non-Pointer Access
+                    %if (cscDefn.CSCType == "Unstructured") || isMPTVar
+                        %% Ungrouped CSC
+                        %%
+                        %%
+                        %% Determine type - Returns a coder.types.* object
+                        %assign typeObj = SLibGetCoderTypeObject(cgTypeIdx, ei_const, ei_vol)
+                        %if !ISEQUAL(ei.FrameData, "no")
+                            %assign typeObj = FcnGetMatrixFrameTypeObj(typeObj)
+                        %endif
+                        %assign codeTypeObj = typeObj
+                        %if ISFIELD(ei,"ContainerCGTypeIdx")
+                            %assign dataCodeTypeIdx = SLibGetRecordContainerCGTypeIdx(ei)
+                            %assign codeTypeObj = SLibGetCoderCodeTypeObject(dataCodeTypeIdx, ei_const, ei_vol)
+                        %endif
+                        %%
+                        %% If Component exports, add known properties to Variable Object
+                        %assign varOwnerInfo = GetVarOwnerInfo(ei, cscDefn)
+                        %assign props     = LibGetCustomStorageAttributes(ei)
+
+                        %if (isPtr)
+                            %assign tgtVar  = SLibGetRTWVariableObject(sigID, typeObj, ...
+                                LibGetRecordIdentifier(ei), varOwnerInfo.ownerName, varOwnerInfo.defnFile, varOwnerInfo.declFile)
+                            %assign pTypeObj = FcnCreatePointerTypeObj(cgTypeIdx, 0, 0)
+                            %assign regObj   = ...
+                                SLibGetRTWPointerVariableObject(sigID, pTypeObj, ...
+                                LibGetRecordIdentifier(ei), tgtVar)
+                        %else
+                            %%
+                            %% Create a RTW.Variable object using type, identifer and decl/defn file
+                            %assign regObj  = SLibGetRTWVariableObject(sigID, typeObj, ...
+                                LibGetRecordIdentifier(ei), varOwnerInfo.ownerName, varOwnerInfo.defnFile, varOwnerInfo.declFile)
+                        %endif
+
+                        %<regObj>.StorageSpecifier = 'extern';
+                        %<regObj>.CodeType = %<codeTypeObj>;
+                        %%
+                    %elseif (cscDefn.CSCType == "FlatStructure")
+                        %% Grouped CSC
+                        %assign regObjName = "ExternInput%<idx>_CSC"
+                        %assign regObj = SLibCodeInfoObjectForFlatStructure(ei, cscDefn, regObjName, TLC_FALSE)
+                        %%
+                    %elseif (cscDefn.CSCType == "AccessFunction")
+                        %assign typeObj = SLibGetCoderTypeObject(cgTypeIdx, 0, 0)
+                        %if !ISEQUAL(ei.FrameData, "no")
+                            %assign typeObj = FcnGetMatrixFrameTypeObj(typeObj)
+                        %endif
+                        %assign regObj = FcnHandleAccessFunctionCSC(ei, typeObj, sigID)
+                    %else
+                        %% CSC of type "Other"
+                        %assign regObj = SLibCustomStorageTypeOtherForCodeInfo(ei, cscDefn, TLC_FALSE)
+                    %endif
+                %else
+                    %% Unsupported CSC
+                    %% No implementation provided. The default regObj = "[]" will be used
+                %endif
+            %else
+                %% Process Auto storage class data
+                %if (IsInportStructure)
+                    %<LibReportFatalError("CodeInfo: Structured Inports not created")>
+                %else
+                    %% Root Inputs not defined - passed as args or accessed as autosar rte
+                    %%
+                    %if (SLibAutosarActive())
+                        %<LibReportFatalError("CodeInfo: Autosar Inports not created")>
+                    %else
+                        %<LibReportFatalError("CodeInfo: IOArg Inports not created")>
+                    %endif
+                %endif
+            %endif
+            %%
+            %% Set the implementation of the Inport appropriately
+            %assign comment = "% Setting Inport#%<idx+1>'s implementation"
+
+            %<comment>
+            codeInfo.Inports(%<FcnGetCIIdxFromEIIdx(unsetEIIdx[idx])>).Implementation = %<regObj>;
+            wr.writeRootInport(%<regObj>, codeInfo.Inports(%<FcnGetCIIdxFromEIIdx(unsetEIIdx[idx])>));
+
+        %endforeach
+    %endwith %%ExternalInputs
+%endfunction
+
+%% Function SLibCreateOutportInterfaces =======================================
+%% Abstract :
+%%   This function loops through Outports and creates a RTW.DataInterface
+%%   object for each of them.
+%%   The process of creation here means emitting out the MATLAB syntax which can
+%%   create a MATLAB object.
+%%   The MATLAB syntax is
+%%       outportObj =RTW.DataInterface(sid,
+%%                                     signalName,
+%%                                     implementation,
+%%                                     timing)
+%%
+%%       sid            - sid of the outport block
+%%       signalName     - Label of the signal feeding outport (or blockName)
+%%       implementation - code implementation, either a RTW.Variable object
+%%                        or a RTW.StructExpression object.
+%%       timing         - A RTW.TimingInterface object, giving the sample rate
+%%                        of the outport
+%%
+%%   This function will be called in codeinfo.tlc which writes out MATLAB code.
+%%   The MATLAB syntax emitted by this function will be part of that file
+%%
+%function SLibCreateOutportInterfaces() Output
+    %%
+    %% Determine if memory for ExternalIO will be defined by generated code
+    %assign IsOutportDefined = ...
+        !(SLibFcnProtoCtrlActive() || IsMultiInstanceERTOrModelReference() || ...
+        SLibAutosarActive())
+    %%
+    %% Determine if memory for Outport is typed as ExternalOutputs structure
+    %assign IsOutportStruct = ...
+        ( IsOutportDefined || (MultiInstanceERTCode && RootIOStructures) )
+
+    %with ::CompiledModel.ExternalOutputs
+        %assign unsetEOIdx = FcnGetUnsetEOIdxFromIRInfo()
+        %foreach idx = SIZE(unsetEOIdx, 1)
+            %assign eo = ExternalOutput[unsetEOIdx[idx]]
+            %assign regObj = "RTW.DataImplementation.empty"
+            %%
+            %% Get Block and get associated signal record/memory
+
+            %assign isLegacyDefaultMapped = TLC_FALSE
+
+            %assign eoBlk = ::CompiledModel.System[eo.Block[0]].Block[eo.Block[1]]
+            %with eoBlk
+                %assign ip             = FcnGetInputPortRecord(0)
+                %assign numSrcs = 0
+                %roll idx = eoBlk.RollRegions, lcv = 1, eoBlk, "FlatRoller", [""]
+                    %assign numSrcs = numSrcs+1
+                %endroll
+                %assign sigRec         = SLibGetSourceRecord(ip, 0)
+                %assign eoStorageClass = LibBlockInputSignalStorageClass(0, 0)
+                %assign sigOffset      = ip.SignalOffset[0]
+                %assign isLegacyDefaultMapped = !ISEMPTY(sigRec) && SLibIsLegacyStorageClassForDataRecord(sigRec)
+            %endwith
+            %%
+            %%
+            %% If the outport block has its own signal specification, use that
+            %if ((eo.StorageClass != "Auto") && (eo.StorageClass != "SimulinkGlobal")) || ...
+                SLibIsLegacyStorageClassForDataRecord(eo)
+                %assign sigRec = eo
+                %assign eoStorageClass = eo.StorageClass
+                %assign isLegacyDefaultMapped = SLibIsLegacyStorageClassForDataRecord(eo)
+            %endif
+            %if (numSrcs > 1)
+                %% do nothing -skip
+                %% empty implementation
+            %elseif ((eoStorageClass != "Auto") && (eoStorageClass != "SimulinkGlobal")) || ...
+                isLegacyDefaultMapped
+                %assert (eoStorageClass == "Custom" || isLegacyDefaultMapped)
+                %% Process storage class data
+                %assign cgTypeIdx  = eo.CGTypeIdx
+                %assign sigTypeIdx = sigRec.CGTypeIdx
+                %assign sigID      = LibGetRecordIdentifier(sigRec)
+
+                %% Process CSC - custom storage class data
+                %assign msDefn  = SLibGetMemorySectionDefForData(sigRec)
+                %assign cscDefn = SLibGetCSCDefForData(sigRec)
+                %assign isR13CSC = ...
+                    ((SLibGetDataAccess(cscDefn, sigRec) == "unknown") ? 1 : 0)
+                %assign isPtr = ((SLibGetDataAccess(cscDefn, sigRec)=="Pointer") ? 1 : 0)
+                %assign isMPTVar = ISEQUAL(cscDefn.TLCFileName,"MPTUnstructured.tlc")
+                %% Determine type qualifers
+                %assign eo_const  = (msDefn.IsConst ? 1 : 0)
+                %assign eo_vol    = (msDefn.IsVolatile ? 1 : 0)
+                %if (!isR13CSC)
+                    %% Only the following CSC are supported
+                    %%   - Not a pre-R14 CSC
+                    %%
+                    %if (cscDefn.CSCType == "Unstructured") || isMPTVar
+                        %% Ungrouped CSC
+                        %%
+                        %% Determine type - Returns a coder.types.* object
+                        %assign typeObj=SLibGetCoderTypeObject(sigTypeIdx, eo_const, eo_vol)
+                        %if !ISEQUAL(eo.FrameData, "no")
+                            %assign typeObj = FcnGetMatrixFrameTypeObj(typeObj)
+                        %endif
+                        %assign codeTypeObj = typeObj
+                        %if ISFIELD(eo,"ContainerCGTypeIdx")
+                            %assign dataCodeTypeIdx = SLibGetRecordContainerCGTypeIdx(eo)
+                            %assign codeTypeObj = SLibGetCoderCodeTypeObject(dataCodeTypeIdx, eo_const, eo_vol)
+                        %endif
+
+                        %%
+                        %% If Component exports, add known properties to Variable Object
+                        %assign varOwnerInfo = GetVarOwnerInfo(sigRec, cscDefn)
+                        %assign sigID = LibGetRecordIdentifier(sigRec)
+                        %%
+                        %if (isPtr)
+                            %assign tgtVar  = SLibGetRTWVariableObject(sigID, typeObj, ...
+                                LibGetRecordIdentifier(sigRec), varOwnerInfo.ownerName, varOwnerInfo.defnFile, varOwnerInfo.declFile)
+                            %assign pTypeObj = FcnCreatePointerTypeObj(cgTypeIdx, 0, 0)
+                            %assign regObj   = ...
+                                SLibGetRTWPointerVariableObject(sigID, pTypeObj, ...
+                                LibGetRecordIdentifier(sigRec), tgtVar)
+                        %else
+                            %% Create a RTW.Variable object using type, identifer & decl/defn file
+                            %assign regObj  = SLibGetRTWVariableObject(sigID, typeObj, ...
+                                LibGetRecordIdentifier(sigRec), varOwnerInfo.ownerName, varOwnerInfo.defnFile, varOwnerInfo.declFile)
+                        %endif
+                        %assign tgtVar  = regObj
+                        %<regObj>.StorageSpecifier = 'extern';
+                        %<regObj>.CodeType = %<codeTypeObj>;
+                        %%
+                    %elseif (cscDefn.CSCType == "FlatStructure")
+                        %% Grouped CSC
+                        %assign regObjName = "ExternOutput%<idx>_CSC"
+                        %assign regObj = SLibCodeInfoObjectForFlatStructure(sigRec, cscDefn, regObjName, TLC_FALSE)
+                        %%
+                    %elseif (cscDefn.CSCType == "AccessFunction")
+                        %assign typeObj = SLibGetCoderTypeObject(cgTypeIdx, 0, 0)
+                        %if !ISEQUAL(eo.FrameData, "no")
+                            %assign typeObj = FcnGetMatrixFrameTypeObj(typeObj)
+                        %endif
+                        %assign regObj = FcnHandleAccessFunctionCSC(sigRec, typeObj, sigID)
+                    %else
+                        %% CSC of type "Other"
+                        %assign regObj = SLibCustomStorageTypeOtherForCodeInfo(sigRec, cscDefn, TLC_FALSE)
+                        %assign tgtVar = regObj
+                    %endif
+                    %if ( LibCGTypeWidth(sigTypeIdx) > LibCGTypeWidth(cgTypeIdx) )
+                        %if (cscDefn.CSCType == "Unstructured") || ...
+                            ((cscDefn.CSCType == "Other") && SLibCustomStorageTypeOtherSupportsSILPIL(sigRec, cscDefn))
+                            %% possible array expression
+                            %assign arTypeObj = SLibGetCoderTypeObject(cgTypeIdx, eo_const, eo_vol)
+                            %assign regObj = SLibGetRTWArrayExprObject(arTypeObj, tgtVar, sigOffset)
+                        %else
+                            %assign regObj = "RTW.DataImplementation.empty"
+                        %endif
+                    %endif
+                %else
+                    %% Unsupported CSC
+                    %% No implementation provided. The default regObj = "[]" will be used
+                %endif
+            %else
+                %% We may still get here in some edge cases. See:
+                %% test/toolbox/rtw/targets/mpt/mmissinginput.mdl
+                %% The Port is passed as argument
+                %%
+                %% Create a type - Returns a coder.types.* object
+                %assign typeObj  = SLibGetCoderTypeObject(eo.CGTypeIdx, 0, 0)
+                %if !ISEQUAL(eo.FrameData, "no")
+                    %assign typeObj = FcnGetMatrixFrameTypeObj(typeObj)
+                %endif
+                %%
+                %% Create a RTW.Variable object with no owner
+                %assign regObj = ...
+                    SLibGetRTWVariableObject("EO%<idx>", typeObj, LibGetRecordIdentifier(eoBlk),"","","")
+            %endif
+            %assign comment = "% Setting Outport#%<idx+1>'s Implementation"
+
+            %<comment>
+            codeInfo.Outports(%<unsetEOIdx[idx]+1>).Implementation = %<regObj>;
+            wr.writeRootOutport(%<regObj>, codeInfo.Outports(%<unsetEOIdx[idx] + 1>));
+        %endforeach
+    %endwith %%ExternalOutputs
+%endfunction
+
+%% Function: FcnAddRunnableToParamAccessInfo =======================================================
+%% Abstract:
+%%   Recursively records parent runnable(s) name of system
+%%
+%function FcnAddRunnableToParamAccessInfo(sysIdx, pAccessInfo, calPrmIdx) void
+    %assign system = ::CompiledModel.System[sysIdx]
+    %assign runnableIdx = system.RunnableIdx
+    %if runnableIdx >= 0
+        %assign runName = ...
+            ::CompiledModel.RTWAutosar.AutosarRunnables.Runnable[runnableIdx].Name
+        %if !ISFIELD(pAccessInfo, runName)
+            %addtorecord pAccessInfo %<runName> [%<calPrmIdx>]
+        %else
+            %assign pAccessInfo.%<runName> = pAccessInfo.%<runName> + calPrmIdx
+        %endif
+    %else
+        %assign numCallers = SIZE(system.CallSites, 0)
+        %foreach idx = numCallers
+            %<FcnAddRunnableToParamAccessInfo(system.CallSites[idx][0], pAccessInfo, calPrmIdx)>
+        %endforeach
+    %endif
+%endfunction
+
+%function FcnCreateInstPImplementationForEncapCPP(group, groupVar) Output
+    %assign token = "CoderDataGroup" + group.Name
+    %assign vis = CPPGroupVisibility.%<token>
+
+    %% Create the correct enum value based on the visibility
+    %assign vis = FEVAL("upper", vis) + "_MEMBER"
+    %<groupVar>MemberExpr = RTW.ClassMemberExpression;
+    %<groupVar>MemberExpr.Type = %<groupType>;
+    %<groupVar>MemberExpr.ElementIdentifier = '%<SLibCoderDataGroupInstance(group)>';
+    %<groupVar>MemberExpr.Visibility = '%<vis>';
+    %<groupVar>MemberExpr.BaseRegion = codeInfo.InternalData(1).Implementation;
+    %<groupVar> = %<groupVar>MemberExpr;
+    %assign hasGetter = CPPGroupGet.%<token> == "on"
+    %assign hasSetter = CPPGroupSet.%<token> == "on"
+    %if hasGetter || hasSetter
+        %<groupVar>MethodExpr = RTW.ClassMethodExpression;
+        %if hasGetter
+            %<groupVar>MethodExpr.Getter = 'get%<group.Name>';
+        %endif
+        %if hasSetter
+            %<groupVar>MethodExpr.Setter = 'set%<group.Name>';
+        %endif
+        %<groupVar>MethodExpr.Type = %<groupType>;
+        %<groupVar>MethodExpr.BaseRegion = %<groupVar>MemberExpr;
+        %<groupVar> = %<groupVar>MethodExpr;
+    %endif
+%endfunction
+
+%% Function SLibCreateInstanceSpecificParameterInterfaces =====================================
+%% Abstract :
+%%   This function loops through Instance-Specific Parameters and creates a RTW.DataInterface
+%%   object for each of them.
+%%   The process of creation here means emitting out the MATLAB syntax which can
+%%   create a MATLAB object.
+%%   The MATLAB syntax is
+%%       param Obj = RTW.DataInterface(sid,
+%%                                     paramName,
+%%                                     implementation,
+%%                                     timing)
+%%
+%%       sid            - Either '' (for Workspace Variables) or SID of model.
+%%                        In case InlinedParameters is off, SID of the block
+%%                        using the Parameter.
+%%       paramName      - Name of Parameter
+%%       implementation - code implementation, either a RTW.Variable object
+%%                        or a RTW.StructExpression object.
+%%       timing         - A RTW.TimingInterface object indicating that params
+%%                        are updated at onetime.
+%%
+%%   This function will be called in codeinfo.tlc which writes out MATLAB code.
+%%   The MATLAB syntax emitted by this function will be part of that file
+%%
+%function SLibCreateInstanceSpecificParameterInterfaces() Output
+
+    %with ::CompiledModel.ModelParameters
+        %assign unsetParamPairs = FcnGetInstanceSpecificParamIdxFromIRInfo()
+        %foreach idx = SIZE(unsetParamPairs, 0)
+            %assign unsetParamIdx = unsetParamPairs[idx]
+            %assign param = Parameter[unsetParamIdx[0]]
+
+            %% skip protected parameters. They should not be present in codeinfo
+            %if (ISEQUAL(param.Protected, "yes"))
+                %continue
+            %endif
+
+            %assert(param.InstanceSpecific)
+
+            %if !ISFIELD(param, "ChildGroupSID")
+                %continue
+            %endif
+
+            %if SLibAutosarActive() && SLibMultiInstance()
+                %assign fixedFullPath = FcnPropagatedParamChildGroupPath(param)
+            %else
+                %assign fixedFullPath = FcnParamExternalPath(param)
+            %endif
+
+
+            %% Often, parameter identifiers have numbers in the named, such as
+            %% 4.152.ParamName
+            %% This regexpr gets rid of 4.152 as the actual struct member will be ParamName
+            %assign fixedParamName = FcnGetGetGroupedParamIdentifier(param)
+
+            %if SLibAutosarActive()
+                %% For promoted AUTOSAR PIPs, the implementation will be AutosarCalibration,
+                %% and we just need to update some fields on the AutosarCalibration,
+                %% we don't need to build a full StructExpr
+                %assign isPromotedAUTOSARPIP = FEVAL("contains", fixedFullPath, "_ARPIP")
+                %if isPromotedAUTOSARPIP
+                    %assign groupTypeName = FcnPropagatedParamChildGroup(param).Type
+                    codeInfo.Parameters(%<unsetParamIdx[1]+1>).Implementation.Port = '%<fixedFullPath>';
+                    wr.writeAUTOSARPerInstanceParameterImplementation('%<fixedFullPath>', '%<groupTypeName>', '%<fixedParamName>', codeInfo.Parameters(%<unsetParamIdx[1]+1>));
+                    %continue
+                %endif
+            %endif
+
+            InstParamArray = RTW.StructExpression.empty;
+
+            %assign cgTypeIdx = SLibGetRecordOriginalCGTypeIdx(param)
+            %%
+            %% Determine type - Returns a coder.types.* object
+            %assign typeObj = SLibGetCoderTypeObject(cgTypeIdx, 0, 0)
+            %%
+
+            %assign coderCgTypeIdx = cgTypeIdx
+            %% Get CoderType Object
+            %if ISFIELD(param, "ContainerCGTypeIdx")
+                %assign coderCgTypeIdx = param.ContainerCGTypeIdx
+            %endif
+
+            %% We will use the type and codetype when we finally create the DataImplementation
+            %% for the parameter itself, and not the outer struct accesses
+            %assign codeTypeObj = SLibGetCoderTypeObject(coderCgTypeIdx, 0, 0)
+
+            %% The ExternalFullPath may or may not have a "." member operator on the end
+            %% Get rid of it because we will call strsplit to get the member names
+            %if fixedFullPath[SIZE(fixedFullPath,1)-1] == "."
+                %assign fixedFullPath = Substring(fixedFullPath,0,SIZE(fixedFullPath,1)-1)
+            %endif
+            %% Turn "a.b.c.d" into ["a", "b", "c", "d"]
+            %assign structMemberNames = FEVAL("strsplit", fixedFullPath, ".")
+            %% Iterate over every struct member in ExternalFullPath
+            %foreach idx = SIZE(structMemberNames, 1)
+                %assign curName = structMemberNames[idx]
+                %% The first iteration is special, because we need to either look up the existing root-level
+                %% struct from InternalData, or create it and add it outselves
+                %if idx == 0
+                    %if FcnPropagatedParamSingleInstancePropagator(param)
+                        %assign typeName = FcnPropagatedParamSingleInstanceType(param)
+                        %assign desc = "Storage class " + typeName
+                        group_var_exists = 0;
+                        for idx = 1:numel(codeInfo.InternalData)
+                        curr_var = codeInfo.InternalData(idx).Implementation;
+                        if isa(curr_var,'RTW.Variable') && strcmp(curr_var.Identifier, '%<curName>')
+                        instPDataInterface = codeInfo.InternalData(idx);
+                        groupVar = curr_var;
+                        group_var_exists = 1;
+                        break;
+                        end
+                        end
+                        if ~group_var_exists
+                        groupType = coder.types.Opaque;
+                        groupType.Identifier = '%<typeName>';
+                        groupType.ReadOnly = %<FcnPropagatedParamChildGroup(param).IsMemorySectionConst>;
+                        groupType.Volatile = %<FcnPropagatedParamChildGroup(param).IsMemorySectionVolatile>;
+                        groupVar = RTW.Variable(groupType, '%<curName>');
+                        instPDataInterface = RTW.DataInterface('', '%<desc>', groupVar, RTW.TimingInterface.empty);
+                        end
+                        %assign groupVar = "groupVar"
+                    %else
+                        %assign groupIndex = FcnPropagatedParamGroupIndex(param)
+                        %assign group = ::CompiledModel.CoderDataGroup[groupIndex]
+                        %assign typeObjName = group.Name + "Type"
+                        %assign groupType = FcnGetInternalTypeObj(typeObjName, SLibCoderDataGroupType(group), "")
+                        %assign groupVar = SLibGetCoderDataGroupVariable(group)
+                        %assign desc = "Storage class " + group.Name
+                        %if GenerateClassInterface && group.AsStructure == "InSelf"
+                            %<FcnCreateInstPImplementationForEncapCPP(group, groupVar)>
+                        %endif
+
+                        %% If we did not find the root level in InternalData add it now
+                        instPDataInterface = RTW.DataInterface('', '%<desc>', %<groupVar>, RTW.TimingInterface.empty);
+                    %endif
+                    %if !IsMultiInstanceERTOrModelReference()
+                        %<groupVar>.Owner = '%<::CompiledModel.Name>';
+                    %endif
+                    if group_var_exists == 0
+                    codeInfo.InternalData = [codeInfo.InternalData instPDataInterface];
+                    end
+                    wr.writeInternalData(instPDataInterface);
+                    type = coder.types.AggregateElement;
+                    type.Type = coder.types.Opaque;
+                    %if SIZE(structMemberNames,1) == 1
+                        %% If the size of structMemberNames is 1, which would occur with something like ExternalFullPath
+                        %% being "InstP", we only need to generate a single StructExpression with the final param name
+                        type.Identifier = '%<fixedParamName>';
+                    %else
+                        type.Identifier = '%<structMemberNames[idx+1]>';
+                    %endif
+                    %% Here, we store each StructExpression in a vector, so we can easily access the previous StructExpression we added
+                    InstParamArray(%<idx+1>) = RTW.StructExpression(type, %<groupVar>);
+                    InstParamArray(%<idx+1>).Type = coder.types.Opaque;
+                    InstParamArray(%<idx+1>).CodeType = coder.types.Opaque;
+                    %% If this is not the first iteration, we already made the first StructExpression pointing to the
+                    %% root struct, and we now need to generate the rest of the StructExpressions
+                %else
+                    type = coder.types.AggregateElement;
+                    %% If this is the last iteration, we need to use the paramName as the type's identifier, which
+                    %% will be used for ElementIdentifier in the StructExpression
+                    %if idx == SIZE(structMemberNames,1) - 1
+                        type.Identifier = '%<fixedParamName>';
+                    %else
+                        type.Identifier = '%<structMemberNames[idx+1]>';
+                    %endif
+                    type.Type = coder.types.Opaque;
+                    InstParamArray(%<idx+1>) = RTW.StructExpression(type, InstParamArray(%<idx>));
+                    %% We shouldn't use an Opaque type if this is the last iteration, because we can easily get the
+                    %% type of the parameter, which will be the type of the StructExpression
+                    %if idx != SIZE(structMemberNames,1) - 1
+                        InstParamArray(%<idx+1>).Type = coder.types.Opaque;
+                        InstParamArray(%<idx+1>).CodeType = coder.types.Opaque;
+                    %endif
+                %endif
+            %endforeach
+            %% Write the final element of the map to codeInfo
+            %% It contains the nested StructExpressions
+            codeInfo.Parameters(%<unsetParamIdx[1]+1>).Implementation = InstParamArray(size(InstParamArray,2));
+            codeInfo.Parameters(%<unsetParamIdx[1]+1>).Type = %<typeObj>;
+            codeInfo.Parameters(%<unsetParamIdx[1]+1>).Implementation.Type = %<typeObj>;
+            codeInfo.Parameters(%<unsetParamIdx[1]+1>).Implementation.CodeType = %<codeTypeObj>;
+
+            %% Write the VariantInfo if the param has variantCondition
+            %if ISFIELD(param, "VariantCondition") && !ISEMPTY(param.VariantCondition)
+                vInfoObj = RTW.VariantInfo;
+                vInfoObj.NetCGVCE = '%<param.NetCGVCE>';
+                vInfoObj.NetCGVCEPoundIf = '%<param.VariantCondition>';
+                vInfoObj.NetSVCE = %<param.NetSVCE>;
+                vInfoObj.EMVCE = '';
+                codeInfo.Parameters(%<unsetParamIdx[1]+1>).VariantInfo = vInfoObj;
+            %endif
+
+            %% Also write to CodeDescriptor
+            wr.writeInstanceSpecificParameterArgument(codeInfo.Parameters(%<unsetParamIdx[1]+1>));
+            %continue
+        %endforeach
+    %endwith
+%endfunction
+
+%% Function SLibCreateParameterInterfaces =====================================
+%% Abstract :
+%%   This function loops through Parameter and creates a RTW.DataInterface
+%%   object for each of them.
+%%   The process of creation here means emitting out the MATLAB syntax which can
+%%   create a MATLAB object.
+%%   The MATLAB syntax is
+%%       param Obj = RTW.DataInterface(sid,
+%%                                     paramName,
+%%                                     implementation,
+%%                                     timing)
+%%
+%%       sid            - Either '' (for Workspace Variables) or SID of model.
+%%                        In case InlinedParameters is off, SID of the block
+%%                        using the Parameter.
+%%       paramName      - Name of Parameter
+%%       implementation - code implementation, either a RTW.Variable object
+%%                        or a RTW.StructExpression object.
+%%       timing         - A RTW.TimingInterface object indicating that params
+%%                        are updated at onetime.
+%%
+%%   This function will be called in codeinfo.tlc which writes out MATLAB code.
+%%   The MATLAB syntax emitted by this function will be part of that file
+%%
+%function SLibCreateParameterInterfaces() Output
+    %%
+    %% Flag to determine if memory for Parameters are typed as structure
+    %assign isParamsStructured = !SLibAreSimulinkGlobalParamsUnstructured()
+    %if (SLibAutosarActive())
+        %if !ISFIELD(::CompiledModel.RTWAutosar, "ParamAccessInfo")
+            %addtorecord ::CompiledModel.RTWAutosar ParamAccessInfo {}
+            %addtorecord ::CompiledModel.RTWAutosar ParamNameToIdxMap {}
+        %endif
+    %endif
+    %%
+    %with ::CompiledModel.ModelParameters
+        %assign unsetParamPairs = FcnGetUnsetParamIdxFromIRInfo()
+        %foreach idx = SIZE(unsetParamPairs, 0)
+            %assign unsetParamIdx = unsetParamPairs[idx]
+            %assign param = Parameter[unsetParamIdx[0]]
+            %assign regObj = "RTW.DataImplementation.empty"
+            %% skip protected parameters. They should not be present in codeinfo
+            %if (ISEQUAL(param.Protected, "yes"))
+                %continue
+            %endif
+
+            %% Please note some instance Specific parameters will be handled specially in
+            %% SLibCreateInstanceSpecificParameterInterfaces
+
+            %assign isParamDefaultMapped = SLibIsLegacyStorageClassForDataRecord(param)
+            %if ((param.StorageClass !="Auto") && (param.StorageClass !="SimulinkGlobal")) || ...
+                isParamDefaultMapped
+                %if ISFIELD(param, "OrigIdentifier") && !ISEMPTY(param.OrigIdentifier)
+                    %assign paramRTWId = param.OrigIdentifier
+                %else
+                    %assign paramRTWId = LibGetRecordIdentifier(param)
+                %endif
+
+                %if !isParamDefaultMapped
+                    checkDataGraphicalNames(codeInfo.Parameters(%<unsetParamIdx[1]+1>).GraphicalName, '%<paramRTWId>');
+                %endif
+
+                %assign sc = param.StorageClass
+                %assign IsAutosarCalPrm = TLC_FALSE
+                %if (SLibAutosarActive() && (sc == "Custom" || isParamDefaultMapped))
+                    %assign rtwInfo = LibGetRTWInfoObjectProperties(param)
+                    %assign csAttribs = rtwInfo.CustomAttributes.Object
+                    %assign isParamReferenced = SIZE(param.GraphicalRef,0) > 0 || ISFIELD(param,"UsedInSLExpr")
+                    %assign IsAutosarCalPrm = !ISEMPTY(csAttribs) && ...
+                        ((ISFIELD(csAttribs, "Package") && ISEQUAL(csAttribs.Package, "SimulinkCSC")) && ...
+                        isParamReferenced && (ISFIELD(csAttribs, "Class")) && ...
+                        (ISEQUAL(csAttribs.Class, "AttribClass_AUTOSAR_CalPrm") || ...
+                        ISEQUAL(csAttribs.Class, "AttribClass_AUTOSAR_InternalCalPrm") || ...
+                        ISEQUAL(csAttribs.Class, "AttribClass_AUTOSAR_SystemConstant") ) )
+                %endif
+
+                %% Process storage class data
+                %assign cgTypeIdx = SLibGetRecordOriginalCGTypeIdx(param)
+                %assign containerCgTypeIdx = SLibGetRecordContainerCGTypeIdx(param)
+                %assign containerTypeObj = ""
+
+                %if (IsAutosarCalPrm)
+                    %%
+                    %% Get Custom attributes from the parameter
+                    %assign rtwInfo = LibGetRTWInfoObjectProperties(param)
+                    %assign csAttribs = rtwInfo.CustomAttributes.Object
+                    %assert (!ISEMPTY(csAttribs))
+                    %%
+                    %% Autosar CSC parameters
+                    %assign cgTypeIdx = SLibGetRecordOriginalCGTypeIdx(param)
+                    %%
+                    %% Determine type - Returns a coder.types.* object
+                    %assign typeObj = SLibGetCoderTypeObject(cgTypeIdx, 0, 0)
+                    %%
+
+                    %assign coderCgTypeIdx = cgTypeIdx
+                    %% Get CoderType Object
+                    %if ISFIELD(param, "ContainerCGTypeIdx")
+                        %assign coderCgTypeIdx = param.ContainerCGTypeIdx
+                    %endif
+
+                    %assign coderTypesObj = SLibGetCoderTypeObject(coderCgTypeIdx, 0, 0)
+
+                    %if ISFIELD(param, "OrigIdentifier") && !ISEMPTY(param.OrigIdentifier)
+                        %assign paramId = param.OrigIdentifier
+                    %else
+                        %assign paramId = LibGetRecordIdentifier(param)
+                    %endif
+                    %if !isParamDefaultMapped
+                        checkDataGraphicalNames(codeInfo.Parameters(%<unsetParamIdx[1]+1>).GraphicalName, '%<paramId>');
+                    %endif
+                    %assign regObj = SLibGetRTWCalibrationObject("Par%<idx>", typeObj, LibGetRecordIdentifier(param), csAttribs, coderTypesObj)
+
+                    %%
+                    %% Update CalPrm Access info for autosar target
+                    %assign calPrmIdx = unsetParamIdx[1] + 1
+                    %assign isSysConst = ISEQUAL(csAttribs.Class, "AttribClass_AUTOSAR_SystemConstant")
+                    %if ( SLibAutosarActive() && !isSysConst)
+                        %addtorecord ::CompiledModel.RTWAutosar.ParamNameToIdxMap %<paramId> %<calPrmIdx>
+                        %assign runnables = FIELDNAMES(param.RunnableAccessInfo)
+                        %assign numRunnables = SIZE(runnables, 1)
+                        %foreach runIdx = numRunnables
+                            %assign runName = runnables[runIdx]
+                            %assign pAccessInfo = ::CompiledModel.RTWAutosar.ParamAccessInfo
+                            %if !ISFIELD(pAccessInfo, runName)
+                                %addtorecord pAccessInfo %<runName> [%<calPrmIdx>]
+                            %else
+                                %assign pAccessInfo.%<runName> = pAccessInfo.%<runName> + calPrmIdx
+                            %endif
+                        %endforeach
+                    %endif
+                    %% Done CalPrmAccess info
+                %else
+                    %%
+                    %% Process CSC - custom storage class data
+                    %assign msDefn  = SLibGetMemorySectionDefForData(param)
+                    %assign cscDefn = SLibGetCSCDefForData(param)
+                    %assign isR13CSC = ...
+                        ((SLibGetDataAccess(cscDefn, param) == "unknown") ? 1 : 0)
+                    %assign isMacro = ...
+                        ((SLibGetDataInitForData(cscDefn, param) == "Macro") ? 1: 0)
+                    %if isMacro
+                        skippedParameters(end+1) = %<unsetParamIdx[1]+1>;
+                        %continue
+                    %endif
+                    %assign isPtr = ...
+                        ((SLibGetDataAccess(cscDefn, param)=="Pointer") ? 1 : 0)
+                    %assign isMPTVar = ISEQUAL(cscDefn.TLCFileName,"MPTUnstructured.tlc")
+                    %% Determine type qualifers
+                    %assign p_const  = (msDefn.IsConst ? 1 : 0)
+                    %assign p_vol    = (msDefn.IsVolatile ? 1 : 0)
+                    %if ( !isR13CSC && !isMacro)
+                        %% Only the following CSC are supported
+                        %%   - Not a pre-R14 CSC
+                        %%
+                        %if (cscDefn.CSCType == "Unstructured") || isMPTVar
+                            %% Ungrouped CSC
+                            %%
+                            %% Determine type - Returns a coder.types.* object
+                            %assign typeObj = SLibGetCoderTypeObject(cgTypeIdx, p_const, p_vol)
+                            %assign containerTypeObj = SLibGetCoderCodeTypeObject(containerCgTypeIdx, p_const, p_vol)
+                            %%
+                            %% If Component exports, add known properties to Variable Object
+                            %assign varOwnerInfo = GetVarOwnerInfo(param, cscDefn)
+                            %assign props     = LibGetCustomStorageAttributes(param)
+                            %assign isFileScope = GetIsFileScope(param, cscDefn)
+
+                            %% For Indirect access, add level of indirection to type
+                            %if (SLibGetDataAccess(cscDefn, param) == "Pointer")
+                                %assign tgtVar   = SLibGetRTWVariableObject("Par%<idx>",typeObj, ...
+                                    "%<LibGetRecordIdentifier(param)>_val", "","","")
+                                %assign pTypeObj = FcnCreatePointerTypeObj(cgTypeIdx,0, 0)
+                                %assign regObj   = ...
+                                    SLibGetRTWPointerVariableObject("Par%<idx>", pTypeObj, ...
+                                    LibGetRecordIdentifier(param), tgtVar)
+                            %else
+                                %% Create a RTW.Variable object using type, identifer, decl/defn file
+                                %assign regObj  = SLibGetRTWVariableObject("Par%<idx>",typeObj, ...
+                                    LibGetRecordIdentifier(param), varOwnerInfo.ownerName, varOwnerInfo.defnFile, varOwnerInfo.declFile)
+                            %endif
+                            %if isFileScope
+                                %<regObj>.StorageSpecifier = 'static';
+                            %elseif ISFIELD(msDefn,"Qualifier") && !ISEMPTY(msDefn.Qualifier)
+                                %<regObj>.StorageSpecifier = '%<msDefn.Qualifier>';
+                            %else
+                                %<regObj>.StorageSpecifier = 'extern';
+                            %endif
+                            %%
+                        %elseif (cscDefn.CSCType == "FlatStructure")
+                            %% Grouped CSC
+                            %assert(LibCGTypeIsMatrix(cgTypeIdx))
+                            %assign regObjName = "ModelParameter%<idx>_CSC"
+                            %assign regObj = SLibCodeInfoObjectForFlatStructure(param, cscDefn, regObjName, TLC_TRUE)
+                            %%
+                        %elseif (cscDefn.CSCType == "AccessFunction")
+                            %assign regObj = FcnHandleAccessFunctionCSC(param, SLibGetCoderTypeObject(cgTypeIdx, 0, 0), LibGetRecordIdentifier(param))
+                        %else
+                            %% CSC of type "Other"
+                            %assign regObj = SLibCustomStorageTypeOtherForCodeInfo(param, cscDefn, TLC_TRUE)
+                        %endif
+                    %else
+                        %% Unsupported CSC
+                        %% No implementation provided. The default regObj = "[]" will be used
+                    %endif
+                %endif
+            %else  %%
+                %if ( !(ISEQUAL(param.Tunable, "yes") && ...
+                    ISEQUAL(param.IsSfcnSizePrm, 0) && ...
+                    !ISEMPTY(SLibGetParameterValue(param))) )
+                    %<LibReportFatalError("CodeInfo: Unsupported parameter")>
+                %endif
+                %%
+                %assign cgTypeIdx = SLibGetRecordOriginalCGTypeIdx(param)
+                %%
+                %% Determine type - Returns a coder.types.* object
+                %assign typeObj = SLibGetCoderTypeObject(cgTypeIdx, 0, 0)
+                %%
+                %if SLibIsParamUnstructured(param)
+                    %%
+                    %% Create a RTW.Variable object
+                    %assign paramName = "%<tUnstructParameters>_%<LibGetRecordIdentifier(param)>"
+                    %if (!IsModelReferenceRTWTarget())
+                        %assign ownerName = ::CompiledModel.Name
+                        %assign defnFile  = "%<::CompiledModel.Name>_data." + ::LangFileExt
+                        %assign declFile  = "%<::CompiledModel.Name>.h"
+                    %else
+                        %assign ownerName = ""
+                        %assign defnFile  = ""
+                        %assign declFile  = ""
+                    %endif
+                    %assign regObj = ...
+                        SLibGetRTWVariableObject("Par%<idx>", typeObj, paramName, ...
+                        ownerName, defnFile, declFile)
+                    %<regObj>.StorageSpecifier = 'extern';
+                    %%
+                %else
+                    %%
+                    %if (param.WasAccessedAsVariable != 1)
+                        skippedParameters(end+1) = %<unsetParamIdx[1]+1>;
+                    %endif
+                    %continue
+                    %%
+                    %%
+                %endif
+                %%
+            %endif
+            %%
+            %% Create a RTW.DataInterface object which describes the parameter
+            %assign comment = "% Setting Parameter#%<idx+1>'s implementation"
+
+            %<comment>
+            codeInfo.Parameters(%<unsetParamIdx[1]+1>).Implementation = %<regObj>;
+            %if !ISEMPTY(containerTypeObj)
+                codeInfo.Parameters(%<unsetParamIdx[1]+1>).Implementation.CodeType = %<containerTypeObj>;
+            %endif
+            wr.writeParameter(%<regObj>, codeInfo.Parameters(%<unsetParamIdx[1]+1>).GraphicalName, codeInfo.Parameters(%<unsetParamIdx[1]+1>).SID);
+
+        %endforeach
+        %assign arSharedParamPairs =FcnGetArSharedParamIdxFromIRInfo()
+        %foreach idx = SIZE(arSharedParamPairs, 0)
+            %assign arSharedParamIdx = arSharedParamPairs[idx]
+            %assign param = Parameter[arSharedParamIdx[0]]
+            %assign calPrmIdx = arSharedParamIdx[1] + 1
+            %if ISFIELD(param, "OrigIdentifier") && !ISEMPTY(param.OrigIdentifier)
+                %assign paramId = param.OrigIdentifier
+            %else
+                %assign paramId = LibGetRecordIdentifier(param)
+            %endif
+            %addtorecord ::CompiledModel.RTWAutosar.ParamNameToIdxMap %<paramId> %<calPrmIdx>
+            %assign runnables = []
+            %if ISFIELD(param, "RunnableAccessInfo")
+                %assign runnables = FIELDNAMES(param.RunnableAccessInfo)
+            %endif
+            %assign numRunnables = SIZE(runnables, 1)
+            %foreach runIdx = numRunnables
+                %assign runName = runnables[runIdx]
+                %assign pAccessInfo = ::CompiledModel.RTWAutosar.ParamAccessInfo
+                %if !ISFIELD(pAccessInfo, runName)
+                    %addtorecord pAccessInfo %<runName> [%<calPrmIdx>]
+                %else
+                    %assign pAccessInfo.%<runName> = pAccessInfo.%<runName> + calPrmIdx
+                %endif
+            %endforeach
+        %endforeach
+    %endwith
+    %if (SLibAutosarActive())
+        %assign mdlRefBlks = ISFIELD(::CompiledModel,"ModelReferenceBlocks") ? ...
+            ::CompiledModel.ModelReferenceBlocks : []
+        %if !ISEMPTY(mdlRefBlks)
+            %foreach rowIdx = SIZE(mdlRefBlks,0)
+                %assign mdlRefInfo   = mdlRefBlks[rowIdx]
+                %assign mSysIdx      = mdlRefInfo[0]
+                %assign bIdx         = mdlRefInfo[1]
+                %assign blkInterface = GetModelrefInterface(System[mSysIdx].Block[bIdx])
+                %%
+                %% Add Init Runnable Access
+                %assign initAccess = ...
+                    FIELDNAMES(blkInterface.AutosarParamAccessInfo.InitializeAccess)
+                %assign numInitAccess = SIZE(initAccess, 1)
+                %foreach pIdx = numInitAccess
+                    %assign paramName = initAccess[pIdx]
+                    %assign calPrmIdx = ...
+                        GETFIELD(::CompiledModel.RTWAutosar.ParamNameToIdxMap, paramName)
+                    %assign pAccessInfo = ::CompiledModel.RTWAutosar.ParamAccessInfo
+                    %assign runName = ::CompiledModel.RTWAutosar.InitRunnables.Runnable[0].Name
+                    %if !ISFIELD(pAccessInfo, runName)
+                        %addtorecord pAccessInfo %<runName> [%<calPrmIdx>]
+                    %else
+                        %assign pAccessInfo.%<runName> = pAccessInfo.%<runName> + calPrmIdx
+                    %endif
+                %endforeach
+                %%
+                %% Add Out Runnable Access
+                %assign outAccess = ...
+                    FIELDNAMES(blkInterface.AutosarParamAccessInfo.OutputAccess)
+                %assign numOutAccess = SIZE(outAccess, 1)
+                %foreach pIdx = numOutAccess
+                    %assign paramName = outAccess[pIdx]
+                    %assign calPrmIdx = ...
+                        GETFIELD(::CompiledModel.RTWAutosar.ParamNameToIdxMap, paramName)
+                    %assign pAccessInfo = ::CompiledModel.RTWAutosar.ParamAccessInfo
+                    %<FcnAddRunnableToParamAccessInfo(mSysIdx, pAccessInfo, calPrmIdx)>
+                %endforeach
+            %endforeach
+        %endif
+    %endif
+%endfunction
+
+
+%% Function SLibCreateDataStoreInterfaces ========================================
+%% Abstract :
+%%   This function loops through DataStores and creates a RTW.DataInterface
+%%   object for each of them.
+%%   The process of creation here means emitting out the MATLAB syntax which can
+%%   create a MATLAB object.
+%%   The MATLAB syntax is
+%%       dStoreObj = RTW.DataInterface(sid,
+%%                                     dataStoreName,
+%%                                     implementation,
+%%                                     timing)
+%%
+%%       sid            - SID of the DataStoreMemory block.
+%%                        If GlobalDSM, sid == ''
+%%       dataStoreName  - Name of the data store
+%%       implementation - code implementation, either a RTW.Variable object
+%%                        or a RTW.StructExpression object.
+%%       timing         - A RTW.TimingInterface object, giving the sample rate
+%%                        of the data store
+%%
+%%   This function will be called in codeinfo.tlc which writes out MATLAB code.
+%%   The MATLAB syntax emitted by this function will be part of that file
+%%
+%function SLibCreateDataStoreInterfaces() Output
+    %% Start looping over DWorks
+
+    %with ::CompiledModel.DWorks
+        %assign unsetDSMPair = FcnGetUnsetDSMIdxFromIRInfo()
+        %assign dwIdx = 0
+        %if SLibAutosarActive() && !ISFIELD(::CompiledModel.RTWAutosar, "DSMAccessInfo")
+            %addtorecord ::CompiledModel.RTWAutosar DSMAccessInfo {}
+        %endif
+        %foreach idx = SIZE(unsetDSMPair, 0)
+            %assign unsetDSMIdx = unsetDSMPair[idx]
+            %assign dw = DWork[unsetDSMIdx[0]]
+            %if ISFIELD(dw, "OrigIdentifier") && !ISEMPTY(dw.OrigIdentifier)
+                %assign dwRTWId = dw.OrigIdentifier
+                checkDataGraphicalNames(codeInfo.DataStores(%<unsetDSMIdx[1]+1>).GraphicalName, '%<dwRTWId>');
+            %else
+                %% do nothing, because RTWID could be mangled in rtwgen.
+            %endif
+            %assign regObj = "RTW.DataImplementation.empty"
+            %% Is it a Shared Local
+            %assign isSharedLocalDSM = (dw.SharedLocalDSM || dw.SharedLocalDSMForSubmodel)
+            %% Check that interface DSM is never be put into DWork structure.
+            %if (ISFIELD(dw, "VarGroupIdx") || ISEQUAL(dw.StorageClass, "Auto")) && !SLibIsLegacyStorageClassForDataRecord(dw)
+                %continue
+            %endif
+            %% Process storage class data
+            %assign cgTypeIdx = dw.CGTypeIdx
+            %assign codeTypeObj = ""
+            %if (dw.StorageClass == "Custom" || SLibIsLegacyStorageClassForDataRecord(dw))
+                %% Process CSC - custom storage class datastores
+                %assign msDefn  = SLibGetMemorySectionDefForData(dw)
+                %assign cscDefn = SLibGetCSCDefForData(dw)
+                %assign isR13CSC = ((SLibGetDataAccess(cscDefn, dw) == "unknown") ? 1 : 0)
+                %assign isPtr = ((SLibGetDataAccess(cscDefn, dw)=="Pointer") ? 1 : 0)
+                %assign isPIM =  ISFIELD(cscDefn, "IsAutosarPerInstanceMemory") && ...
+                    cscDefn.IsAutosarPerInstanceMemory
+                %assign isMPTVar = ISEQUAL(cscDefn.TLCFileName,"MPTUnstructured.tlc")
+                %% Determine type qualifers
+                %assign dw_const  = (msDefn.IsConst ? 1 : 0)
+                %assign dw_vol    = (msDefn.IsVolatile ? 1 : 0)
+                %if (!isR13CSC)
+                    %% Only the following CSC are supported
+                    %%   - Not a pre-R14 CSC
+                    %%   - Non-Pointer Access
+                    %%
+                    %if ( (cscDefn.CSCType == "Unstructured") || isPIM || isMPTVar)
+                        %% Either Ungrouped CSC or Autosar PIM
+                        %%
+                        %% Determine type - Returns a coder.types.* object
+                        %assign typeObj = SLibGetCoderTypeObject(cgTypeIdx, dw_const, dw_vol)
+                        %assign codeTypeObj = typeObj
+                        %if ISFIELD(dw,"ContainerCGTypeIdx")
+                            %assign dataCodeTypeIdx = SLibGetRecordContainerCGTypeIdx(dw)
+                            %assign codeTypeObj = SLibGetCoderCodeTypeObject(dataCodeTypeIdx, dw_const, dw_vol)
+                        %endif
+                        %%
+                        %% If Component exports, add known properties to Variable Object
+                        %assign varOwnerInfo = GetVarOwnerInfo(dw, cscDefn)
+                        %assign props     = LibGetCustomStorageAttributes(dw)
+                        %assign isFileScope = GetIsFileScope(dw, cscDefn)
+
+                        %if (isPtr)
+                            %assign tgtVar   = SLibGetRTWVariableObject("DW%<idx>", typeObj, ...
+                                "%<LibGetRecordIdentifier(dw)>", varOwnerInfo.ownerName, varOwnerInfo.defnFile, varOwnerInfo.declFile)
+                            %assign pTypeObj = FcnCreatePointerTypeObj(cgTypeIdx, 0, 0)
+                            %assign baseRegObj   = ...
+                                SLibGetRTWPointerVariableObject("DW%<idx>", pTypeObj, ...
+                                LibGetRecordIdentifier(dw), tgtVar)
+                        %else
+                            %% Create a RTW.Variable object using type, identifer and decl/defn file
+                            %assign baseRegObj  = SLibGetRTWVariableObject("DW%<idx>", typeObj, ...
+                                LibGetRecordIdentifier(dw), varOwnerInfo.ownerName, varOwnerInfo.defnFile, varOwnerInfo.declFile)
+                        %endif
+                        %if isFileScope
+                            %<baseRegObj>.StorageSpecifier = 'static';
+                        %else
+                            %<baseRegObj>.StorageSpecifier = 'extern';
+                        %endif
+                        %% For AUTOSAR PIMs wrap in an AutosarMemoryExpression object
+                        %if dw.StorageClass == "Custom" && ISFIELD(dw, "AutosarPIMDSM")
+                            %assign ca = LibGetCustomStorageAttributes(dw)
+                            %assign locName = LibGetRecordIdentifier(dw)
+                            %assign locNeedsNVRAMAccess = ca.needsNVRAMAccess
+                            %assign locIsArTypedPerInstanceMemory = ca.IsArTypedPerInstanceMemory
+                            %assign regObj = "PIMDSM%<idx>"
+                            %if locIsArTypedPerInstanceMemory
+                                %assign locDataAccessMode = "ArTypedPerInstanceMemory"
+                            %else
+                                %assign locDataAccessMode = "CTypedPerInstanceMemory"
+                            %endif
+                            %<regObj> = RTW.AutosarMemoryExpression('%<locDataAccessMode>');
+                            %<regObj>.VariableName = '%<locName>';
+                            %<regObj>.NeedsNVRAMAccess = %<locNeedsNVRAMAccess>;
+                            %<regObj>.BaseRegion = %<baseRegObj>;
+                            %<regObj>.Type = %<typeObj>;
+                        %else
+                            %assign regObj = baseRegObj
+                        %endif
+                        %%
+                    %elseif (cscDefn.CSCType == "FlatStructure")
+                        %% Grouped CSC
+                        %assign regObjName = "DataStore%<idx>_CSC"
+                        %assign regObj = SLibCodeInfoObjectForFlatStructure(dw, cscDefn, regObjName, TLC_FALSE)
+                        %%
+                    %elseif (cscDefn.CSCType == "AccessFunction")
+                        %assign regObj = FcnHandleAccessFunctionCSC(dw, SLibGetCoderTypeObject(cgTypeIdx, 0, 0), LibGetRecordIdentifier(dw))
+                    %else
+                        %% CSC of type "other"
+                        %assign regObj = SLibCustomStorageTypeOtherForCodeInfo(dw, cscDefn, TLC_FALSE)
+                    %endif
+                %else
+                    %% Unsupported CSC
+                    %% No implementation provided. The default regObj = "[]" will be used
+                %endif
+            %endif
+            %assign comment = "% Setting DataStore#%<idx+1>'s  implementation"
+
+            %<comment>
+            codeInfo.DataStores(%<unsetDSMIdx[1]+1>).Implementation = %<regObj>;
+            %if !ISEMPTY(codeTypeObj)
+                codeInfo.DataStores(%<unsetDSMIdx[1]+1>).Implementation.CodeType = %<codeTypeObj>;
+            %endif
+            wr.writeDataStore(%<regObj>, codeInfo.DataStores(%<unsetDSMIdx[1]+1>));
+            %if SLibAutosarActive()
+                %assign dwIdx = dwIdx + 1
+                %if ISFIELD(dw, "RunnableAccessInfo")
+                    %with ::CompiledModel.RTWAutosar
+                        %assign runnables = FIELDNAMES(dw.RunnableAccessInfo)
+                        %assign numRunnables = SIZE(runnables, 1)
+                        %foreach runIdx = numRunnables
+                            %assign runName = runnables[runIdx]
+                            %if !ISFIELD(DSMAccessInfo, runName)
+                                %addtorecord DSMAccessInfo %<runName> [%<dwIdx>]
+                            %else
+                                %assign DSMAccessInfo.%<runName> = ...
+                                    DSMAccessInfo.%<runName> + dwIdx
+                            %endif
+                        %endforeach
+                    %endwith
+                %endif
+            %endif %%SLibAutosarActive()
+        %endforeach
+    %endwith %%DWorks
+%endfunction
+
+%% Function SLibIsGlobalVariable ========================================
+%% Abstract :
+%%   This function check if BlockOutports and Block State is a
+%%   Global Variable
+%%
+%function SLibIsGlobalVariable(glbData) Output
+    %assign isPIM =  (ISFIELD(glbData, "AutosarPIMDSM") && glbData.AutosarPIMDSM)
+    %if ISEQUAL(glbData.StorageClass, "Auto") || isPIM
+        %return TLC_FALSE
+    %endif
+    %% Process storage class data
+    %if (glbData.StorageClass != "Custom")
+        %%
+        %% If not ExportedGlobal, continue
+        %if !ISEQUAL(glbData.StorageClass, "ExportedGlobal")
+            %return TLC_FALSE
+        %endif
+    %else
+        %% Custom storage Classes.
+        %assign cscDefn = SLibGetCSCDefForData(glbData)
+        %assign isDirect = ((SLibGetDataAccess(cscDefn, glbData)=="Direct") ? 1 : 0)
+        %assign isMacro = ((SLibGetDataInitForData(cscDefn, glbData) == "Macro") ? 1: 0)
+        %assign isUnstructured = ((cscDefn.CSCType == "Unstructured") ? 1 : 0)
+        %assign isExported = (ISEQUAL(cscDefn.DataScope, "Exported") ? 1 : 0)
+        %if (isDirect && !isMacro && isUnstructured && isExported)
+            %if !(ISFIELD(glbData, "FilePackaging") && (!ISEMPTY(glbData.FilePackaging)))
+                %return TLC_FALSE
+            %endif
+        %endif
+    %endif
+    %return TLC_TRUE
+%endfunction
+
+%% Function SLibCreateGlobalVariable ========================================
+%% Abstract :
+%%   This function loops through BlockOutports or Block State and creates
+%%   a RTW.Variable object for each of them with storage class as
+%%   ExportedGlobal.
+%%
+%%   This function will be called in codeinfo.tlc which writes out MATLAB code.
+%%   The MATLAB syntax emitted by this function will be part of that file
+%%
+%function SLibCreateGlobalVariable(glbData) Output
+    %if !SLibIsGlobalVariable(glbData)
+        %return TLC_FALSE
+    %endif
+    %assign regObj = "RTW.DataImplementation.empty"
+
+    %% Process storage class data
+    %assign cgTypeIdx = glbData.CGTypeIdx
+    %assign ownerName = ""
+    %assign defnFile  = ""
+    %assign declFile  = ""
+    %assign glbData_const  = 0
+    %assign glbData_vol    = 0
+    %if (glbData.StorageClass != "Custom")
+        %% If ExportedGlobal, the datastore's definition & declaration file are known
+        %assign ownerName = ::CompiledModel.Name
+        %assign defnFile  = "%<::CompiledModel.Name>." + ::LangFileExt
+        %assign declFile  = "%<::CompiledModel.Name>.h"
+        %%
+        %% Determine type qualifers
+        %if !ISEMPTY(glbData.StorageTypeQualifier)
+            %if (glbData.StorageTypeQualifier == "const volatile")
+                %assign glbData_const  = 1
+                %assign glbData_vol    = 1
+            %elseif (glbData.StorageTypeQualifier == "const")
+                %assign glbData_const  = 1
+            %elseif (glbData.StorageTypeQualifier == "volatile")
+                %assign glbData_vol  = 1
+            %endif
+        %endif
+    %else
+        %% Custom storage Classes.
+        %assign cscDefn = SLibGetCSCDefForData(glbData)
+        %assign isDirect = ((SLibGetDataAccess(cscDefn, glbData)=="Direct") ? 1 : 0)
+        %assign isMacro = ...
+            ((SLibGetDataInitForData(cscDefn, glbData) == "Macro") ? 1: 0)
+        %assign isUnstructured = ((cscDefn.CSCType == "Unstructured") ? 1 : 0)
+        %assign isExported = (ISEQUAL(cscDefn.DataScope, "Exported") ? 1 : 0)
+        %if (isDirect && !isMacro && isUnstructured && isExported)
+            %% Determine type qualifers
+            %assign msDefn  = SLibGetMemorySectionDefForData(glbData)
+            %assign glbData_const  = (msDefn.IsConst ? 1 : 0)
+            %assign glbData_vol    = (msDefn.IsVolatile ? 1 : 0)
+            %if ISFIELD(glbData, "FilePackaging") && (!ISEMPTY(glbData.FilePackaging))
+                %assign defineFildwdx = glbData.FilePackaging.DefineFile
+                %assign hdrFileName   = glbData.FilePackaging.HeaderFile
+                %if (defineFildwdx != -1)
+                    %with ::CompiledModel.DataObjectUsage
+                        %assign defFileName = File[defineFildwdx].Name
+                    %endwith
+                    %assign defnFile  = defFileName + "." + ::LangFileExt
+                    %assign ownerName = ::CompiledModel.Name
+                    %if (hdrFileName != "")
+                        %assign declFile = hdrFileName
+                    %endif
+                %endif
+            %endif
+        %endif
+    %endif
+    %%
+    %% Determine type - Returns a coder.types.* object
+    %assign typeObj = SLibGetCoderTypeObject(cgTypeIdx, glbData_const, glbData_vol)
+    %% Create a RTW.Variable object using type, identifer and decl/defn file
+    %assign dataID = LibGetRecordIdentifier(glbData)
+    %assign regObj  = SLibGetRTWVariableObject("glbData_%<dataID>", typeObj, ...
+        dataID, ownerName, defnFile, declFile)
+
+    %assign isMutuallyExclusive = ISFIELD(glbData,"isMutuallyExclusiveSignal") ? (glbData.isMutuallyExclusiveSignal == "yes") : 0
+
+    %<regObj>.StorageSpecifier = 'extern';
+    %%
+    %assign comment = "% Adding Global Variable: %<dataID>"
+    %<comment>
+    if isempty(codeInfo.Code.GlobalVariables)
+    codeInfo.Code.GlobalVariables = %<regObj>;
+    else
+    codeInfo.Code.GlobalVariables(end+1) = %<regObj>;
+    end
+
+    %if isMutuallyExclusive
+        if isempty(codeInfo.Code.MutuallyExclusiveVariables)
+        codeInfo.Code.MutuallyExclusiveVariables = {'%<dataID>'};
+        else
+        codeInfo.Code.MutuallyExclusiveVariables(end+1) = {'%<dataID>'};
+        end
+    %endif
+
+    %return TLC_TRUE
+%endfunction
+
+%% Function SLibCreateStaticMemory ========================================
+%% Abstract :
+%%   This function loops through BlockOutports and Block State and creates
+%%   a RTW.Variable object for each of them with storage class as
+%%   ExportedGlobal.
+%%
+%%   This function will be called in codeinfo.tlc which writes out MATLAB code.
+%%   The MATLAB syntax emitted by this function will be part of that file
+%%
+%function SLibCreateStaticMemory() Output
+    %% Start looping over BlockOutputs
+    %assign globalMemoryIndex = 0
+    %with ::CompiledModel.BlockOutputs
+        %foreach idx = NumExternalBlockOutputs
+            %assign eBO = ExternalBlockOutput[idx]
+            %assign isGlobalMemory = %<SLibCreateGlobalVariable(eBO)>
+            %if isGlobalMemory
+                %assign globalMemoryIndex = globalMemoryIndex+1
+                %assign fieldName = "CIIdx"
+                %addtorecord eBO %<fieldName> %<globalMemoryIndex>
+            %endif
+        %endforeach
+    %endwith %%BlockOutputs
+    %% Start looping over DWorks
+    %with ::CompiledModel.DWorks
+        %foreach idx = NumDWorks
+            %assign dw = DWork[idx]
+            %assign isState = ISEQUAL(dw.UsedAs, "DSTATE")
+            %if isState || (dw.IsDataStoreMemory == 1)
+                %assign isGlobalMemory = %<SLibCreateGlobalVariable(dw)>
+                %if isGlobalMemory
+                    %assign globalMemoryIndex = globalMemoryIndex+1
+                    %assign fieldName = "CIIdx"
+                    %addtorecord dw %<fieldName> %<globalMemoryIndex>
+                %endif
+            %endif
+        %endforeach
+    %endwith %%DWorks
+%endfunction
+
+%% Function SLibAddArTypedPIMInfo ========================================
+%% Abstract :
+%%   This function adds field CIID and PIMName/VARName for GlobalBlockOutput record
+%%   when the BlockOutput is belongs to ArTypedPIM/StaticMemory CoderDataGroup.
+%%
+%%   This function will be called in codeinfo.tlc which writes out MATLAB code.
+%%   The MATLAB syntax emitted by this function will be part of that file
+%%
+%function SLibAddAutosarVarInfo() Output
+    %assign rootSystem = ::CompiledModel.System[::CompiledModel.NumSystems-1]
+    %assign varIndex = 0
+    %foreach groupIdx = ::CompiledModel.NumCoderDataGroups
+        %assign group = ::CompiledModel.CoderDataGroup[groupIdx]
+        %if ISFIELD(group, "SynthesizedNamePrefix") && !ISEMPTY(group.SynthesizedNamePrefix) && ...
+            ((group.SynthesizedNamePrefix == "_PIM") || (group.SynthesizedNamePrefix == "_VAR"))
+            %assign fieldName = "CoderDataGroup" + group.Name + "VarGroupIndex"
+            %if ISFIELD(rootSystem, fieldName)
+                %assign varIndex = 0
+                %assign idFieldName = "CIIdx"
+                %if group.SynthesizedNamePrefix == "_PIM"
+                    %assign nameFieldName = "PIMName"
+                %else
+                    %assign nameFieldName = "VARName"
+                %endif
+                %assign varGrpIdx = GETFIELD(rootSystem, fieldName)
+                %assign varGrp = ::CompiledModel.VarGroups.VarGroup[varGrpIdx[0]]
+                %foreach elemIdx = varGrp.NumVarGroupElements
+                    %assign element = varGrp.VarGroupElements[elemIdx]
+                    %assign idnum = IDNUM(element)
+                    %switch idnum[0]
+                      %case "B"
+                        %assign gBO = ::CompiledModel.BlockOutputs.GlobalBlockOutput[idnum[1]]
+                        %assign varName = varGrp.VarGroupElementIds[elemIdx]
+                        %assign varIndex = varIndex+1
+                        %addtorecord gBO %<idFieldName> %<varIndex>
+                        %addtorecord gBO %<nameFieldName> varName
+                        %break
+                      %default
+                        %break
+                    %endswitch
+                %endforeach
+            %endif
+        %endif
+    %endforeach
+%endfunction
+
+%function SLibProcessBlockOutput(dataRec, category) Output
+    %assert(category == "ExternalBlockOutput" || category == "GlobalBlockOutput")
+    %if ISFIELD(dataRec,"IsRemovedInIR") && dataRec.IsRemovedInIR ==1
+        %return
+    %endif
+    %assign rtwFileIdx = FcnGetRTWFileModelRecordIndex(dataRec)
+    %% All Block Output Buffers are not written to CGModel. The function
+    %% below will tell us if ExternalBlockOutput[rtwFileIdx] has a
+    %% custom storage class and its implementation needs to set in
+    %% Code Descriptor.
+    %if category == "ExternalBlockOutput"
+        %assign boIdx = CGMODEL_ACCESS("CGModel.getDMRExternalBlockOutputIndex",%<rtwFileIdx>)
+    %else
+        %assign boIdx = CGMODEL_ACCESS("CGModel.getDMRGlobalBlockOutputIndex",%<rtwFileIdx>)
+    %endif
+    %if boIdx == -1
+        %% This is not a custom storage class ExternalBlockOutput, no need
+        %% to create a Data Interface for Code Descriptor.
+        %return
+    %endif
+    %<SLibCreateDataInterfaceHelper(dataRec, category, boIdx)>
+%endfunction
+
+
+%function SLibCreateBlockOutputInterfaces() Output
+    %with ::CompiledModel.BlockOutputs
+        %foreach idx = NumExternalBlockOutputs
+            %assign eBO = ExternalBlockOutput[idx]
+            %<SLibProcessBlockOutput(eBO, "ExternalBlockOutput")>
+        %endforeach
+        %foreach idx = NumGlobalBlockOutputs
+            %assign gBO = GlobalBlockOutput[idx]
+            %<SLibProcessBlockOutput(gBO, "GlobalBlockOutput")>
+        %endforeach
+    %endwith %%BlockOutputs
+%endfunction
+
+%function SLibCreateDWorkInterfaces() Output
+    %with ::CompiledModel.DWorks
+        %foreach idx = NumDWorks
+            %assign dw = DWork[idx]
+            %if ISFIELD(dw,"IsRemovedInIR") && dw.IsRemovedInIR == 1
+                %continue
+            %endif
+
+            %if ISFIELD(dw,"IsLocalScratchDWork") && dw.IsLocalScratchDWork == 1
+                %continue
+            %endif
+
+            %% Skip PIRWork
+            %if dw.Origin == "PWORK" || dw.Origin == "IWORK" || dw.Origin == "RWORK"
+                %continue
+            %endif
+
+            %% Skip DSMs for legacy CSCs
+            %if dw.IsDataStoreMemory == 1
+                %continue
+            %endif
+
+            %assign rtwFileIdx = FcnGetRTWFileModelRecordIndex(dw)
+            %if FcnGetOptimizedAwayInTLC(dw)
+                %assign dwIdx = CGMODEL_ACCESS("CGModel.getDMRDWorkIndex",%<rtwFileIdx>)
+                %if dwIdx != -1
+                    wr.removeDWorkOptimizedInTLC(%<dwIdx+1>);
+                %endif
+                %continue
+            %endif
+
+            %% All DWork Buffers are not written to CGModel. The function
+            %% below will tell us if DWorks[rtwFileIdx] has a
+            %% custom storage class and its implementation needs to set in
+            %% Code Descriptor.
+            %assign dwIdx = CGMODEL_ACCESS("CGModel.getDMRCustomDWorkIndex",%<rtwFileIdx>)
+            %if dwIdx == -1
+                %% This is not a custom storage class DWork, no need
+                %% to create a Data Interface for Code Descriptor.
+                %continue
+            %endif
+
+            %<SLibCreateDataInterfaceHelper(dw, "DWork", dwIdx)>
+        %endforeach
+    %endwith %%DWorks
+%endfunction
+
+%function SLibCreateDataInterfaceHelper(dataRec, category, cgModelIdx) Output
+    %if ((dataRec.StorageClass != "Auto") ...
+        && (dataRec.StorageClass != "SimulinkGlobal") ...
+        && (dataRec.StorageClass != "ExportedGlobal")) ...
+        || SLibIsLegacyStorageClassForDataRecord(dataRec)
+        %assign regObj = "RTW.DataImplementation.empty"
+        %% Process storage class data
+        %assign cgTypeIdx = dataRec.CGTypeIdx
+        %assign cgContainerTypeIdx = ""
+        %if ISFIELD(dataRec, "ContainerCGTypeIdx")
+            %assign cgContainerTypeIdx = dataRec.ContainerCGTypeIdx
+        %else
+            %assign cgContainerTypeIdx = cgTypeIdx
+        %endif
+        %assign sigID     = LibGetRecordIdentifier(dataRec)
+        %if SLibIsAuxBufferForReusableCSCOrAutoSarOrFPC(dataRec)
+            %% If the record represents a Reusable SC, but we failed to
+            %% reuse, we need to use the final identifier that will be used in the code
+            %assign sigID = dataRec.ReuseBufferName
+        %endif
+        %% Process CSC - custom storage class inputs
+        %assign msDefn  = SLibGetMemorySectionDefForData(dataRec)
+        %assign cscDefn = SLibGetCSCDefForData(dataRec)
+        %assign isR13CSC = ((SLibGetDataAccess(cscDefn, dataRec) == "unknown") ? 1 : 0)
+        %assign isPtr = ((SLibGetDataAccess(cscDefn, dataRec)=="Pointer") ? 1 : 0)
+        %assign isMPTVar = ISEQUAL(cscDefn.TLCFileName,"MPTUnstructured.tlc")
+        %% Determine type qualifers
+        %assign IsConst  = (msDefn.IsConst ? 1 : 0)
+        %assign IsVol    = (msDefn.IsVolatile ? 1 : 0)
+        %if (!isR13CSC)
+            %% Only the following CSC are supported
+            %%   - Not a pre-R14 CSC
+            %%   - Non-Pointer Access
+            %if (cscDefn.CSCType == "Unstructured") || isMPTVar
+                %% Ungrouped CSC
+                %%
+                %%
+                %% Determine type - Returns a coder.types.* object
+                %assign typeObj = SLibGetCoderTypeObject(cgTypeIdx, IsConst, IsVol)
+                %if ISFIELD(dataRec,"FrameData") && !ISEQUAL(dataRec.FrameData, "no")
+                    %assign typeObj = FcnGetMatrixFrameTypeObj(typeObj)
+                %endif
+
+                %% Determine CodeType
+                %assign codeTypeObj = ""
+                %if !ISEMPTY(cgContainerTypeIdx)
+                    %assign codeTypeObj = SLibGetCoderTypeObject(cgContainerTypeIdx, IsConst, IsVol)
+                    %if ISFIELD(dataRec,"FrameData") && !ISEQUAL(dataRec.FrameData, "no")
+                        %assign codeTypeObj = FcnGetMatrixFrameTypeObj(codeTypeObj)
+                    %endif
+                %endif
+
+                %%
+                %% If Component exports, add known properties to Variable Object
+                %assign defineFileIdx = SLibCustomStorageGetDefineFileIdxIfNecessary(dataRec, cscDefn)
+                %assign defnFile = SLibCustomStorageGetDefineFileFromIdx(defineFileIdx)
+                %assign ownerName = SLibCustomStorageGetOwnerNameForCodeInfo("", defineFileIdx)
+                %assign declFile = SLibCustomStorageGetDeclFileForCodeInfo(dataRec, defineFileIdx)
+                %if ISEMPTY(declFile) && SLibIsAuxBufferForReusableCSCOrAutoSarOrFPC(dataRec)
+                    %% The model owns the rcsc aux buffer
+                    %assign ownerName = LibGetModelName()
+                %endif
+                %if (isPtr)
+                    %assign tgtVar  = SLibGetRTWVariableObject(sigID, typeObj, ...
+                        sigID, ownerName, defnFile, declFile)
+                    %assign pTypeObj = FcnCreatePointerTypeObj(cgTypeIdx, 0, 0)
+                    %assign regObj   = ...
+                        SLibGetRTWPointerVariableObject("Ptr_%<sigID>", pTypeObj, ...
+                        sigID, tgtVar)
+                %else
+                    %% Create a RTW.Variable object using type, identifer and decl/defn file
+                    %assign regObj  = SLibGetRTWVariableObject(sigID, typeObj, ...
+                        sigID, ownerName, defnFile, declFile)
+
+                %endif
+                %if ISFIELD(dataRec, "isFileScoped") && dataRec.isFileScoped
+                    %<regObj>.StorageSpecifier = 'static';
+                %else
+                    %<regObj>.StorageSpecifier = 'extern';
+                %endif
+                %if !ISEMPTY(codeTypeObj)
+                    %<regObj>.CodeType = %<codeTypeObj>;
+                %endif
+            %elseif (cscDefn.CSCType == "FlatStructure")
+                %% Grouped CSC
+                %assign idx = FcnGetRTWFileModelRecordIndex(dataRec)
+                %assign regObjName = "ExternalBlockOutput%<idx>_CSC"
+                %assign regObj = SLibCodeInfoObjectForFlatStructure(dataRec, cscDefn, regObjName, TLC_FALSE)
+                %%
+            %elseif (cscDefn.CSCType == "AccessFunction")
+                %assign typeObj = SLibGetCoderTypeObject(cgTypeIdx, 0, 0)
+                %if ISFIELD(dataRec,"FrameData") && !ISEQUAL(dataRec.FrameData, "no")
+                    %assign typeObj = FcnGetMatrixFrameTypeObj(typeObj)
+                %endif
+                %assign regObj = FcnHandleAccessFunctionCSC(dataRec, typeObj, LibGetRecordIdentifier(dataRec))
+            %else
+                %assert(cscDefn.CSCType == "Other")
+                %% CSC of type "Other"
+                %assign regObj = SLibCustomStorageTypeOtherForCodeInfo(dataRec, cscDefn, TLC_FALSE)
+            %endif
+            %if category=="ExternalBlockOutput"
+                wr.writeExternalBlockOutput(%<regObj>, %<cgModelIdx>);
+            %elseif category=="GlobalBlockOutput"
+                wr.writeGlobalBlockOutput(%<regObj>, %<cgModelIdx>);
+            %elseif category=="DWork"
+                wr.writeDWork(%<regObj>, %<cgModelIdx>);
+            %endif
+        %else
+            %% Unsupported CSC
+            %% No implementation provided. The default regObj = "[]" will be used
+        %endif
+    %endif
+%endfunction
+
+%% Function FcnGetRTWFileModelRecordIndex ========================================
+%% Abstract :
+%%   Given a model data record like DWork/ExternalBlockOutput,
+%%   this function returns the Index at which this record was written to
+%%   RTW file.
+
+%function FcnGetRTWFileModelRecordIndex(RTWFileRecord)
+    %% Get rid of the "B" or "D". The remaining string is the buffer index
+    %assign rtwFileIdx_string = STRING(RTWFileRecord.LogicalSrc)
+    %assign rtwFileIdx = ""
+    %assign strlen = SIZE(rtwFileIdx_string,1)
+    %foreach idx = strlen
+        %if idx==0
+            %continue
+        %else
+            %assign rtwFileIdx = "%<rtwFileIdx>%<rtwFileIdx_string[idx]>"
+        %endif
+    %endforeach
+    %return rtwFileIdx
+%endfunction
+
+%% Function SLibCustomStorageGetDefineFileIdxIfNecessary =================
+%%
+%% Abstract:  Returns the file idx of the definition file associated
+%% with the custom storage class.  Returns -1 if the definition file
+%% is not owned by the current model.
+%function SLibCustomStorageGetDefineFileIdxIfNecessary(dataRec, cscDefn)
+    %assign isSetForFirstTime = TLC_FALSE
+    %assign info = SLibGenInstanceSpecificInfo(cscDefn, dataRec, LibGetCustomStorageAttributes(dataRec), isSetForFirstTime)
+    %if !FcnWriteOutCustomDataDefinition(dataRec, info.dataScope, cscDefn.DataInit, LibGetInstanceSpecificProp(cscDefn, LibGetCustomStorageAttributes(dataRec), "Owner"))
+        %return -1
+    %endif
+    %if !ISFIELD(dataRec, "FilePackaging") || (ISEMPTY(dataRec.FilePackaging))
+        %return -1
+    %endif
+    %return dataRec.FilePackaging.DefineFile
+%endfunction
+
+%% Function SLibCustomStorageGetDefineFileFromIdx =================
+%%
+%% Abstract:  Given a file index, return the define file's name.
+%% Return empty if file index is -1.
+%function SLibCustomStorageGetDefineFileFromIdx(defineFileIdx)
+    %if (defineFileIdx == -1)
+        %assign defnFile = ""
+    %else
+        %with ::CompiledModel.DataObjectUsage
+            %assign defFileName = File[defineFileIdx].Name
+        %endwith
+        %assign defnFile  = defFileName + "." + ::LangFileExt
+    %endif
+    %return defnFile
+%endfunction
+
+
+%% Function SLibCustomStorageGetOwnerNameForCodeInfo =================
+%%
+%% Abstract:  Returns the name of the current model if defineFileIdx is
+%% not -1.
+%function SLibCustomStorageGetOwnerNameForCodeInfo(dataOwner, defineFileIdx)
+    %if (defineFileIdx == -1)
+        %if ISEMPTY(dataOwner)
+            %assign ownerName = ""
+        %else
+            %assign ownerName = dataOwner
+        %endif
+    %else
+        %assign ownerName = ::CompiledModel.Name
+    %endif
+    %return ownerName
+%endfunction
+
+%% Function SLibCustomStorageGetDeclFileForCodeInfo =======================
+%%
+%% Abstract:  Returns the name of the declaration file associated with
+%% dataRec.  Returns empty if the variable is not owned by the current model.
+%function SLibCustomStorageGetDeclFileForCodeInfo(dataRec, defineFileIdx)
+    %assign declFile = ""
+    %if (defineFileIdx != -1)
+        %assign hdrFileName   = dataRec.FilePackaging.HeaderFile
+        %if (hdrFileName != "")
+            %assign declFile = hdrFileName
+        %endif
+    %endif
+    %return declFile
+%endfunction
+
+%% Function SLibIsFlatStructureBitField ===================================
+%function SLibIsFlatStructureBitField(cscDefn, cgTypeIdx)
+    %assign isBitField = ...
+        (ISFIELD(cscDefn.CSCTypeAttributes, "BitPackBoolean")) && ...
+        (cscDefn.CSCTypeAttributes.BitPackBoolean) && ...
+        (FcnTypeSupportsBitField(::CompiledModel.CGTypes.CGType[cgTypeIdx].SLTypeIdx))
+    %return isBitField
+%endfunction
+
+%% Function SLibCodeInfoObjectForFlatStructure ==========================
+%function SLibCodeInfoObjectForFlatStructure(dataRec, cscDefn, regObj, isParam) Output
+    %if ISEQUAL(cscDefn.DataScope, "Imported")
+        %return SLibCustomStorageTypeOtherForCodeInfo(dataRec, cscDefn, isParam)
+    %else
+        %return SLibCustomExpressionForFlatStructure(dataRec, cscDefn, regObj, isParam)
+    %endif
+%endfunction
+
+%% Function SLibCustomExpressionForFlatStructure ==========================
+%function SLibCustomExpressionForFlatStructure(dataRec, cscDefn, regObj, isParam) Output
+    %assign msDefn  = SLibGetMemorySectionDefForData(dataRec)
+    %if isParam
+        %assign cgTypeIdx  = SLibGetRecordOriginalCGTypeIdx(dataRec)
+        %assign baseCGTypeIdx = LibCGTypeBaseIndex(cgTypeIdx)
+        %assign isBitField = SLibIsFlatStructureBitField(cscDefn, baseCGTypeIdx)
+    %else
+        %assign cgTypeIdx = dataRec.CGTypeIdx
+        %assign isBitField = SLibIsFlatStructureBitField(cscDefn, cgTypeIdx)
+    %endif
+
+
+    %assign data_const  = (msDefn.IsConst ? 1 : 0)
+    %assign data_vol    = (msDefn.IsVolatile ? 1 : 0)
+    %assign typeObj = SLibGetCoderTypeObject(cgTypeIdx, data_const, data_vol)
+    %assign codeTypeObj = typeObj
+    %if ISFIELD(dataRec,"ContainerCGTypeIdx")
+        %assign dataCodeTypeIdx = SLibGetRecordContainerCGTypeIdx(dataRec)
+        %assign codeTypeObj = SLibGetCoderCodeTypeObject(dataCodeTypeIdx, data_const, data_vol)
+    %endif
+
+    %if isBitField
+        %if isParam
+            %<typeObj>.BaseType = %<SLibGetCoderTypeObject(baseCGTypeIdx, TLC_FALSE, TLC_FALSE)>;
+        %endif
+    %else
+        %if ISFIELD(dataRec, "FrameData") && !ISEQUAL(dataRec.FrameData, "no")
+            %assign typeObj = FcnGetMatrixFrameTypeObj(typeObj)
+        %endif
+    %endif
+
+    %assign aExpr = LibCustomData(dataRec, "contents", "", "")
+    %assign owner = ISEQUAL(cscDefn.DataScope, "Exported") ? ::CompiledModel.Name : ""
+    %<regObj> = RTW.CustomExpression(%<typeObj>,'%<aExpr>','%<aExpr>','%<owner>');
+    %<regObj>.CodeType = %<codeTypeObj>;
+    %<regObj>.IsBitfield = %<isBitField>;
+    %return regObj
+%endfunction
+
+%function SLibGetSupportsSILPILValue(cscDefn, customAttrProps)
+    %assign supportSILPIL = LibGetInstanceSpecificProp(cscDefn, customAttrProps, "SupportSILPIL")
+    %if TYPE(supportSILPIL) == "String"
+        %assign supportSILPIL = supportSILPIL == "true"
+    %endif
+    %return supportSILPIL
+%endfunction
+
+%% Function SLibCustomStorageTypeOtherSupportsSILPIL ======================
+%%
+%% Abstract: Return TLC_TRUE if the CSC of type "Other" supports SIL and
+%% PIL - specifically, if it has a class-specific or instance-specific
+%% boolean attribute "SupportSILPIL" that has the value "true".
+%function SLibCustomStorageTypeOtherSupportsSILPIL(dataRec, cscDefn)
+    %assign hasSupportSILPILAttr = ISFIELD(cscDefn, "SupportSILPIL") || ...
+        (ISFIELD(cscDefn, "CSCTypeAttributes") && ...
+        !ISEMPTY(cscDefn.CSCTypeAttributes) && ...
+        ISFIELD(cscDefn.CSCTypeAttributes, "SupportSILPIL"))
+    %assign customAttrProps = LibGetCustomStorageAttributes(dataRec)
+    %if cscDefn.CSCType == "FlatStructure"
+        %assign supportSILPIL = TLC_TRUE
+    %elseif hasSupportSILPILAttr
+        %assign supportSILPIL = SLibGetSupportsSILPILValue(cscDefn, customAttrProps)
+    %else
+        %assign supportSILPIL = TLC_FALSE
+    %endif
+    %return supportSILPIL
+%endfunction
+
+%% Function SLibCustomStorageTypeOtherForCodeInfo =========================
+%%
+%% Abstract: Construct the MATLAB code to instantiate an object of type
+%% RTW.CustomVariable to describe the implementation of the variable
+%% implemented using a CSC of type "other".  Returns the name of the object.
+%function SLibCustomStorageTypeOtherForCodeInfo(dataRec, cscDefn, isParam) Output
+
+    %% Return empty if the CSC is not configured to support SIL/PIL.
+    %assign supportSILPIL = SLibCustomStorageTypeOtherSupportsSILPIL(dataRec, cscDefn)
+    %if !supportSILPIL
+        %return "RTW.DataImplementation.empty"
+    %endif
+    %% Mark the data record as being accessed for SIL/PIL
+    %if ISFIELD(dataRec, "DataAccessForSILPIL")
+        %assign dataRec.DataAccessForSILPIL = TLC_TRUE
+    %else
+        %addtorecord dataRec DataAccessForSILPIL TLC_TRUE
+    %endif
+
+    %% Get the custom attribute properties
+    %assign customAttrProps = LibGetCustomStorageAttributes(dataRec)
+
+    %% Return empty if the CSC is not configured with one of the supported
+    %% memory layouts.
+    %assign layout = LibAccessCustomData(dataRec, "layout", "[]", "", "")
+    %if (layout[0] != "other") && ...
+        (layout[0] != "scalar") && ...
+        (layout[0] != "vector") && ...
+        (layout[0] != "row-mat") && ...
+        (layout[0] != "col-mat")
+        %return "RTW.DataImplementation.empty"
+    %endif
+
+    %% Construct the Type object and the CodeType object.
+    %assign dataTypeIdx = SLibGetRecordOriginalCGTypeIdx(dataRec)
+    %assign dataCodeTypeIdx = SLibGetRecordContainerCGTypeIdx(dataRec)
+
+
+    %assign isPtr = ((SLibGetDataAccess(cscDefn, dataRec)=="Pointer") ? 1 : 0)
+    %if (isPtr)
+        %assign typeObj = FcnCreatePointerTypeObj(dataTypeIdx, 0, 0)
+
+        %% Don't add a code type object for pointer types.
+        %%
+        %% Pointer-types always point to a scalar base type, even for a matrix
+        %% valued signal.  To avoid incompatibilities with SIL/PIL trying to
+        %% "preserve" this, don't add CodeType for CustomVariable.
+        %if LibCGTypeIsMatrix(dataCodeTypeIdx) && !LibCGTypeIsComplex(dataCodeTypeIdx)
+            %assign codeTypeObj = "coder.types.Type.empty"
+        %else
+            %assign codeTypeObj = FcnCreatePointerTypeObj(dataCodeTypeIdx, 0, 0)
+        %endif
+    %else
+        %assign msDefn  = SLibGetMemorySectionDefForData(dataRec)
+        %assign p_const  = (msDefn.IsConst ? 1 : 0)
+        %assign p_vol    = (msDefn.IsVolatile ? 1 : 0)
+        %assign typeObj = SLibGetCoderTypeObject(dataTypeIdx, p_const, p_vol)
+        %assign codeTypeObj = SLibGetCoderTypeObject(dataCodeTypeIdx, p_const, p_vol)
+    %endif
+    %if ISFIELD(dataRec, "FrameData") && !ISEQUAL(dataRec.FrameData, "no")
+        %assign typeObj = FcnGetMatrixFrameTypeObj(typeObj)
+    %endif
+
+
+    %% If Component exports, add details about owner, declaration and
+    %% definition files.
+    %assign defineFileIdx = SLibCustomStorageGetDefineFileIdxIfNecessary(dataRec, cscDefn)
+    %assign defnFile = SLibCustomStorageGetDefineFileFromIdx(defineFileIdx)
+    %assign identifier = LibGetRecordIdentifier(dataRec)
+    %assign varKey = identifier
+
+    %if (cscDefn.IsGrouped)
+
+        %% The logic for non-grouped variables does not work for grouped
+        %% variables.
+        %assign declFile = LibGetInstanceSpecificProp(cscDefn, customAttrProps, "HeaderFile")
+        %assign enableDataOwnership = SLibIsERTTarget() && (::CompiledModel.ConfigSet.EnableDataOwnership == TLC_TRUE)
+
+        %% Could be "Auto".
+        %assign isExported = !ISEQUAL(cscDefn.DataScope, "Imported")
+        %assign specifiedOwner = LibGetInstanceSpecificProp(cscDefn, customAttrProps, "Owner")
+        %assign specifiedOwnerIsThisModel = (specifiedOwner == "") || (specifiedOwner == LibGetModelName())
+        %assign isOwned = isExported && !IsModelReferenceRTWTarget() && ...
+            ( !enableDataOwnership || specifiedOwnerIsThisModel )
+        %assign ownerName = isOwned ? LibGetModelName() : ""
+    %else
+        %assign declFile = SLibCustomStorageGetDeclFileForCodeInfo(dataRec, defineFileIdx)
+        %assign ownerName = SLibCustomStorageGetOwnerNameForCodeInfo("", defineFileIdx)
+    %endif
+
+    %assign regObj = SLibGetRTWCustomVariableObject(varKey, typeObj, identifier, ownerName, defnFile, declFile)
+    %<regObj>.CodeType = %<codeTypeObj>;
+
+    %% Store whether the variable is static or extern
+    %assign isFileScope = ISFIELD(dataRec, "FilePackaging") && ...
+        !ISEMPTY(dataRec.FilePackaging) && ...
+        ( ISEMPTY(dataRec.FilePackaging.FilesWithDeclare) && ...
+        ISEMPTY(dataRec.FilePackaging.FilesWithInclude))
+    %if isFileScope
+        %<regObj>.StorageSpecifier = 'static';
+    %else
+        %<regObj>.StorageSpecifier = 'extern';
+    %endif
+
+    %% Query the TLC for the definition and declaration expressions and cache
+    %% them in regObj.
+    %if (cscDefn.IsGrouped)
+        %% We need to search for the class record
+        %assign cscRec = LibGetCustomStorageInMap(cscDefn.OwnerPackage, cscDefn.Name)
+        %assign ownerPackage = cscDefn.OwnerPackage
+        %assign className = cscDefn.Name
+        %assign classAccessObj = "CodeInfoClassAccess.%<ownerPackage>.%<className>"
+
+        %if !ISFIELD(cscRec, "CachedCodeInfoClassAccessObject")
+            %% Only re-create the ClassAccess object if it has not
+            %% already been created.
+
+            %% Mark the csc record as being accessed for SIL/PIL
+            %if ISFIELD(cscRec, "DataAccessForSILPIL")
+                %assign cscRec.DataAccessForSILPIL = TLC_TRUE
+            %else
+                %addtorecord cscRec DataAccessForSILPIL TLC_TRUE
+            %endif
+
+            %% Temporarily set data initialization to "none" - we do not want
+            %% CodeInfo to contain code for static initialization - just enough
+            %% to define the variable.
+            %%
+            %% For example, we do not want a definition expression of the form:
+            %%
+            %%     myStructType myStruct = { {0,1,2,3}, {4,5,6,7}, {8,9,10,11} };
+            %%
+            %% since the "Imported" struct is not guaranteed to have the same
+            %% memory layout (number of fields, ordering of fields) as the
+            %% struct that the code generator might have generated had an
+            %% Exported data scope been used.  Instead, we want an expression
+            %% of the form:
+            %%
+            %%    myStructType myStruct;
+            %%
+            %assign cachedDataInit = cscDefn.DataInit
+            %assign cscDefn.DataInit = "None"
+
+            %% Query for the type def, data declaration and data definitions
+            %assign groupTypeDeclDefn = LibCustomClass(cscRec, "groupTypeDeclDefn")
+            %assign typeDefinition = groupTypeDeclDefn[0]
+            %assign dataDeclaration = groupTypeDeclDefn[1]
+            %assign dataDefinition = groupTypeDeclDefn[2]
+
+            %if (cscDefn.CSCType == "FlatStructure" && cscDefn.DataAccess == "Pointer")
+                %% For FlatStructure with an imported pointer type we know how
+                %% the pointer will have been defined, so we can use a regexp
+                %% to build a string that also instantiates storage, and initializes
+                %% the pointer.
+                %assign escapedDeclDefns = ...
+                    FEVAL("coder.internal.updatePtrDefnForImportedFlatStructure", ...
+                    typeDefinition, ...
+                    dataDeclaration, ...
+                    dataDefinition)
+            %else
+                %assign escapedDeclDefns = ...
+                    FEVAL("coder.internal.escapeValuesFromTLCForCodeDescriptor", ...
+                    typeDefinition, ...
+                    dataDeclaration, ...
+                    dataDefinition)
+            %endif
+
+            %% Restore the value of cscDefn.DataInit
+            %assign cscDefn.DataInit = cachedDataInit
+
+            %% Remove marker from class record
+            %with cscRec
+                %undef DataAccessForSILPIL
+            %endwith
+
+            %% Serialize the RTW.CustomVariableClassAccess object
+            %<classAccessObj> = RTW.CustomVariableClassAccess;
+            %<classAccessObj>.Package = '%<ownerPackage>';
+            %<classAccessObj>.ClassName = '%<className>';
+            %<classAccessObj>.GroupTypeDefinition = %<escapedDeclDefns[0]>;
+            %<classAccessObj>.GroupDataDeclaration = %<escapedDeclDefns[1]>;
+            %<classAccessObj>.GroupDataDefinition = %<escapedDeclDefns[2]>;
+
+            %% Add a marker to say that a ClassAccess object has been created.
+            %addtorecord cscRec CachedCodeInfoClassAccessObject classAccessObj
+        %endif
+        %<regObj>.ClassAccess = %<classAccessObj>;
+    %else
+        %assign defineExpression = LibAccessCustomData(dataRec, "define", "[]", "", "")
+        %assign declareExpression = LibAccessCustomData(dataRec, "declare", "[]", "", "")
+        %assign escapedExpressions = FEVAL("coder.internal.escapeValuesFromTLCForCodeDescriptor", defineExpression, declareExpression)
+        %<regObj>.DefineExpression = %<escapedExpressions[0]>;
+        %<regObj>.DeclareExpression = %<escapedExpressions[1]>;
+    %endif
+
+    %% If a Zero Index has been set in the response to "layout", (i.e.,
+    %% the response to "layout" has 4 elements, and not only 1),  then set
+    %% set that in the data implementation object.
+    %<regObj>.Layout = '%<layout[0]>';
+    %if SIZE(layout)[1] > 3
+        %<regObj>.ZeroIndex = '%<layout[3]>';
+    %endif
+
+    %% Need to build up a set of data elements - namely,
+    %% struct elements and complex number elements
+    %assign elemIdx = 0
+    %assign levelIdx = 0
+
+    %% In some cases the "initialize" request might not have been defined in
+    %% the CSC's TLC.
+    %assign needsInitialize = !isParam && ...
+        !(SLibGetDataInitForData(cscDefn, dataRec) == "None")
+
+    %% Create RTW.CustomExpression objects for each element of the data
+    %assign newValueTok = "$(NEWVALUE_TOKEN)"
+    %assign elemIdx = SLibCreateTLCVariablePartOuter(dataRec, ...
+        needsInitialize, ...
+        regObj, ...
+        dataTypeIdx, ...
+        layout, ...
+        elemIdx, ...
+        "", ...
+        newValueTok, ...
+        levelIdx)
+
+    %% Remove marker from data record
+    %with dataRec
+        %undef DataAccessForSILPIL
+    %endwith
+
+    %return regObj
+%endfunction
+
+%% Function SLibCreateTLCVariablePartOuter ===============================
+%%
+%% Abstract: Construct the MATLAB code to instantiate an object of type
+%% RTW.CustomExpression to describe the implementation of the individual
+%% elements of a variable.
+%function SLibCreateTLCVariablePartOuter(dataRec, needsInitialize, regObj, dataTypeIdx, layout, elemIdx, idxTok, newValueTok, levelIdx) Output
+    %% Sort out matrix indexing
+    %if LibCGTypeIsMatrix(dataTypeIdx) && LibCGTypeSymbolicWidth(dataTypeIdx) != "1"
+        %assign dataTypeIdx = LibCGTypeBaseIndex(dataTypeIdx)
+        %assign levelIdxTok = "%<idxTok>[$(INDEX_TOKEN_%<levelIdx>)]"
+        %assign levelIdx = levelIdx+1
+    %else
+        %assign levelIdxTok = idxTok
+    %endif
+
+    %if LibCGTypeIsStruct(dataTypeIdx)
+        %% Recurse into struct data types
+        %assign cgTypeRec = ::CompiledModel.CGTypes.CGType[dataTypeIdx]
+        %foreach mIdx = LibCGTypeNumMembers(dataTypeIdx)
+            %assign elementIdentifier = LibCGTypeMemberName(dataTypeIdx, mIdx)
+            %assign elementDataTypeIdx = LibCGTypeMemberCGTypeIdx(dataTypeIdx, mIdx)
+
+            %assign locIdxTok = "%<levelIdxTok>.%<elementIdentifier>"
+            %assign elemIdx = SLibCreateTLCVariablePartOuter(dataRec, ...
+                needsInitialize, ...
+                regObj, ...
+                elementDataTypeIdx, ...
+                layout, ...
+                elemIdx, ...
+                locIdxTok, ...
+                newValueTok, ...
+                levelIdx)
+        %endforeach
+    %else
+        %assign elemIdx = SLibCreateTLCVariablePartLeaf(dataRec, ...
+            needsInitialize, ...
+            regObj, ...
+            dataTypeIdx, ...
+            layout, ...
+            elemIdx, ...
+            levelIdxTok, ...
+            newValueTok)
+    %endif
+
+    %% We need to return the running count of elements in
+    %% the current CodeInfo object
+    %return elemIdx
+%endfunction
+
+%% Function SLibCreateTLCVariablePartLeaf ================================
+%%
+%% Abstract: Construct the MATLAB code to instantiate an object of type
+%% RTW.CustomExpression to describe the implementation of the final
+%% real or complex "leaf" elements of a variable.
+%function SLibCreateTLCVariablePartLeaf(dataRec, needsInitialize, regObj, leafDataTypeIdx, layout, elemIdx, idxTok, newValueTok) Output
+    %if (LibCGTypeIsComplex(leafDataTypeIdx))
+        %assign reIdentifier = "%<idxTok>.re"
+        %assign imIdentifier = "%<idxTok>.im"
+        %assign elemIdx = elemIdx + 1
+        %<SLibCreateTLCVariablePartElem(dataRec, needsInitialize, regObj, layout, elemIdx, reIdentifier, idxTok, ".%<tRealPart>", newValueTok)>
+        %assign elemIdx = elemIdx + 1
+        %<SLibCreateTLCVariablePartElem(dataRec, needsInitialize, regObj, layout, elemIdx, imIdentifier, idxTok, ".%<tImagPart>", newValueTok)>
+    %else
+        %assign elemIdx = elemIdx + 1
+        %<SLibCreateTLCVariablePartElem(dataRec, needsInitialize, regObj, layout, elemIdx, idxTok, idxTok, "", newValueTok)>
+    %endif
+    %return elemIdx
+%endfunction
+
+%% Function SLibCreateTLCVariablePartElem ================================
+%%
+%% Abstract: Construct the MATLAB code to instantiate an object of type
+%% RTW.CustomExpression to describe the implementation of an elements of
+%% of a variable.
+%function SLibCreateTLCVariablePartElem(dataRec, needsInitialize, regObj, layout, elemIdx, elementIdentifier, idxTok, reIm, newValueTok) Output
+
+    %assign readExpression = LibAccessCustomData(dataRec, "contents", idxTok, reIm, "")
+    %if (dataRec.CustomStorageClassVersion > 1)
+        %assign writeExpression = "%<LibAccessCustomData(dataRec, "set", idxTok, reIm, newValueTok)>"
+    %else
+        %assign writeExpression = "%<LibAccessCustomData(dataRec, "contents", idxTok, reIm, "")> = %<newValueTok>;"
+    %endif
+
+    %% The initialize expression does not have to be defined for parameters
+    %% and querying it when not defined will cause a code generation failure.
+    %if (needsInitialize)
+        %assign initializeExpression = LibAccessCustomData(dataRec, "initialize", idxTok, reIm, "")
+    %else
+        %assign initializeExpression = ""
+    %endif
+
+    %if (layout[0] != "other")
+        %assign addressExpression = LibAccessCustomData(dataRec, "address", idxTok, reIm, "")
+    %else
+        %assign addressExpression = ""
+    %endif
+
+    %% Call back into MATLAB using FEVAL only once
+    %assign escapedExpressions = FEVAL("coder.internal.escapeValuesFromTLCForCodeDescriptor", readExpression, writeExpression, initializeExpression, addressExpression)
+
+    %<regObj>.DataElements(%<elemIdx>) = RTW.CustomExpression;
+    %<regObj>.DataElements(%<elemIdx>).DataElementIdentifier = '%<elementIdentifier>';
+    %<regObj>.DataElements(%<elemIdx>).ReadExpression = %<escapedExpressions[0]>;
+    %<regObj>.DataElements(%<elemIdx>).WriteExpression = %<escapedExpressions[1]>;
+    %<regObj>.DataElements(%<elemIdx>).InitializeExpression = %<escapedExpressions[2]>;
+    %<regObj>.DataElements(%<elemIdx>).AddressExpression = %<escapedExpressions[3]>;
+%endfunction
+
+%% Function SLibGetCoderDataGroupVariable =====================================
+%% Abstract :
+%%   This function returns a RTW.Variable object for the coder data group.
+%%   If InternalData already contains a TypedRegion for this group we don't need to
+%%   create a new one.
+%%
+%function SLibGetCoderDataGroupVariable(group) Output
+    %assign typeObjName = group.Name + "Type"
+    %assign groupType = FcnGetInternalTypeObj(typeObjName, SLibCoderDataGroupType(group), "")
+
+    %% For multiinstance groups set to InParent or InSelf in modelref mode, the group will end up inside RTM.
+    %% We should use the name of the element used in RTM for the variable name
+    %if IsModelReferenceTarget() && SLibMultiInstance() &&...
+        (group.AsStructure == "InParent" || group.AsStructure == "InSelf")
+        %assign groupInstance = SLibCoderDataGroupReference(group)
+    %else
+        %assign groupInstance = SLibCoderDataGroupInstance(group)
+    %endif
+    %assign groupVarId = "rt_" + group.Name
+    %assign groupVar = "Var_" + groupVarId
+    %assign instanceStrId = "'" + groupInstance + "'"
+    %assign owner = ""
+    %if GenerateClassInterface && group.AsStructure == "InSelf" && !IsModelReferenceTarget()
+        %assign owner = ::CompiledModel.Name
+    %endif
+    %% search the existing InternalData for a matching implentation
+    group_var_exists = 0;
+    for idx = 1:numel(codeInfo.InternalData)
+    curr_var = codeInfo.InternalData(idx).Implementation;
+    if isa(curr_var,'RTW.Variable') && strcmp(curr_var.Identifier, %<instanceStrId>)
+    group_var_exists = 1;
+    break;
+    end
+    end
+
+    if group_var_exists
+    %<groupVar> = curr_var;
+    else
+    %assign groupVar = ...
+        SLibGetRTWVariableObject(groupVarId, groupType, groupInstance, owner,"","")
+    end
+    %return groupVar
+%endfunction
+
+%% Function SLibCreateModelConstructorActualArgs =====================================
+%% Abstract :
+%%   This function populates codeInfo.ConstructorFunction.ActualArgs.
+%%   Currently only coder data group arg is supported,
+%%   other cases, e.g. function service ports, need to be handled separately.
+%%
+%function SLibCreateModelConstructorActualArgs() Output
+    %assert GenerateClassInterface
+
+    %assign rootSystem  = System[GetBaseSystemIdx()]
+    %assign rootModule = RTWCGModules.RTWCGModule[rootSystem.CGIRModuleIdx]
+    %assign fcnIdx = ISFIELD(rootModule, "SystemFunctionTypes") && ISFIELD(rootModule.SystemFunctionTypes, "ModelConstructor") ...
+        ? GETFIELD(rootModule.SystemFunctionTypes, "ModelConstructor") : -1
+    %if fcnIdx < 0
+        %return
+    %endif
+
+    %assign constrFcn = rootModule.Function[fcnIdx]
+    tempActualArgs = [];
+    %foreach argIdx = constrFcn.NumArgs
+        %if 0 == constrFcn.ArgAccessed[argIdx]
+            %continue
+        %endif
+
+        %assign idnum = IDNUM(constrFcn.ArgSource[argIdx])
+        %if idnum[0] != "LCDG"
+            %return
+        %endif
+
+        %assign group = CoderDataGroup[idnum[1]]
+
+        %assign groupVar = SLibGetCoderDataGroupVariable(group)
+        %assign groupVarId = "rt_" + group.Name
+        %assign typeObjName = group.Name + "Type"
+        %assign groupType = FcnGetInternalTypeObj(typeObjName, SLibCoderDataGroupType(group), "")
+        %assign groupPtrType = FcnGetPointerTypeObj(groupType, 0, 0)
+
+        %% For multiinstance groups set to InParent or InSelf in modelref mode, the group will end up inside RTM.
+        %% We should use the name of the element used in RTM for the variable name
+        %if IsModelReferenceTarget() && SLibMultiInstance() &&...
+            (group.AsStructure == "InParent" || group.AsStructure == "InSelf")
+            %assign groupInstance = SLibCoderDataGroupReference(group)
+        %else
+            %assign groupInstance = SLibCoderDataGroupInstance(group)
+        %endif
+
+        %assign groupPtrVar = SLibGetRTWPointerVariableObject(groupVarId, groupPtrType, "%<groupInstance>_ptr", groupVar)
+
+        %% Create a DataInterface and add it to ActualArgs
+        %assign desc = "Storage class " + group.Name
+        argDataInterface = RTW.DataInterface('', '%<desc>', %<groupPtrVar>, RTW.TimingInterface.empty);
+        tempActualArgs = [tempActualArgs, argDataInterface];
+    %endforeach
+
+    codeInfo.ConstructorFunction.ActualArgs = [tempActualArgs];
+%endfunction
+
+%% Function FcnHasRTMOrSelf =====================================
+%% Abstract :
+%%   Determines if the model has an RTM or Self CoderDataGroup
+%%
+%function FcnHasRTMOrSelf()
+    %assign rtRecs = RTMGetRTModelRecShell()
+    %assign hStruct = FcnGenHStructFromRTMRecs(rtRecs)
+    %return FcnShouldGenerateRTM(hStruct) || FcnWillEmitSelf()
+%endfunction
+
+%% Function FcnAddModelBlockInstanceVariableName
+%% Abstract :
+%% Adds the variable name of all model block instances to the respective block in BlockHierarchyMap
+%%
+%function FcnAddModelBlockInstanceVariableName() Output
+    %assign mdlRefBlks = ISFIELD(::CompiledModel,"ModelReferenceBlocks") ? ...
+        ::CompiledModel.ModelReferenceBlocks : []
+    %if !ISEMPTY(mdlRefBlks)
+        %foreach rowIdx = SIZE(mdlRefBlks,0)
+            %assign mdlRefInfo = mdlRefBlks[rowIdx]
+            %assign sysIdx = mdlRefInfo[0]
+            %assign blkIdx    = mdlRefInfo[1]
+            %assign mdlBlk = System[sysIdx].Block[blkIdx]
+            %if mdlBlk.MdlRefIsCPPClassGenMode
+                %assign varName = SLibGetCPPMdlRefObjName(sysIdx, blkIdx)
+                %assign mdlBlkSID = BlockHierarchyMap.Subsystem[mdlBlk.GrSrc[0]].Block[mdlBlk.GrSrc[1]].SID
+                wr.writeModelBlockClassVariableName('%<mdlBlkSID>', '%<varName>');
+            %endif
+        %endforeach
+    %endif
+%endfunction
+
+%function FcnAddModelRefDWork() Output
+    %if !IsModelReferenceTarget() || IsModelReferenceSimTarget()
+        %% This is only for modelref rtw target
+        %return
+    %endif
+
+    wr.setIsMultiInstanceModelRef(%<IsModelReferenceTarget() && SLibMultiInstance()>);
+
+    %% Get the system containing the modelref subsystem
+    %assign baseSystem = ::CompiledModel.System[GetBaseSystemIdx()]
+
+    %% Struct is written in SLibModelReferenceGenerateDWork
+    %assign genMdlRefDWork = (::CompiledModel.GenSingleInstanceMdlRefDWork || ModelrefBlockNeedsDwork()) && !SLibIsSelfInPluggableInterface()
+
+    %if !genMdlRefDWork
+        %return
+    %endif
+
+    %% See implementation of FcnGetSFcnDWorkType, we don't always generate it
+    %if !ISFIELD(baseSystem.Interface, "tsysMdlrefDWorkType")
+        %return
+    %endif
+
+    %% This function returns a struct containing information about which vargrops
+    %% are in the struct
+
+    %assign isSingleInstance = !::CompiledModel.OkToMultiInstanceModelref
+    %assign memberNames = SLibGetDWorkMemberNamesForSystem(baseSystem, isSingleInstance)
+
+    %assign mdlrefDworkTypeName = FcnGetSFcnDWorkType(baseSystem)
+    %assign mdlrefDworkVarName = FcnGetSFcnDWorkIdentifier(baseSystem)
+
+    %if memberNames.hasRTB
+        wr.addStructExpressionForSingleInstanceModelRef('%<mdlrefDworkTypeName>', '%<mdlrefDworkVarName>.rtb', '%<FcnSysVarGroupType(baseSystem,"BlockIO")>');
+    %endif
+    %if memberNames.hasRTDW
+        wr.addStructExpressionForSingleInstanceModelRef('%<mdlrefDworkTypeName>', '%<mdlrefDworkVarName>.rtdw', '%<FcnSysVarGroupType(baseSystem,"DWork")>');
+    %endif
+    %if memberNames.hasRTZCE
+        wr.addStructExpressionForSingleInstanceModelRef('%<mdlrefDworkTypeName>', '%<mdlrefDworkVarName>.rtzce', '%<FcnSysVarGroupType(baseSystem,"ZCEvent")>');
+    %endif
+    %if SLibModelReferenceDWorkNeedsRTM()
+        wr.addStructExpressionForSingleInstanceModelRef('%<mdlrefDworkTypeName>', '%<mdlrefDworkVarName>.rtm', '%<::tSimStructType>');
+    %endif
+
+%endfunction
+
+%function FcnHandleAccessFunctionCSC(dataRec, typeObj, ident) Output
+    %assign bIdx   = LibGetRecordWidth(dataRec) == 1 ?  "" : "[0]"
+    %assign csAttr = LibGetCustomStorageAttributes(dataRec)
+    %assign cscDefn = SLibGetCSCDefForData(dataRec)
+    %assign aReadExpr  = FcnReplaceIdentifierToken(LibGetInstanceSpecificProp(cscDefn, csAttr, "GetFunction"),ident)
+    %assign aWriteExpr  = FcnReplaceIdentifierToken(LibGetInstanceSpecificProp(cscDefn, csAttr, "SetFunction"),ident)
+    %% LibGetInstanceSpecificProp will return instant specific value if present
+    %% else default value from cscDefn
+    %assign aHeaderFile = LibGetInstanceSpecificProp(cscDefn, csAttr, "HeaderFile")
+    %assign codeTypeObj = typeObj
+    %if ISFIELD(dataRec, "ContainerCGTypeIdx")
+        %assign msDefn  = SLibGetMemorySectionDefForData(dataRec)
+        %assign ei_const  = (msDefn.IsConst ? 1 : 0)
+        %assign ei_vol    = (msDefn.IsVolatile ? 1 : 0)
+        %assign codeTypeObj = SLibGetCoderTypeObject(dataRec.ContainerCGTypeIdx, ei_const, ei_vol)
+    %endif
+    %return SLibGetRTWCustomExpressionObject(ident, typeObj, codeTypeObj, ...
+        REGEXPREP( aReadExpr, "^\[\]$", ""), ...
+        REGEXPREP( aWriteExpr, "^\[\]$", ""),"", ...
+        aHeaderFile,"","","", SLibGetAccessDataThroughMacro(cscDefn), ...
+        cscDefn.CSCType == "AccessFunction")
+%endfunction
+
+%function GetVarOwnerInfo(varRec, cscDefn)
+    %assign dataOwner = LibGetInstanceSpecificProp(cscDefn, LibGetCustomStorageAttributes(varRec), "Owner")
+    %assign defineFileIdx = SLibCustomStorageGetDefineFileIdxIfNecessary(varRec, cscDefn)
+    %assign defnFile  = SLibCustomStorageGetDefineFileFromIdx(defineFileIdx)
+    %assign ownerName = SLibCustomStorageGetOwnerNameForCodeInfo(dataOwner, defineFileIdx)
+    %assign declFile  = SLibCustomStorageGetDeclFileForCodeInfo(varRec, defineFileIdx)
+    %createrecord varOwnerInfo { ...
+        defnFile defnFile       ...
+        declFile declFile       ...
+        ownerName ownerName     ...
+    }
+    %return varOwnerInfo
+%endfunction
+
+%function GetIsFileScope(varRec, cscDefn)
+    %assign isFileScope = ISEQUAL(cscDefn.DataScope, "File")
+    %if ISFIELD(varRec, "FilePackaging") && !ISEMPTY(varRec.FilePackaging) && !isFileScope
+        %assign isFileScope = ISEMPTY(varRec.FilePackaging.FilesWithDeclare) && ISEMPTY(varRec.FilePackaging.FilesWithInclude)
+    %endif
+    %return isFileScope
+%endfunction
+
+%endif  %% EXISTS(_CIINFODATALIB_) == 0
+
+%% [EOF] codeinfo_datalib.tlc

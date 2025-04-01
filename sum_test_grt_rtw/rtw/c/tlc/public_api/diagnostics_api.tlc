@@ -1,0 +1,42 @@
+%if EXISTS(_DIAGNOSTICS_API_) == 0
+%assign _DIAGNOSTICS_API_ = 1
+%%
+%% Copyright 2020 The MathWorks, Inc.
+%%
+%include "diagnostics_private_api.tlc"
+
+%% Function{BlkPathAndErrFcns}: LibReportWarning ===============================
+%% Abstract:
+%%   This should be used when reporting non-block based warnings. This
+%%   function prepends the errorstring argument with 'Simulink Coder: '
+%%
+%function LibReportWarning(warnstring) void
+    %assign warnMessage = "Simulink Coder: %<warnstring>"
+    %<SLibReportWarningWithIdAndArgs("RTW:tlc:GenericWarn", warnMessage)>
+%endfunction %% LibReportWarning
+
+%% Function: LibReportError{BlkPathAndErrFcns} =================================
+%% Abstract:
+%%   This should be used when reporting non-block based errors. This
+%%   function prepends the errorstring argument with 'Simulink Coder
+%%   Error: ').
+%%
+%function LibReportError(errorstring) void
+    %assign errorMessage = "Simulink Coder Error: %<errorstring>"
+    %exit %<errorMessage>
+%endfunction %% LibReportError
+
+%% Function{BlkPathAndErrFcns}: LibReportFatalError ============================
+%% Abstract:
+%%   This should be used when reporting non-block based fatal errors.
+%%   This function should only be used for asserts. See the TLC Error
+%%   Message appendix in the TLC reference manual. This function prepends
+%%   the errorstring argument with 'Simulink Coder Fatal: ').
+%%
+%function LibReportFatalError(errorstring) void
+    %setcommandswitch "-v1"
+    %assign errorMessage = "Simulink Coder Fatal: %<errorstring>"
+    %exit %<errorMessage>
+%endfunction %% LibReportFatalError
+
+%endif %% _DIAGNOSTICS_API_

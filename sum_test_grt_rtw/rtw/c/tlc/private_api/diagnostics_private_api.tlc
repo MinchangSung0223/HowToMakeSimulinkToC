@@ -1,0 +1,47 @@
+%if EXISTS(_DIAGNOSTICS_PRIVATE_API_) == 0
+%assign _DIAGNOSTICS_PRIVATE_API_ = 1
+%%
+%% Copyright 2020 The MathWorks, Inc.
+%%
+
+%% Function: SLibReportErrorWithId =================================================================
+%% Abstract:
+%%   Reporting error using error ID.
+%%
+%function SLibReportErrorWithId(errorId) void
+    %if EXISTS(ShowErrorStackTrace) && ::ShowErrorStackTrace == TLC_TRUE
+        %setcommandswitch "-v1"
+    %endif
+    %assign errorMessage = GET_MESSAGE(errorId)
+    %exit %<errorMessage>
+%endfunction
+
+%% Function: SLibReportErrorWithIdAndArgs ==========================================================
+%% Abstract:
+%%   Reporting error using error ID with additional input arguments.
+%%
+%function SLibReportErrorWithIdAndArgs(errorId, args) void
+    %if EXISTS(ShowErrorStackTrace) && ::ShowErrorStackTrace == TLC_TRUE
+        %setcommandswitch "-v1"
+    %endif
+    %assign errorMessage = GET_MESSAGE(errorId, args)
+    %exit %<errorMessage>
+%endfunction
+
+%% Function: SLibReportWarningWithId ===============================================================
+%% Abstract:
+%%   Reporting warning using message ID.
+%%
+%function SLibReportWarningWithId(messageId) void
+    %<REPORT_WARNING(messageId)>
+%endfunction
+
+%% Function: SLibReportWarningWithIdAndArgs ========================================================
+%% Abstract:
+%%   Reporting warning using message ID with additional input arguments.
+%%
+%function SLibReportWarningWithIdAndArgs(messageId, args) void
+    %<REPORT_WARNING(messageId, args)>
+%endfunction
+
+%endif %% _DIAGNOSTICS_PRIVATE_API_

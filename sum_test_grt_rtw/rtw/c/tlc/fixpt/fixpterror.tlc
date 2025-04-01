@@ -1,0 +1,42 @@
+%%
+%% Copyright 1994-2023 The MathWorks, Inc.
+%%
+
+
+%function FixPt_FloatingPointNotSupported(uDT) void
+    %%
+    %assign uIsFloat = FixPt_DataTypeIsFloat(uDT)
+    %%
+    %if uIsFloat
+        %%START_ASSERT
+        %assign errTxt = "Block: %<MaskBlockName> Floating point signals are not supported by this function."
+        %<LibReportFatalError(errTxt)>\
+        %%END_ASSERT
+    %endif
+%endfunction
+
+
+%function FixPt_FloatNotSupportedNamed(uDT,uDTName,fcnName) void
+    %%
+    %assign uIsFloat = FixPt_DataTypeIsFloat(uDT)
+    %%
+    %if uIsFloat
+        %%START_ASSERT
+        %assign errTxt = "Floating point data types are not supported for variable %<uDTName> by function %<fcnName>."
+        %<LibReportFatalError(errTxt)>\
+        %%END_ASSERT
+    %endif
+%endfunction
+
+
+%function FixPt_FixptNotSupportedNamed(uDT,uDTName,fcnName) void
+    %%
+    %assign uIsFloat = FixPt_DataTypeIsFloat(uDT)
+    %%
+    %if !uIsFloat
+        %%START_ASSERT
+        %assign errTxt = "Floating point data types are required for variable %<uDTName> by function %<fcnName>."
+        %<LibReportFatalError(errTxt)>\
+        %%END_ASSERT
+    %endif
+%endfunction

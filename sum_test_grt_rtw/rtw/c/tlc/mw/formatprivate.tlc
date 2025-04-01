@@ -1,0 +1,454 @@
+%% ============================================================================
+%% File name: formatprivate.tlc
+%% Copyright 1994-2023 The MathWorks, Inc.
+%%
+
+%if EXISTS(_FORMATPRIVATE_) == 0
+
+%% Function: FcnUpdateSubsysDependency =============================================================
+%% Abstract:
+%%   This function includes <mode>_private.h file to all susbystem/root source
+%%   files that are not generated in shared locations
+%%
+%%
+%function FcnUpdateSubsysDependency(tmpBuf) void
+    %assign modelPvtHdr = SLibGetFullFileNameForCode("mdl_priv_hdr_incl")
+    %foreach sysIdx = ::CompiledModel.NumSystems
+        %% Reused library subsytem files are generated in shared utils, they don't
+        %% used macros defined in <model>_private.h, so ignore such systems
+        %if FcnIsWithinRLS(sysIdx)
+            %break
+        %endif
+        %assign systemSrc = SLibGetFullFileNameForSystemCode("sys_src_incl", sysIdx)
+        %<SLibUpdateHeadersNeededByFile(systemSrc, modelPvtHdr)>
+    %endforeach
+%endfunction
+
+%% Function: FcnIsWithinRLS ========================================================================
+%% Abstract:
+%%   Returns true if the given system is a reused library function or
+%%   within resused library subsystem
+%%
+%%
+%function FcnIsWithinRLS(sysIdx) void
+    %return (LibSystemIsReusedLibraryFcn(System[sysIdx]) || ...
+        LibSystemIsReusedLibraryFcn(System[System[sysIdx].NonInlinedParentSystemIdx]))
+%endfunction
+
+%assign rootIdx    = NumSystems-1
+%assign rootSystem = System[rootIdx]
+
+%%
+%% Create the banners for the model_private.h and model_types.h files
+%%
+%openfile bannerBuf
+/*
+* %<Name>_private.h
+*
+%<SLibCommonHeaderInfo()>\
+*/
+%closefile bannerBuf
+%<SLibCacheCodeToFile("mdl_priv_hdr_ban", bannerBuf)>
+
+
+%% Includes
+%openfile incl_codertypes_buf
+%<SLibIncludeUsedCoderTypesFilenames()>
+%closefile incl_codertypes_buf
+%<SLibCacheCodeToFile("mdl_priv_common_incl", incl_codertypes_buf)>
+
+%% This include is needed by the model reference SIM target to directly access
+%% simulink methods, rather than going through the simstruct.
+%if IsModelReferenceSimTarget()
+    %if !LibUseOldFilePackagingInfrastructure()
+        %% write into common include section so it can be read by other headers.
+        %openfile common_incl_buf
+        #include "simstruc.h"
+        #include "fixedpoint.h"
+        %closefile common_incl_buf
+        %<SLibCacheCodeToFile("mdl_priv_common_incl", common_incl_buf)>
+    %endif
+
+    %openfile incl_codertypes_buf
+    #include "simtarget/slMdlrefSimTargetCoreHeaders.h"
+    #include "simtarget/slMdlrefSimTargetInstrumentationHeaders.h"
+    #include "messages/slMessagesSfcnBridge.h"
+    %% Add the intrinsic header if the FTZ setting is on.
+    %if ::CompiledModel.ConfigSet.DenormalBehavior == "FlushToZero"
+        #include "ftz_utils.h"
+    %endif
+    %if SLibDeclareImageTypeUsage()
+        #include "image/slImageSFcnAPI.h"
+    %endif
+    %closefile incl_codertypes_buf
+    %<SLibCacheCodeToFile("mdl_priv_hdr_custom_incl", incl_codertypes_buf)>
+
+    %% slmrRunPluginEvent needs slMdlrefSimTargetInstrumentationHeaders.h
+    %<SLibUpdateHeadersNeededByFile(SLibGetFullFileNameForCode("mdl_src"), ...
+        SLibGetFullFileNameForCode("mdl_priv_hdr_custom_incl"))>\
+%endif
+
+%if !SLibIsCompactFileFormat()
+    %<SLibUpdateHeadersNeededByFile(SLibGetFullFileNameForCode("mdl_priv_hdr_incl"), ...
+        "%<LibGetMdlTypesHdrBaseName()>.h")>
+%endif
+
+%if IsModelReferenceSimTarget()
+    %openfile tmpBuf
+    %assign dsmDecls = SLibGetModelRefGlobalDSMDeclarations()
+    %if !ISEMPTY(dsmDecls)
+        %assign numDecls = SIZE(dsmDecls.DSMDeclaration, 1)
+        %foreach idx = numDecls
+            %assign needsExtern = dsmDecls.DSMDeclaration[idx].ExternNeeded
+            %if needsExtern
+                %assign dsmDecl = dsmDecls.DSMDeclaration[idx].Declaration
+                extern %<dsmDecl>
+            %endif
+        %endforeach
+    %endif
+
+    %assign flag =  "extern"
+
+    %if ::GenCPP == 1
+        %assign flag =  "extern \"C\""
+    %endif
+
+    %assign charType = LibGetDataTypeNameFromId(::CompiledModel.tSS_CHAR)
+
+    #include "sl_fileio_rtw.h"
+    %<flag> const %<charType> *rt_GetMatSignalLoggingFileName(void);
+    %<flag> const %<charType> *rt_GetMatSigLogSelectorFileName(void);
+    %<flag> void *rt_GetOSigstreamManager(void);
+    %<flag> void **rt_GetOSigstreamManagerAddr(void);
+    %<flag> void *rt_slioCatalogue(void);
+    %<flag> void **rt_slioCatalogueAddr(void);
+    %<flag> void rt_ssSet_slErrMsg(void* S, void* diag);
+    %<flag> void rt_ssReportDiagnosticAsWarning(void* S, void* diag);
+    %<flag> void rt_ssReportDiagnosticAsInfo(void* S, void* diag);
+    %<flag> const %<charType>* rt_CreateFullPathToTop(const %<charType>* toppath, const %<charType>* subpath);
+
+    %<flag> %<LibGetDataTypeNameFromId(::CompiledModel.tSS_BOOLEAN)> slIsRapidAcceleratorSimulating(void);
+
+    %<flag> void rt_RAccelReplaceFromFilename(const %<charType> *blockpath, %<charType> *fileNam);
+
+    %<flag> void rt_RAccelReplaceToFilename(const %<charType> *blockpath, %<charType> *fileNam);
+
+    %if CGMODEL_ACCESS("CGModel.ModelRefAccelSupportsOPForSimscapeBlocks") < 4
+        %<flag> void slsaCacheDWorkPointerForSimTargetOP(void* ss, void** ptr);
+        %<flag> void slsaCacheDWorkDataForSimTargetOP(void* ss, void* ptr, unsigned int sizeInBytes);
+        %<flag> void slsaSaveRawMemoryForSimTargetOP(void* ss, const %<charType>* key, void** ptr, unsigned int sizeInBytes,
+        void* (*customOPSaveFcn) (void* dworkPtr, unsigned int* sizeInBytes),
+        void  (*customOPRestoreFcn) (void* dworkPtr, const void* data, unsigned int sizeInBytes)
+        );
+    %endif
+
+    extern void * gblLoggingInterval;
+
+
+    %closefile tmpBuf
+    %<SLibCacheCodeToFile("mdl_priv_hdr_custom_incl", tmpBuf)>
+%endif
+
+%openfile tmpBuf
+%<LibDumpIncludesCache()>\
+%closefile tmpBuf
+%<SLibCacheCodeToFile("custom_blockTypeSetup_include", tmpBuf)>
+
+%% Defines
+%<SLibCacheCodeToFile("mdl_priv_data_define", LibDumpCommonDefines(rootIdx))>
+
+%openfile tmpBuf
+%<LibDumpDefinesCache()>\
+%closefile tmpBuf
+%<SLibCacheCodeToFile("custom_blockTypeSetup_define", tmpBuf)>
+%<FcnCacheSFunctionDefinesToRLS(tmpBuf)>\
+%if !WHITE_SPACE(tmpBuf)
+    %<FcnUpdateSubsysDependency(tmpBuf)>
+%endif
+
+%% Typedefs
+%openfile tmpBuf
+%<LibDumpTypedefsCache()>\
+%closefile tmpBuf
+%<SLibCacheCodeToFile("custom_blockTypeSetup_typedef", tmpBuf)>
+
+%openfile rtwTypedefsBuffer
+%<LibDeclareCompoundDataTypes()>\
+%closefile rtwTypedefsBuffer
+%<SLibCacheCodeToFile("mdl_priv_data_typedef", rtwTypedefsBuffer)>
+
+%if !SLibIsERTCodeFormat()
+    %% Block I/O structure
+    %<SLibCacheCodeToFile("mdl_priv_data_typedef", LibDumpSystemTypeDefs(rootSystem))>
+%endif
+
+%% ============================================================================
+%% Tunable Parameters
+%%
+%openfile tunableParametersBuffer
+%if !SLibPrmBufferIsEmpty("SfcnTunable", "Decl")
+
+    /*
+    * Tunable Parameters
+    *
+    * Note: Tunable parameters with Auto storage class are treated as S-Function
+    * parameters in the generated S-Function Target.  The generated
+    * s-function will declare them as parameters and verify correct data
+    * types/sizes are maintained.  The parameters are propagated to nested
+    * non-inlined S-Functions
+    *
+    */
+    %% S-Function target must guard against redefinition of constant signals
+    %if CodeFormat == "S-Function"
+        #if !defined(RTW_GENERATED_SFCN_TUNABLE_PRMS_%<Name>)
+        %<SLibGetPrmBuffer("SfcnTunable", "Decl")>\
+        #endif /* RTW_GENERATED_SFCN_TUNABLE_PRMS_%<Name> */
+    %else
+        %<SLibGetPrmBuffer("SfcnTunable", "Decl")>\
+    %endif
+%endif
+%closefile tunableParametersBuffer
+
+%<SLibCacheCodeToFile("mdl_priv_data_typedef", tunableParametersBuffer)>
+
+%% For constant parameters that are shared, write defines. These buffers will only
+%% contain constants accessed by this model, and outside of shared functions.
+%if !SLibPrmBufferIsEmpty("UnstructuredConstant", "ExternDecl")
+    %openfile tmpBuff
+    %<SLibGetPrmBuffer("UnstructuredConstant", "ExternDecl")>
+    %closefile tmpBuff
+    %<SLibCacheCodeToFile("mdl_priv_constParam_macro_define", tmpBuff)>
+%endif
+
+%if !SLibPrmBufferIsEmpty("UnstructuredConstant", "MacroDecl")
+    %openfile tmpBuff
+    %<SLibGetPrmBuffer("UnstructuredConstant", "MacroDecl")>
+    %closefile tmpBuff
+    %<SLibCacheCodeToFile("mdl_priv_constParam_macro_define", tmpBuff)>
+%endif
+
+%% Constant block parameters (Macro declaration)
+%if !SLibPrmBufferIsEmpty("Const", "MacroDecl")
+    %assign cpDefs = SLibGetPrmBuffer("Const", "MacroDecl")
+    %% S-Function target must guard against redefinition of constant parameters
+    %if CodeFormat == "S-Function"
+        %assign tmpDefs = cpDefs
+        %openfile cpDefs
+        #if !defined(RTW_GNERATED_SFCN_NOT_PRIVATE_%<Name>)
+        %<tmpDefs>\
+        #endif /* RTW_GNERATED_SFCN_NOT_PRIVATE_%<Name> */
+        %closefile cpDefs
+        %undef tmpDefs
+    %endif
+    %<SLibCacheCodeToFile("mdl_priv_constParam_macro_define", cpDefs)>
+%endif
+
+
+%% ============================================================================
+%% Imported Extern Signals
+%%
+%openfile importedExternSignalsBuffer
+%if !SLibImportedExternSignalsIsEmpty()
+
+    /* Imported (extern) block signals */
+    %<SLibDumpImportedExternSignalsDefinition()>\
+%endif
+%closefile importedExternSignalsBuffer
+
+%<SLibCacheCodeToFile("data_importedData_decl", ...
+    importedExternSignalsBuffer)>
+
+%% ============================================================================
+%% Imported Extern Pointer Signals
+%%
+%openfile importedExternPointerSignalsBuffer
+%if !SLibImportedExternPointerSignalsIsEmpty()
+
+    /* Imported (extern) pointer block signals */
+    %<SLibDumpImportedExternPointerSignalsDefinition()>\
+%endif
+%closefile importedExternPointerSignalsBuffer
+%<SLibCacheCodeToFile("data_importedData_decl", importedExternPointerSignalsBuffer)>
+
+%if CodeFormat != "S-Function" || Accelerator
+    %% ===========================================================================
+    %% Imported Extern DWork
+    %%
+    %openfile importedExternDWorkBuffer
+    %if !SLibImportedExternDWorkIsEmpty()
+
+        /* Imported (extern) states */
+        %<SLibDumpImportedExternDWorkDefinition()>\
+    %endif
+    %closefile importedExternDWorkBuffer
+
+
+    %% ===========================================================================
+    %% Imported Extern Pointer DWork
+    %%
+    %openfile importedExternPointerDWorkBuffer
+    %if !SLibImportedExternPointerDWorkIsEmpty()
+
+        /* Imported (extern) pointer states */
+        %<SLibDumpImportedExternPointerDWorkDefinition()>\
+    %endif
+    %closefile importedExternPointerDWorkBuffer
+%endif
+
+%% Extern data
+%if CodeFormat != "S-Function" || Accelerator
+    %<SLibCacheCodeToFile("data_importedData_decl", importedExternDWorkBuffer)>
+    %<SLibCacheCodeToFile("data_importedData_decl", importedExternPointerDWorkBuffer)>
+%endif
+
+%% ============================================================================
+%% Imported extern parameters
+%%
+%openfile importedExternParametersBuffer
+%if !SLibPrmBufferIsEmpty("ImportedExtern", "Decl")
+
+    /* Imported (extern) block parameters */
+    %<SLibGetPrmBuffer("ImportedExtern", "Decl")>\
+%endif
+%closefile importedExternParametersBuffer
+
+
+%% ============================================================================
+%% Imported extern pointer parameters
+%%
+%openfile importedExternPointerParametersBuffer
+%if !SLibPrmBufferIsEmpty("ImportedExternPointer", "Decl")
+
+    /* Imported (extern) pointer block parameters */
+    %<SLibGetPrmBuffer("ImportedExternPointer", "Decl")>\
+%endif
+%closefile importedExternPointerParametersBuffer
+
+%<SLibCacheCodeToFile("data_importedData_decl", importedExternParametersBuffer)>
+%<SLibCacheCodeToFile("data_importedData_decl", importedExternPointerParametersBuffer)>
+
+%openfile tmpBuf
+%<LibDumpExternsCache()>\
+%closefile tmpBuf
+%<SLibCacheCodeToFile("custom_blockTypeSetup_extern_data_decl", tmpBuf)>
+
+%% Extern functions
+%openfile sysPrototypesBuf
+%<LibDumpSystemPrototype(rootSystem)>\
+%foreach sysIdx = ::CompiledModel.NumSystems
+    %assign aSys = ::CompiledModel.System[sysIdx]
+    %if LibIsServer(aSys) && (!LibIsGlobalServer(aSys)) && (!SLibIsModelScopedServer(aSys))
+        %% Must be private SLFcn. Needs to go to model_private.h
+        %<LibDumpSystemPrototype(aSys)>\
+    %elseif SLibIsModelScopedServer(aSys)
+        %% If SL Fcn is mapped to a different file other than model header file
+        %% Its decl will be dumped to its header file in commonhdrlib.tlc
+        %% Do nothing here
+        %% When file packaging feature is off or there is no mapping on the SL fcn
+        %% SL fcn decl will be cached to sys_fcn_decl
+
+        %openfile modelScopedSLFcnBuff
+        %<LibDumpSystemFcnPrototype(aSys)>
+        %closefile modelScopedSLFcnBuff
+        %assign fcnRecord = SLibSystemFcnInfoRecord(aSys, "OutputUpdate")
+        %assign fcnHdrFileName = CGMODEL_ACCESS("FileRepository.getHeaderFileForFunctionName", fcnRecord.Name)
+        %if !SLibGetEnableFileControlForEntryPointFcns() || fcnHdrFileName == SLibGetFileNameForCode("mdl_hdr") + ".h"
+            %<LibCachesSystemFcnPrototype(aSys, modelScopedSLFcnBuff, TLC_FALSE)>
+        %endif
+    %endif
+%endforeach
+%closefile sysPrototypesBuf
+%openfile tmpBuf
+%<LibDumpFunctionPrototypesCache()>\
+%closefile tmpBuf
+%<SLibCacheCodeToFile("custom_blockTypeSetup_fcn_prototype", tmpBuf)>
+
+%if CGMODEL_ACCESS("CGModel.HasGlobalCustomBlockTypeSetupBuffer")
+    %% include model_private.h in model.c
+    %<SLibUpdateHeadersNeededByFile(SLibGetFullFileNameForCode("mdl_src"), ...
+        SLibGetFullFileNameForCode("mdl_priv_hdr_incl"))>
+%endif
+
+%if ::CompiledModel.ConfigSet.GenerateTestInterfaces
+    %<SLibCacheCodeToFile("sf_machine_public_extern_data_decl", sysPrototypesBuf)>
+    %assign headerFile = SLibGetFileNameForCode("sf_machine_public_extern_data_decl") + ".h"
+%else
+    %<SLibCacheCodeToFile("mdl_priv_fcn_decl", sysPrototypesBuf)>
+    %assign headerFile = SLibGetFileNameForCode("mdl_priv_fcn_decl") + ".h"
+%endif
+
+%if !WHITE_SPACE(sysPrototypesBuf) && !SLibIsCompactFileFormat()
+    %% Fix for build issues due to missing header include in model.c that contains the declaration
+    %% for multi-caller async function. g2845438
+    %<SLibUpdateHeadersNeededByFile(SLibGetFullFileNameForCode("mdl_src"), headerFile)>
+%endif
+
+%% To generate standalone headers, include model.h if we have
+%% custom blockTypeSetup functions which might need headers included
+%% in model.h, or if we have a reusable function which might need
+%% custom data type defined in model.h.
+%if !WHITE_SPACE(tmpBuf) || !WHITE_SPACE(sysPrototypesBuf)
+    %<SLibUpdateHeadersNeededByFile(SLibGetFullFileNameForCode("mdl_priv_fcn_decl"), ...
+        SLibGetFullFileNameForCode("mdl_hdr"))>
+%endif
+
+%% To generate standalone headers, include model.h as well
+%% but only if we have a reusable function in which we pass
+%% data structures like external I/O or block IO etc.
+%if !ISEMPTY(sysPrototypesBuf)
+    %assign modelHeaderFileName = SLibGetFileNameForCode("mdl_hdr")
+    %openfile headerBuffer
+    #include "%<modelHeaderFileName>.h"
+    %closefile headerBuffer
+    %<SLibCacheCodeToFile("mdl_priv_hdr_incl", headerBuffer)>
+%endif
+
+%openfile ertPrivateExternsBuffer
+%if (SLibIsERTCodeFormat()) && (NumContStates > 0) && !IsModelReferenceTarget()
+    /* private model entry point functions */
+    %%
+    %<SLibGetFcnMemSecPragmaOnDecl("%<Name>_derivatives", "MemSecFuncExecute", "Pre")>\
+    %<LibExternInFcnDecls()>void \
+    %<Name>_derivatives(%<SLibModelFcnArgs("Derivative",TLC_FALSE,"")>);
+    %<SLibGetFcnMemSecPragmaOnDecl("%<Name>_derivatives", "MemSecFuncExecute", "Post")>\
+    %if (SLibGetIsFixedStepZeroCrossingEnabled())
+        %<SLibGetFcnMemSecPragmaOnDecl("%<Name>_zeroCrossings", "MemSecFuncExecute", "Pre")>\
+        %<LibExternInFcnDecls()>void \
+        %<Name>_zeroCrossings(%<SLibModelFcnArgs("ZeroCrossing",TLC_FALSE,"")>);
+        %<SLibGetFcnMemSecPragmaOnDecl("%<Name>_zeroCrossings", "MemSecFuncExecute", "Post")>\
+    %endif
+%endif
+%closefile ertPrivateExternsBuffer
+%<SLibCacheCodeToFile("mdl_priv_fcn_decl", ertPrivateExternsBuffer)>
+
+%% ============================================================================
+%% Single/Multitasking error checks
+%%
+%openfile rtwCompilerErrorsBuffer
+%switch CodeFormat
+  %case "RealTime"
+    %% Check for illegal multitasking transition
+    %<LibCheckForValidMTaskDefine()>\
+    %break
+  %case "S-Function"
+    %if !Accelerator
+        %if SolverType == "FixedStep"
+            %if (FixedStepOpts.SolverMode == "SingleTasking") && (NumRuntimeExportedRates > 1)
+                %% Building s-function as SingleTasking so check that
+                %% MultiTasking mode is not later used.
+                %<LibCheckForValidMTaskDefine()>\
+            %endif
+        %endif
+    %endif
+    %break
+  %default
+    %break
+%endswitch
+%closefile rtwCompilerErrorsBuffer
+
+%% Compiler errors
+%if !WHITE_SPACE(rtwCompilerErrorsBuffer)
+    %<SLibCacheCodeToFile("mdl_priv_compilerErrorCheck", rtwCompilerErrorsBuffer)>
+%endif
+
+%endif %% _FORMATPRIVATE_

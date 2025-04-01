@@ -1,0 +1,23 @@
+%if EXISTS(::_RTMDL_OBSOLETE_API_) == 0
+%assign ::_RTMDL_OBSOLETE_API_ = 1
+%%
+%% Copyright 2022 The MathWorks, Inc.
+%%
+
+%% The following function is a utility function for the routines
+%% below; it infers the system index if it is not in scope
+%function FcnInferredSystemAndAccessRTMArgDef() void
+    %with ::CompiledModel
+        %assign s = NumSystems-1
+        %if EXISTS(SystemIdx)
+            %assign s = SystemIdx
+        %endif
+        %return System[CGMODEL_ACCESS("System.ReusedParentSystemIdx", s)]
+    %endwith
+%endfunction
+
+%function RTMGetModelSS() void
+    %return RTMsGetModelSS(FcnInferredSystemAndAccessRTMArgDef(),TLC_FALSE)
+%endfunction
+
+%endif

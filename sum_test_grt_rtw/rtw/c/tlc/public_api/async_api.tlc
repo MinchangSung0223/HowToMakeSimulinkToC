@@ -1,0 +1,54 @@
+%%
+%% Copyright 2022 The MathWorks, Inc.
+%%
+
+%if EXISTS(::_ASYNC_API_) == 0
+%assign ::_ASYNC_API_ = 1
+
+%% DocFunction{Other Useful Functions}: LibGetFcnCallBlock =====================
+%% Abstract:
+%%   Given a s-function block and index of 'SFcnSystemOutputCall' record, return
+%%   the block record for the downstream function-call subsystem block.
+%%
+%% Call syntax:
+%%
+%%    %assign ssBlock = LibGetFcnCallBlock(block,0)
+%%
+%% Returns:
+%%   Returns the block record of the downstream f-c subsystem connected to that
+%%   element (call index).
+%%
+%function LibGetFcnCallBlock(sfcnblock, recIdx) void
+    %with sfcnblock
+        %if ISEQUAL(SFcnSystemOutputCall[recIdx].BlockToCall, "unconnected")
+            %return ""
+        %elseif ISFIELD(sfcnblock,"SFcnSystemOutputCall") && (SIZE(SFcnSystemOutputCall,1) > recIdx)
+            %assign ssSysIdx = SFcnSystemOutputCall[recIdx].BlockToCall[0]
+            %assign ssBlkIdx = SFcnSystemOutputCall[recIdx].BlockToCall[1]
+            %return ::CompiledModel.System[ssSysIdx].Block[ssBlkIdx]
+        %else
+            %assign ::ShowErrorStackTrace = TLC_TRUE
+            %<SLibReportErrorWithIdAndArgs("RTW:tlc:InvalidArg", "LibGetFcnCallBLock")>
+        %endif
+    %endwith
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibGetBlockAttribute ===================
+%% Abstract:
+%%   Get a field value inside a Block record.
+%%
+%% Call syntax:
+%%  %if LibIsEqual(LibGetBlockAttribute(ssBlock,"MaskType"), "Task Block")
+%%    %assign isTaskBlock = 1
+%%  %endif
+%%
+%% Returns:
+%%   Returns the value of the attribute(field) or empty string if it doesn't exist.
+%function LibGetBlockAttribute(block,attr) void
+    %if ISFIELD(block,attr)
+        %return GETFIELD(block, attr)
+    %endif
+    %return ""
+%endfunction
+
+%endif %% _ASYNC_API_

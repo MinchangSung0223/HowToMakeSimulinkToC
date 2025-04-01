@@ -1,0 +1,471 @@
+%if EXISTS(_BLOCK_SETUP_LIB_) == 0
+%assign _BLOCK_SETUP_LIB_ = 1
+%%
+%% Copyright 2019-2023 The MathWorks, Inc.
+%%
+
+%% ============================================================================
+%% Before code generation begins, make a pass through the model and:
+%%
+%%   o Initialize UserDefinedRWork, UserDefinedIWork, and UserDefinedPWork
+%%     to zero.  This initialization must be performed before calling the
+%%     block's BlockInstanceSetup function since it is there that the user
+%%     will define (redefine) their work vectors.
+%%
+%%   o Execute each blocks "BlockInstanceSetup" function.
+%%
+%%   o Execute a blocks "BlockTypeSetup" function the first time the block
+%%     type is encountered.
+%%
+%%   o Promote defined RWork, IWork, PWork and DWork into parent scope.
+%%
+%%   o Initialize each block output as not needed to be declared in function
+%%     scope. This will be used to track block output signals that are not in
+%%     the global BlockIO vector, and hence need to be locally declared in the
+%%     appropriate functions.
+%%
+%%   o Force expression folding off if the block is not compliant.
+%%
+%%   o Force scalar expanded input expressions off unless otherwise specified.
+%%
+
+%include "utils_api.tlc"
+
+%% ============================================================================
+%% Loop through the System records and ...
+%%
+%% TopTester: test/toolbox/simulink/blocks/CPPCodeGen/tsmlk_core_cpp_coverage.m
+%% TopTester: test/toolbox/simulink/variants/var-inline-vsrc-systemtests/tmg1317695_VC1.m
+%% TopTester: test/toolbox/simulink/blocks/sb2sl/tsb2slmdlref.m
+%%
+%function BlockSetupAndCompatibilityCheck() void
+    %with ::CompiledModel
+        %foreach sysIdx = ::CompiledModel.NumSystems
+            %assign ::system = ::CompiledModel.System[sysIdx]
+            %with ::system
+                %% Add NumTotalBlocks to system record for backward compatibiltiy
+                %if ISFIELD(::system, "Block")
+                    %addtorecord ::system NumTotalBlocks SIZE(system.Block,1)
+                %else
+                    %addtorecord ::system NumTotalBlocks 0
+                %endif
+                %foreach blkIdx = ::system.NumBlocks
+                    %assign ::block = ::system.Block[blkIdx]
+                    %with ::block
+                        %if 0 == ::block.ExecuteBlockFcns
+                            %continue
+                        %endif
+                        %if ::block.Type != "Opaque"
+                            %% Promote RWork defines into parent scope if the block defines RWorks
+                            %foreach idx = ::block.NumRWorkDefines
+                                %assign work = ::block.RWorkDefine[idx]
+                                %if !ISFIELD(::block, work.Name)
+                                    %assign %<work.Name> = work
+                                    %assign ::block = ::block + %<work.Name>
+                                %endif
+                            %endforeach
+                            %% Promote IWork defines into parent scope if the block defines IWorks
+                            %foreach idx = ::block.NumIWorkDefines
+                                %assign work = ::block.IWorkDefine[idx]
+                                %if !ISFIELD(::block, work.Name)
+                                    %assign %<work.Name> = work
+                                    %assign ::block = ::block + %<work.Name>
+                                %endif
+                            %endforeach
+                            %% Promote IWork defines into parent scope if the block defines PWorks
+                            %foreach idx = ::block.NumPWorkDefines
+                                %assign work = ::block.PWorkDefine[idx]
+                                %if !ISFIELD(::block, work.Name)
+                                    %assign %<work.Name> = work
+                                    %assign ::block = ::block + %<work.Name>
+                                %endif
+                            %endforeach
+                            %% Promote DWork into parent scope.
+                            %foreach idx = ::block.NumDWork
+                                %assign work = ::block.DWork[idx]
+                                %assign dWorkName = LibBlockDWorkName(work)
+                                %if !ISFIELD(::block, dWorkName)
+                                    %addtorecord ::block %<dWorkName> work
+                                %endif
+                            %endforeach
+                        %endif %% Type != "Opaque"
+
+                        %addtorecord ::block BlkSysIdx system.SystemIdx
+
+                        %assign _globalVar = SLibBlockTypeSetupName(sysIdx, blkIdx)
+
+                        %if !EXISTS(::%<_globalVar>)
+                            %if SLibIsMainCodeGenPhase()
+                                %if ::block.Type == "S-Function"
+                                    %% In Most of the places for S-functions, whenever the name of the S-function is passed,
+                                    %% name associated with the ParamSettings.FunctionName is used. But here since _globalVar
+                                    %% is another identifier for S-Functions, the name will be different. So making it uniform
+                                    %% to associate the variant condition with the header file in cachelib.tlc or else the OR
+                                    %% the variant condition will not be obtained in cachelib.tlc
+                                    %assign blkType = ParamSettings.FunctionName
+                                %else
+                                    %assign blkType = _globalVar
+                                %endif
+                                %assign blkTypeInit = ...
+                                    CGMODEL_ACCESS("FileRepository.initializeBlockType",blkType)
+                            %endif
+                            %assign ::BlockFcn = "BlockTypeSetup"
+                            %<GENERATE(::block, "BlockTypeSetup", ::system)>\
+                            %assign ::BlockFcn = "Unknown"
+                            %assign ::%<_globalVar> = 1
+                        %else
+                            %if SLibIsMainCodeGenPhase()
+                                %assign vcond = SLibGetBlockVariantCondition(::block)
+                                %if ::block.Type == "S-Function"
+                                    %assign blkType = ParamSettings.FunctionName
+                                %else
+                                    %assign blkType = _globalVar
+                                %endif
+                                %assign updateCond = CGMODEL_ACCESS("FileRepository.updateHeaderConditionBasedOnType",blkType, vcond)
+
+
+
+                            %endif
+                        %endif
+
+                        %% Execute the block's BlockInstanceSetup function
+                        %assign ::BlockFcn = "BlockInstanceSetup"
+
+                        %<GENERATE(::block, "BlockInstanceSetup", ::system)>\
+                        %assign ::BlockFcn = "Unknown"
+
+                        %if ::block.UseTLC
+                            %if SLibBlockIsExpressionCompliant(::block)
+                                %%
+                                %% Disallow scalar expanded expression (unless otherwise specified)
+                                %% This is why:
+                                %%   Suppose we have a block with multiple input expressions, at least
+                                %%   one wide, at one scalar.  Then expansion of the scalar inputs
+                                %%   causes those inputs to be duplicated which harms throughput.
+                                %%
+                                %%   For example, say we have a Sum block with a wide input "u1"
+                                %%   and scalar input "u2".  If we accept expressions at the scalar
+                                %%   input we will end up with something like
+                                %%
+                                %%   for (i = 0; i < 10; i++) {
+                                %%     output[i] = sin(cos(u1[i])) + sin(cos(u2));
+                                %%   }
+                                %%
+                                %%   Here we see sin(cos(u2)) repeatedly and calculated due to scalar
+                                %%   expansion of an expression.
+                                %%
+                                %foreach opIdx = ::block.NumDataOutputPorts
+                                    %if LibBlockOutputSignalWidth(opIdx) > 1
+                                        %foreach ipIdx = ::block.NumDataInputPorts
+                                            %if LibBlockInputSignalWidth(ipIdx) == 1 && ...
+                                                !SLibBlockInputSignalAllowScalarExpandedExpr(::block, ipIdx)
+                                                %<SLibSetBlockInputSignalIsNotExpr(::block, ipIdx)>
+                                            %endif
+                                        %endforeach
+                                    %endif
+                                %endforeach
+                            %else
+                                %%
+                                %% Check expression folding compliance
+                                %% If not compliant, don't allow nonconst expressions at the
+                                %% output port, nor (nonconst) expressions at the input ports.
+                                %%
+                                %foreach ipIdx = ::block.NumDataInputPorts
+                                    %<SLibSetBlockInputSignalIsNotExpr(::block, ipIdx)>
+                                %endforeach
+                                %<SLibSetBlockOutputSignalsAreNotExpr(::block)>
+                            %endif
+                        %endif
+                    %endwith %% block
+                %endforeach
+
+                %% Check each non-virtual system for the existence of RTWdata in a
+                %% empty subsystem.  If EmptySubsysInfo exists and RTWdata.TLCFile
+                %% exists, execute the designated TLC file. This loop is used for the
+                %% custom code block, but can also be used to call a tlc file for any
+                %% other empty subsystems that have RTWdata records by assigning the
+                %% field TLCFile to be the name of the tlc file.  Note: the RTWdata
+                %% attached to a block should be processed by that blocks own tlc file.
+                %if EXISTS(EmptySubsysInfo)
+                    %with EmptySubsysInfo
+                        %foreach idx = NumRTWdatas
+                            %assign temp = RTWdata[idx]
+                            %if ISFIELD(temp,"IncludePath")
+                                %addincludepath temp.IncludePath
+                            %endif
+                            %if ISFIELD(temp,"TLCFile")
+                                %if FILE_EXISTS(GENERATE_FILENAME(temp.TLCFile))
+                                    %<GENERATE_TYPE(temp, "ProcessRTWdata", temp.TLCFile, system)>
+                                %else
+                                    %if system.Type != "root"
+                                        %assign sysName = LibUnmangledPathName(system.Name)
+                                    %else
+                                        %assign sysName = ::CompiledModel.Name
+                                    %endif
+                                    %openfile errTxt
+
+
+                                    Cannot locate TLC file %<temp.TLCFile>.tlc
+
+                                    A block specified RTWData without a corresponding TLC file. \
+                                    RTWData must include the TLC file name.  For example,
+
+                                    data.Foo = '1';
+                                    data.TLCFile = 'foofile';
+                                    set_param(gcb, 'RTWData', data);
+
+                                    RTWData {
+                                        Foo     "1"
+                                        TLCFile "foofile"
+                                    }
+
+                                    The specified TLC file either does not exist, or is not on the TLC \
+                                    path, or is incorrect.
+
+                                    The block was located in system: %<sysName>
+                                    %closefile errTxt
+                                    %<LibReportError(errTxt)>
+                                %endif
+                            %endif
+                        %endforeach
+                    %endwith
+                %endif
+            %endwith %% system
+        %endforeach
+    %endwith %% ::CompiledModel
+    %undef ::system, ::block, param, bo, work, temp
+%endfunction %% BlockSetupAndCompatibilityCheck
+
+%% Function: SLibSetupDiagnosticOptions ============================================================
+%% Abstract:
+%%   Set up options that report diagnostics during the code generation process.
+%%   These options do not directly affect the actual code that is generated.
+%%
+%function SLibSetupDiagnosticDefaults() void
+    %%
+    %% Set verbosity
+    %%
+    %if !EXISTS(RTWVerbose)
+        %assign ::RTWVerbose = 1
+    %endif
+
+    %%
+    %% Boolean to display warnings due to use of obsolete functions
+    %%
+    %if !EXISTS(ShowObsoleteWarnings)
+        %assign ::ShowObsoleteWarnings = 0
+    %endif
+
+    %%
+    %% Flag to control display of overflow warnings for blocks that have
+    %% saturation capability, but have it turned off(unchecked) in their dialog.
+    %%       0 no warning is displayed
+    %%       1 displays one warning for the model during code generation
+    %%       2 displays one warning which contains a list of all offending blocks
+    %%
+    %if !EXISTS(WarnNonSaturatedBlocks)
+        %assign ::WarnNonSaturatedBlocks = 2
+    %endif
+
+%endfunction %% SLibSetupDiagnosticDefaults
+
+%function SLibSetupSharedCodeGenTrackingFields() void
+    %%
+    %% Setup GeneratingOutputsCode to keep track of when outputs code is
+    %% being generated (for expression folding)
+    %%
+    %<LibAddToCompiledModel("GeneratingOutputsCode", 0)>
+%endfunction
+
+%function SLibSetupSharedGlobalVariables() void
+    %%
+    %% Setup the code format if not already setup
+    %%
+    %if !EXISTS(CodeFormat)
+        %assign ::CodeFormat = "RealTime"
+    %endif
+    %%
+    %% Accelerator flag.  Used in conjuction with the S-Function code format.
+    %%
+    %if !EXISTS(::Accelerator)
+        %assign ::Accelerator = 0
+    %endif
+    %%
+    %% Setup the global variable to check if is RSIM
+    %%
+    %assign ::isRSim = EXISTS(_RSIM_)
+    %%
+    %% Setup global variables for rapid accelerator mode
+    %%
+    %assign ::isRSimWithSolverModule = EXISTS(_RSIM_FULL_)
+    %assign ::isRAccel = EXISTS(_RACCEL_)
+    %%
+    %% Setup fields for generating the rtModel
+    %%
+    %if SLibIsERTCodeFormat()
+        %% Always generate the rtModel for ERT
+        %assign ::GenRTModel = 1
+    %endif
+
+    %if !EXISTS(GenRTModel)
+        %assign ::GenRTModel = 0
+    %endif
+
+    %if (::GenRTModel == 0) && EXISTS(_GRT_)
+        %<SLibReportErrorWithId("RTW:tlc:ReplaceSimStructWithRTModel")>
+    %endif
+
+    %%
+    %% Setup SimstructBasedTarget global variable
+    %%
+    %if EXISTS(SimstructBasedTarget) && ...
+        (::SimstructBasedTarget == TLC_FALSE && ::GenRTModel == 0)
+        %<SLibReportErrorWithId("RTW:tlc:SimStructBasedTarget")>
+    %endif
+
+    %if !EXISTS(SimstructBasedTarget)
+        %if ::GenRTModel == 0
+            %assign ::SimstructBasedTarget = TLC_TRUE
+        %else
+            %assign ::SimstructBasedTarget = TLC_FALSE
+        %endif
+    %endif
+
+    %%
+    %% TLC global variable cleanup
+    %%       Setting this variable to 1 causes cleanup of global TLC variables
+    %%       after they are used such as after their LibDump* function is called.
+    %%
+    %%
+    %if !EXISTS(::ResetTLCGlobalsAfterUse)
+        %assign ::ResetTLCGlobalsAfterUse = 1
+    %endif
+
+    %%
+    %% S-Function bitness placeholder
+    %%       This variable is used as a placeholder for determining S-Function
+    %%       bitness. Currently, all S-Functions are 32-bit, so we can simply
+    %%       set this flag to 0 and use it to allocate 32-bit SimStruct fields
+    %%       on S-Function SimStructs. Once 64-bit S-Functions are supported,
+    %%       we will need to read the bitness info from the S-Function block,
+    %%       probably in a function like BlockInstanceSetup(block, system)
+    %%
+    %if !EXISTS(::SFcnIs64Bit)
+        %assign ::SFcnIs64Bit = 0
+    %endif
+    %%
+    %% IsSimBuild indicates that current build is for simulation only
+    %%
+    %assign ::IsSimBuild = FEVAL("slprivate", ...
+        "isSimulationBuild",LibGetModelName(),::CompiledModel.ModelReferenceTargetType)
+
+    %%
+    %% IsUsingLanguageStandardTypes is true if emitting language standard types instead of
+    %% classic (rtwtypes.h) types
+    %%
+    %assign ::IsUsingLanguageStandardTypes = CGMODEL_ACCESS("CGModel.IsUsingLanguageStandardTypes")
+
+    %%
+    %% Flags for tracking Non-finites
+    %%
+    %if !EXISTS(::NeedRealInf)
+        %assign ::NeedRealInf = 0
+    %endif
+    %if !EXISTS(::NeedRealMinusInf)
+        %assign ::NeedRealMinusInf = 0
+    %endif
+    %if !EXISTS(::NeedRealNaN)
+        %assign ::NeedRealNaN = 0
+    %endif
+
+    %%
+    %% Setup globals for complex parts
+    %%
+    %if !EXISTS(::tRealPart)
+        %assign ::tRealPart = "re"
+    %endif
+    %if !EXISTS(::tImagPart)
+        %assign ::tImagPart = "im"
+    %endif
+
+    %% Setup config param PurelyIntegerCode
+    %if !EXISTS(::PurelyIntegerCode)
+        %assign ::PurelyIntegerCode = CGMODEL_ACCESS("CGModel.ConfigSet", "PurelyIntegerCode")
+    %endif
+
+    %if !EXISTS(::GenCPP)
+        %assign ::GenCPP = CGMODEL_ACCESS("CGModel.ConfigSet", "TargetLang") == "C++"
+    %endif
+
+    %%
+    %% Setup GenerateComments to be true if not setup already
+    %%
+    %if !EXISTS(GenerateComments)
+        %assign ::GenerateComments = 1
+    %endif
+    %<LibAddToCompiledModel("GenerateComments",GenerateComments)>
+
+    %% =============================================================================
+    %% Setup defaults that help perform diagnostics of the code generation process.
+    %% These defaults do not affect the generated code.
+    %% ----------------------------------------------------------------------
+    %% Setting             Default-Value
+    %% ----------------------------------------------------------------------
+    %% RTWVerbose              1
+    %% ShowObsoleteWarnings    0
+    %% WarnNonSaturatedBlocks  2
+    %% ----------------------------------------------------------------------
+    %%
+    %<SLibSetupDiagnosticDefaults()>
+
+    %if !EXISTS(::SLCGUseRTWContext)
+        %assign ::SLCGUseRTWContext = 0
+    %endif
+
+    %if CodeFormat == "S-Function"
+        %if !Accelerator
+            %assign ::CompiledModel.Name = "%<CompiledModel.Name>_sf"
+        %else
+            %assign ::CompiledModel.Name = "%<CompiledModel.Name>_acc"
+        %endif
+    %endif
+
+    %if !EXISTS(GenerateDefaultFcnBanner)
+        %assign ::GenerateDefaultFcnBanner = 0
+    %else
+        %assign ::GenerateDefaultFcnBanner = %<GenerateDefaultFcnBanner>
+    %endif
+    %if !EXISTS(GenerateDefaultFcnBannerSharedUtil)
+        %assign ::GenerateDefaultFcnBannerSharedUtil = 0
+    %else
+        %assign ::GenerateDefaultFcnBannerSharedUtil = %<GenerateDefaultFcnBannerSharedUtil>
+    %endif
+    %% ============================================================================
+    %% Setup fields that track the progress of code generation. These are fields
+    %% that are for internal use of the TLC code
+    %<SLibSetupSharedCodeGenTrackingFields()>
+
+    %%
+    %% Setup globals for file packaging functions
+    %%
+    %if !EXISTS(::ERTCustomFileBanners)
+        %assign ::ERTCustomFileBanners = CGMODEL_ACCESS("CGModel.ConfigSet", "ERTCustomFileBanners")
+    %endif
+    %if !EXISTS(::ERTSrcFileBannerTemplate)
+        %assign ::ERTSrcFileBannerTemplate = CGMODEL_ACCESS("CGModel.ConfigSet", "ERTSrcFileBannerTemplate")
+    %endif
+    %if !EXISTS(::ERTHdrFileBannerTemplate)
+        %assign ::ERTHdrFileBannerTemplate = CGMODEL_ACCESS("CGModel.ConfigSet", "ERTHdrFileBannerTemplate")
+    %endif
+%endfunction
+
+%% Function: SLibIsValidCoderContext ===============================================================
+%% Abstract:
+%%   Returns true if the Simulink Coder context object can be utilized for
+%%   code generation.
+%%
+%function SLibIsValidCoderContext() void
+    %return ::SLCGUseRTWContext == 1
+%endfunction
+
+%endif %% _BLOCK_SETUP_LIB_

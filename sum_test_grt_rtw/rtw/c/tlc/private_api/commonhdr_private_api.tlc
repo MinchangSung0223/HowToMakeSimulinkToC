@@ -1,0 +1,152 @@
+%%
+%% Copyright 2020-2023 The MathWorks, Inc.
+%%
+
+%if EXISTS(::_COMMONHDR_PRIVATE_API_) == 0 %% to only check in the global scope for a variable
+%assign ::_COMMONHDR_PRIVATE_API_ = 1 %% to create a globally scoped variable
+
+%% Function: SLibGetSystemOutputSrcFileBaseName ====================================================
+%% Abstract:
+%%    return system src file name.
+%function SLibGetSystemOutputSrcFileBaseName(system) void
+    %return CGMODEL_ACCESS("CGModel.System.OutputSrcFileBaseName", system.SystemIdx)
+%endfunction
+
+
+%% Function: SLibGetSystemOutputHdrFileBaseName ====================================================
+%% Abstract:
+%%    return system hdr file name.
+%function SLibGetSystemOutputHdrFileBaseName(system) void
+    %return CGMODEL_ACCESS("CGModel.System.OutputHdrFileBaseName", system.SystemIdx)
+%endfunction
+
+%function SLibGetNamespace(fName) void
+    %assign nameSpaceDecl = CGMODEL_ACCESS("CGModel.getNameSpaceDecl", System[NumSystems-1].SystemNamespaceFlag, fName )
+    %if nameSpaceDecl != ""
+        %assign System[NumSystems-1].SystemNamespaceFlag = 1
+    %endif
+
+    %return nameSpaceDecl
+%endfunction
+
+%% Function: SLibDumpFunctionBanner ================================================================
+%% Abstract:
+%%   This function return the banner of a generated function
+%%   Input fcnRec is a struct with at least following fields:
+%%      Name: function Name
+%%      Returns: function return type
+%%      Params: function parameters
+%%      Type: function time, e.g. Output, Update, OutputUpdate
+%%
+%% TopTester: test/toolbox/simulink/variants/var-vss-codevariants/tcodevariants_neg2.m
+%% TopTester: test/toolbox/simulink/blocks/sb2sl/tsb2slmdlref.m
+%% TopTester: test/toolbox/simulink/variants/var-vss-codevariants/tvss_code_variants.m
+%% TopTester: test/toolbox/simulink/blocks/CPPCodeGen/tsmlk_core_cpp_coverage.m
+%%
+%function SLibDumpFunctionBanner(fcnRec) void
+    %% Do not generate any comments if GenerateComments is off
+    %if !(CAST("Boolean", CGMODEL_ACCESS("CGModel.ConfigSet", "GenerateComments")))
+        %return SLibGetNamespace(fcnRec.Name)
+    %endif
+    %assign ModelName = LibGetModelName()
+    %assign IsSharedUtility = GenUtilsSrcInSharedLocation && ...
+        ISEQUAL(fcnRec.Category, "utility")
+
+    %assign BlockDescription = ""
+    %assign BlockDescriptionContent = ""
+    %if ISFIELD(fcnRec, "BlockDescription")
+        %assign BlockDescription = fcnRec.BlockDescription
+        %if !ISEMPTY(BlockDescription)
+            %assign BlockDescriptionContent = FEVAL("rtwprivate", ...
+                "rtw_format_banner", "getBlockDescriptionContent", BlockDescription)
+        %endif
+    %endif
+    %%
+    %% Generate a default format banner if either
+    %%   1. Non ERT target; or
+    %%   2. there is no function_banner_template.tlc for member functions
+    %%   3. there is no function_banner_template_sharedutility.tlc for shared utility
+    %%
+    %if IsSharedUtility
+        %if GenerateDefaultFcnBannerSharedUtil == 0
+            %% Initialize GenerateDefaultFcnBannerSharedUtil cache
+            %if !SLibIsERTTarget() || !FILE_EXISTS("function_banner_template_sharedutility.tlc")
+                %assign ::GenerateDefaultFcnBannerSharedUtil = 1
+            %else
+                %assign ::GenerateDefaultFcnBannerSharedUtil = 2
+            %endif
+        %endif
+    %else
+        %if GenerateDefaultFcnBanner == 0
+            %% Initialize GenerateDefaultFcnBanner cache
+            %if !SLibIsERTTarget() || !FILE_EXISTS("function_banner_template.tlc")
+                %assign ::GenerateDefaultFcnBanner = 1
+            %else
+                %assign ::GenerateDefaultFcnBanner = 2
+            %endif
+        %endif
+    %endif
+
+    %if (!IsSharedUtility && GenerateDefaultFcnBanner == 1) || ...
+        (IsSharedUtility && GenerateDefaultFcnBannerSharedUtil == 1)
+        %assign FunctionDescription = FEVAL("rtwprivate", "rtw_format_banner", "formatFcnDescription",...
+            fcnRec.Abstract, 0, 0)
+        %assign bannerBuf = FunctionDescription + "\n" + BlockDescription
+        %assign bannerBuf = FEVAL("rtwprivate", "rtw_format_banner", "formatBanner", ...
+            bannerBuf, "classic", 0)
+
+        %assign nameSpaceDecl = SLibGetNamespace(fcnRec.Name)
+        %assign bannerBuf = nameSpaceDecl + bannerBuf
+
+        %return bannerBuf
+    %endif
+
+    %%
+    %% Generatec customized function banner
+    %%
+    %if ISFIELD(fcnRec, "GeneratedFor")
+        %assign GeneratedFor = "%<fcnRec.GeneratedFor>"
+    %else
+        %assign GeneratedFor = ""
+        %if ISEQUAL(fcnRec.Category, "model")
+            %% note: subsystem build may report wrong <root> as a temp model is created.
+            %if SLibGetBlockCommentType() == "BlockPathComment"
+                %assign GeneratedFor = "'<Root>'"
+            %else
+                %assign GeneratedFor = "'%<LibGetModelName()>'"
+            %endif
+        %endif
+    %endif
+
+    %if TYPE(fcnRec.Params) == "Vector" && SIZE(fcnRec.Params, 1) > 1
+        %assign fcnParams = ""
+        %foreach idx = SIZE(fcnRec.Params, 1)
+            %assign fcnParams = "%<fcnParams>%<fcnRec.Params[idx]>"
+        %endforeach
+        %assign fcnRec.Params = "%<fcnParams>"
+    %endif
+    %assign rawArguments = fcnRec.Params
+    %assign rawFcnDescription = fcnRec.Abstract
+    %assign rawReturnType = fcnRec.Returns
+    %assign FunctionName = fcnRec.Name
+    %% CPP constructor and desctructor have no return type
+    %if ISEQUAL(fcnRec.Category, "cpp") && ISFIELD(fcnRec, "Type") && ...
+        (ISEQUAL(fcnRec.Type, "C++ constructor") || ISEQUAL(fcnRec.Type, "C++ destructor"))
+        %assign isCppStructor = TLC_TRUE
+    %else
+        %assign isCppStructor = TLC_FALSE
+    %endif
+    %assign GeneratedBy = fcnRec.GeneratedBy
+    %if IsSharedUtility
+        %include "function_banner_template_sharedutility.tlc"
+    %else
+        %include "function_banner_template.tlc"
+    %endif
+
+    %assign nameSpaceDecl = SLibGetNamespace(fcnRec.Name)
+    %assign bannerBuf = nameSpaceDecl + bannerBuf
+
+    %return bannerBuf
+%endfunction %% SLibDumpFunctionBanner
+
+%endif %% _COMMONHDR_PRIVATE_API_

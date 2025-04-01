@@ -1,0 +1,80 @@
+%%
+%% Copyright 2022-2023 The MathWorks, Inc.
+%%
+%% Abstract:
+%%   This thin TLC library file contains the general purpose functions for accessing block
+%%   parameters. This library contains the block parameter function implementations that are
+%%   compatible with the TLC interfave version 3.
+%%
+%if EXISTS(::_PARAMETER_API_V3_) == 0
+%assign ::_PARAMETER_API_V3_ = 1
+
+%include "parameter_private_api.tlc"
+
+%function LibBlockParameter(param, ucv, lcv, idx)
+    %<SLibV3CallsiteValid("LibBlockParameter")>
+    %if SLibGetTypeOfValueFromParamRec(param) == "Matrix"
+        %% exit if the parameter is a true matrix,
+        %% i.e., has more than one row or columns.
+        %assign prmSize = SLibGetSizeOfValueFromParamRec(param)
+        %assign nRows   = prmSize[0]
+        %if nRows > 1
+            %assign errTxt = "Must access parameter %<LibBlockParameterName(param)> using "...
+                "LibBlockMatrixParameter."
+            %<LibBlockReportError([], errTxt)>
+        %endif
+    %endif
+    %assert ISFIELD(param, "BlockParamIdx")
+    %assert ISFIELD(param, "RecordIdx")
+    %assert param.BlockParamIdx == param.RecordIdx[2]
+    %if SLibIsGenerateInlinedParameter(param, lcv, idx)
+        %% Parameter is inlined. So being accessed by values instead of name.
+        %return LibBlockParameterValue(param, idx)
+    %endif
+    %return CGMODEL_ACCESS("Block.Parameter", param.RecordIdx[0], param.RecordIdx[1], ...
+        param.RecordIdx[2], ::CurrentBlockFcn, ::CurrentBlockTid, ...
+        ucv, lcv, "%<idx>")
+%endfunction %% LibBlockParameter
+
+%function LibBlockParameterAddr(param, ucv, lcv, idx) void
+    %<SLibV3CallsiteValid("LibBlockParameterAddr")>
+    %if SLibGetTypeOfValueFromParamRec(param) == "Matrix"
+        %% exit if the parameter is a true matrix,
+        %% i.e., has more than one row or columns.
+        %assign prmSize = SLibGetSizeOfValueFromParamRec(param)
+        %assign nRows   = prmSize[0]
+
+        %if nRows > 1
+            %assign errTxt = "Number of rows greater than 1.  Must access parameter "
+            "%<LibBlockParameterName(param)> using LibBlockMatrixParameterAddr."
+            %<LibBlockReportError([], errTxt)>
+        %endif
+    %endif
+    %if ucv != ""
+        %% idx is ignored when ucv is non-null
+        %assign idx = 0
+    %endif
+    %assert ISFIELD(param, "BlockParamIdx")
+    %assert ISFIELD(param, "RecordIdx")
+    %assert param.BlockParamIdx == param.RecordIdx[2]
+    %return CGMODEL_ACCESS("Block.ParameterAddr", param.RecordIdx[0], param.RecordIdx[1], ...
+        param.RecordIdx[2], ::CurrentBlockFcn, ::CurrentBlockTid, ...
+        ucv, lcv, "%<idx>")
+%endfunction %% LibBlockParameterAddr
+
+%function LibBlockParameterBaseAddr(param) void
+    %<SLibV3CallsiteValid("LibBlockParameterBaseAddr")>
+    %assert ISFIELD(param, "BlockParamIdx")
+    %assert ISFIELD(param, "RecordIdx")
+    %assert param.BlockParamIdx == param.RecordIdx[2]
+    %return CGMODEL_ACCESS("Block.ParameterBaseAddr", param.RecordIdx[0], param.RecordIdx[1], ...
+        param.RecordIdx[2], ::CurrentBlockFcn, ::CurrentBlockTid)
+%endfunction  %% LibBlockParameterAddr
+
+%function LibBlockMatrixParameterBaseAddr(param) void
+    %<SLibV3CallsiteValid("LibBlockMatrixParameterBaseAddr")>
+    %% Parameter Base Address can be used to fetch the Matrix parameter base address as well.
+    %return LibBlockParameterBaseAddr(param)
+%endfunction %% LibBlockMatrixParameterBaseAddr
+
+%endif %% _PARAMETER_API_V3_

@@ -1,0 +1,48 @@
+%%
+%%
+%%
+%%
+%% Copyright 1994-2023 The MathWorks, Inc.
+%%
+%% This file defines information about the target compiler/hardware.
+%% This information is required by Simulink Coder in order to
+%% properly generate code.
+%%
+%selectfile NULL_FILE
+
+%%
+%% Set choice for having comments included with a function or macro "call"
+%%
+%assign FixPtIncludeCallComment = 0
+
+%%
+%% Set choice for having comments included with each block that describes any
+%% parameters for example gives the real world values and data type info.
+%% The parameters can contain many elements so the comments can get huge.
+%%
+%assign FixPtIncludeParameterComment = 0
+
+%%
+%% Set code generation mode for Fixed Point Utilities.
+%if !EXISTS(::FixPtUtilType)
+    %assign ::FixPtUtilType = "macro"
+%endif
+
+%% Word sizes for integer data types (i.e., long, int, short, char).  Not
+%% setting these values correclty will result in a compile time error due
+%% to built in safety checks in the model_private.h header file (this is
+%% a good thing).
+
+%% Following FEVAL calls expect Name to be the actual model name
+%assign IntegerSizes = FEVAL("rtwprivate", "rtwwordlengths", LibGetModelName())
+
+%% define the bits per Largest integer
+%if IntegerSizes.LongLongMode == 1
+    %assign LargestIntegerNumBits = IntegerSizes.LongLongNumBits
+%else
+    %assign LargestIntegerNumBits = IntegerSizes.LongNumBits
+%endif
+
+%% Implementation specific properties:
+%assign CTargetSpecific = FEVAL("rtwprivate", "rtw_implementation_props", ...
+    LibGetModelName())

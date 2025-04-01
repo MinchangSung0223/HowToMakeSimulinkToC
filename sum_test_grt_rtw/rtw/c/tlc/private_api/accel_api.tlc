@@ -1,0 +1,20 @@
+%%
+%% Copyright 2022 The MathWorks, Inc.
+%%
+%if EXISTS(::_ACCEL_API_) == 0
+%assign ::_ACCEL_API_ = 1
+
+%% Function: SLibCallBlockInSimulink ===============================================================
+%% Abstract:
+%%      Call into Simulink to the specified block's function.
+%%      Get this block's system index and block index, the system index should
+%%      directly map to Simulinks callgraph system vector index in
+%%      sl_BlockDiagran (or execInfo index in sl_Model) and block index should
+%%      directly map to the simBlockSortedList index in execInfo.
+%%
+%function SLibCallBlockInSimulink(system,block,functionToCall) void
+    %return CGMODEL_ACCESS("Block.LibCallBlockInSimulink", ...
+        system.SystemIdx, block.RecordIdx[1], RTMGetModelSS(), functionToCall)
+%endfunction
+
+%endif

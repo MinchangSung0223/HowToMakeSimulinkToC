@@ -1,0 +1,486 @@
+%% ==============================================================================
+%% Abstract:
+%%    Utilities to help with generation of external mode main.c file.
+%%
+%% Copyright 2020-2022 The MathWorks, Inc.
+%%
+
+%% Include guard
+%if EXISTS(_EXTMODEUTILSLIB_) == 0
+%assign _EXTMODEUTILSLIB_ = 1
+%selectfile NULL_FILE
+
+%% Function: FcnIsExtModeXCP =======================================================================
+%%
+%% Abstract:
+%%  Returns true if XCP-based external mode is enabled.
+%%
+%function FcnIsExtModeXCP()
+    %return (ExtMode == 1) && ExtModeXCP
+%endfunction
+
+
+%%=========================================================================
+%function FcnGenerateExtModeParseArgs() Output
+    /* Parse External Mode command line arguments */
+    extmodeErrorCode_T errorCode = EXTMODE_SUCCESS;
+    errorCode = extmodeParseArgs(argc, (const char **)argv);
+    if (errorCode != EXTMODE_SUCCESS) {
+        return (errorCode);
+    }
+%endfunction
+
+
+%% Function: FcnEmitStartingTheModel ===============================================================
+%%
+%% Abstract:
+%%  Generate code that emits the text **starting the model**
+%%
+%function FcnEmitStartingTheModel() Output
+    printf("**starting the model**\n");
+    fflush(stdout);
+%endfunction
+
+
+%% Function: FcnAppendExtModeStopConditionToStopCheck ==============================================
+%%
+%% Abstract:
+%%  Append the external mode stopping condition to the stopCheck
+%%  expression.
+%%
+%function FcnAppendExtModeStopConditionToStopCheck(stopCheck) Output
+    %return stopCheck + " && !extmodeSimulationComplete()"
+%endfunction
+
+%% Function: FcnGenerateWindowsExtModeBackgroundTaskFunction =======================================
+%%
+%% Abstract:
+%%  Generate the function that contains the external mode background task
+%%  loop for Windows targets
+%%
+%function FcnGenerateWindowsExtModeBackgroundTaskFunction() Output
+    %assign isWindows = TLC_TRUE
+    %<FcnGenerateExtModeBackgroundTaskFunction(isWindows)>
+%endfunction
+
+
+%% Function: FcnGeneratePOSIXExtModeBackgroundTaskFunction =========================================
+%%
+%% Abstract:
+%%  Generate the function that contains the external mode background task
+%%  loop for POSIX targets
+%%
+%function FcnGeneratePOSIXExtModeBackgroundTaskFunction() Output
+    %assign isWindows = TLC_FALSE
+    %<FcnGenerateExtModeBackgroundTaskFunction(isWindows)>
+%endfunction
+
+
+%% Function: FcnGenerateExtModeBackgroundTaskFunction ==============================================
+%%
+%% Abstract:
+%%  Generate the function that contains the external mode background task
+%%  loop.
+%%
+%function FcnGenerateExtModeBackgroundTaskFunction(isWindows) Output
+    %assign booleanType = LibGetDataTypeNameFromId(::CompiledModel.tSS_BOOLEAN)
+    %assign stopCheck = "(%<RTMGetErrStat()> == %<SLibGetNullDefinitionFromTfl()>)"
+    %if RTMStopReqAccessed()
+        %assign stopCheck = stopCheck + " && !%<RTMGetStopRequested()>"
+    %endif
+    %assign stopCheck = FcnAppendExtModeStopConditionToStopCheck(stopCheck)
+    void backgroundTask(void)
+    {
+        extmodeErrorCode_T errorCode = EXTMODE_SUCCESS;
+        volatile %<booleanType> noErr = %<stopCheck>;
+        %assign loopCondition = "!extmodeSimulationComplete() && !extmodeStopRequested() && noErr"
+        %if isWindows
+            DWORD waitResult;
+            %<booleanType> quitRequest = %<GET_TYPE_ID_REPLACEMENT("false")>;
+            %assign loopCondition = loopCondition + " && !quitRequest"
+        %endif
+        do {
+            /* Run External Mode background activities */
+            errorCode = extmodeBackgroundRun();
+            if (errorCode != EXTMODE_SUCCESS && errorCode != EXTMODE_EMPTY) {
+                /* Code to handle External Mode background task errors
+                may be added here */
+            }
+            if (extmodeStopRequested()) {
+                %<RTMSetStopRequested("true")>;
+            }
+            noErr = %<stopCheck>;
+
+            %if isWindows
+                /* Check for CTRL+C event */
+                waitResult = WaitForSingleObject(quitEvent, 0);
+                quitRequest = ( (waitResult == WAIT_OBJECT_0) || (waitResult == WAIT_FAILED) );
+            %endif
+        } while(%<loopCondition>);
+        return;
+    }
+%endfunction
+
+
+%% Function: FcnGenerateExtModeEvent ===============================================================
+%%
+%% Abstract:
+%%  Generate code to trigger the external mode event.
+%%
+%function FcnGenerateExtModeEvent(taskId, currentTime) Output
+    %% When a periodic task is completed, trigger an extmodeEvent
+    %% tagged with the current time for the current task.
+    {
+        /* Trigger External Mode event */
+        extmodeErrorCode_T errorCode = extmodeEvent((extmodeEventId_T)%<taskId>, %<currentTime>);
+        if (errorCode != EXTMODE_SUCCESS) {
+            /* Code to handle External Mode event errors
+            may be added here */
+        }
+    }
+%endfunction
+
+
+%% Function: FcnGenerateExtModeReset ===============================================================
+%%
+%% Abstract:
+%%  Generate code for external mode reset.
+%%
+%function FcnGenerateExtModeReset() Output
+    /* External Mode reset */
+    extmodeReset();
+%endfunction
+
+
+%% Function: FcnDeclareTasksRTMVecForExtMode =======================================================
+%%
+%% Abstract:
+%%  We need to provide an extern declaration for the Task RTMs - they
+%%  aren't defined as static in model.c, but they also aren't declared in
+%%  any header files.
+%%
+%function FcnDeclareTasksRTMVecForExtMode() void
+    %assert (!IsModelReferenceTarget())
+    %if !LibIsDeploymentDiagram()
+        %return
+    %endif
+    %assign numTasks = FcnGetNumPeriodicUserMappedEntities()
+
+    %% Declare in the ert_main.c
+    %if !::CompiledModel.EmptyRealTimeObject && (numTasks > 0)
+        %openfile tmpBuf
+        /* Tasks */
+        %assign definition = "extern %<::tSimStructType> *%<SLibDeploymentGetTaskRTMVarName()>[%<numTasks>];"
+        %<SLibApplyMemSecToDataDefn(definition, "MemSecDataInternal", "%<SLibDeploymentGetTaskRTMVarName()>")>\
+        %closefile tmpBuf
+        %return tmpBuf
+    %endif
+    %return ""
+%endfunction
+
+
+%% Function: FcnGetExtModeBaseRateIdx ==============================================================
+%%
+%% Abstract:
+%%  Returns the TID (timing id) for the model's base rate (i.e., the TID
+%%  corresponding to the fixed step size.)
+%%
+%function FcnGetExtModeBaseRateIdx()
+    %return %<FixedStepOpts.TID01EQ>
+%endfunction
+
+
+%% Function: FcnGetExtModeCurrentTimeExprForSampleTime =============================================
+%%
+%% Abstract:
+%%  Returns an expression for the current time for external mode based on
+%%  the ticks counted for the specified sample time.
+%%  This is either a floating point value (if supported) or an integer
+%%  number of ticks of the fixed step size if purely integer code is
+%%  enabled.
+%%
+%%  This function applies for implicit partitions, or when timing services
+%%  are in use.
+%%
+%function FcnGetExtModeCurrentTimeExprForSampleTime(stIdx)
+    %assert(!LibIsDeploymentDiagram() || SLibUseTimerServices())
+    %if PurelyIntegerCode
+        %if SLibGetUsingTimerServiceLevel() >= 3
+            %assign currentTimeExpr = "%<LibGetClockTick(stIdx)>"
+        %else
+            %assign modelBaseRateTid = FcnGetExtModeBaseRateIdx()
+            %assign modelBaseRate = LibGetSampleTimePeriodAndOffset(modelBaseRateTid, 0)
+            %assign taskSampleTime = LibGetSampleTimePeriodAndOffset(stIdx, 0)
+            %assign nTaskTicks     = SLibComputeNumTaskTicks(taskSampleTime, modelBaseRate)
+
+            %if GenerateClassInterface
+                %assign currentTimeExpr = "%<RTMGetTaskTimeForTIDGivenRTM(" %<CPPObjectName>.getRTM()", stIdx)>"
+            %else
+                %assign currentTimeExpr = "%<LibGetTaskTime(stIdx)>"
+            %endif
+        %endif
+    %else
+        %if GenerateClassInterface
+            %assign currentTimeExpr = "%<RTMGetTaskTimeForTIDGivenRTM(" %<CPPObjectName>.getRTM()", stIdx)>"
+        %else
+            %assign currentTimeExpr = "%<LibGetTaskTime(stIdx)>"
+        %endif
+    %endif
+
+    %return currentTimeExpr
+%endfunction
+
+
+%% Function: FcnGetExtModeCurrentTimeExprForSampleTimeFromTaskRTM ==================================
+%%
+%% Abstract:
+%%  This is either a floating point value (if supported) or an integer
+%%  number of ticks of the fixed step size if purely integer code is
+%%  enabled.
+%%
+%%  This function applies for explicit partitions when timing services
+%%  are NOT in use.
+%%
+%function FcnGetExtModeCurrentTimeExprForSampleTimeFromTaskRTM(taskOrEventHandler, stIdx)
+    %assert(LibIsDeploymentDiagram() && !SLibUseTimerServices())
+    %assign taskInfo = SLibDeploymentGetTaskInfoForComponent(taskOrEventHandler.PID, stIdx)
+
+    %if GenerateClassInterface
+        %assign rtmName =  "(%<CPPObjectName>.getTaskRTM() + %<taskInfo.RTMIdx>)"
+    %else
+        %assign rtmName = SLibDeploymentGetTasksRTMVarName(taskInfo.RTMIdx)
+    %endif
+
+    %assign rtmAccess = FcnGetTaskTime(System[NumSystems-1], stIdx, rtmName)
+    %return rtmAccess
+%endfunction
+
+
+%% Function: FcnDefineExtModeCurrentTime ===========================================================
+%%
+%% Abstract:
+%%  Define the currentTime variable which is used to indicate the current
+%%  time for the external mode event.
+%%
+%function FcnDefineExtModeCurrentTime() Output
+    extmodeSimulationTime_T currentTime = (extmodeSimulationTime_T) 0;
+%endfunction
+
+%% Function: FcnGenerateGetCurrentTimeExpressionForTask ============================================
+%%
+%% Abstract:
+%%  Get the expression for the current time for the specified task id.
+%%
+%function FcnGetCurrentTimeExpressionForTask(taskToTimingMap, taskId)
+    %if SLibGetUsingTimerServiceLevel() >= 3 || !LibIsDeploymentDiagram()
+        %assign currentTimeExpr = \
+        FcnGetExtModeCurrentTimeExprForSampleTime(taskToTimingMap.Map[taskId].TimingId)
+    %else
+        %assign currentTimeExpr = \
+        FcnGetExtModeCurrentTimeExprForSampleTimeFromTaskRTM( \
+        taskToTimingMap.Map[taskId].Task, \
+        taskToTimingMap.Map[taskId].TimingId)
+    %endif
+    %return currentTimeExpr
+%endfunction
+
+%% Function: FcnGenerateGetExtModeCurrentTime ======================================================
+%%
+%% Abstract:
+%%  Generate a switchyard function to assign the value of currentTime to
+%%  the value corresponding to the current task (as indicated by taskIdVar)
+%%
+%function FcnGenerateGetExtModeCurrentTime(numPeriodicTasks, taskIdVar) Output
+    %assign taskToTimingMap = FcnCreateTaskIdMap(numPeriodicTasks)
+    %if FcnNeedsSwitchyardForGetCurrentTime(numPeriodicTasks)
+        switch(%<taskIdVar>) {
+            %foreach idx = taskToTimingMap.NumTasks
+                case %<idx> :
+                %assign currentTimeExpr = FcnGetCurrentTimeExpressionForTask(taskToTimingMap, idx)
+                currentTime = (extmodeSimulationTime_T) %<currentTimeExpr>;
+                break;
+            %endforeach
+        }
+    %else
+        %assign currentTimeExpr = FcnGetCurrentTimeExpressionForTask(taskToTimingMap, 0)
+        currentTime = (extmodeSimulationTime_T) %<currentTimeExpr>;
+    %endif
+%endfunction
+
+
+%% Function: FcnGenerateGetExtModeCurrentTimeForExplicitPartitionTrigger ==
+%%
+%% Abstract:
+%%  Initialize the value of currentTime to the value associated with the
+%%  current trigger.
+%%
+%function FcnGenerateGetExtModeCurrentTimeForExplicitPartitionTrigger(ehIdx) Output
+    %% This handles the current time when an entry point is associated
+    %% directly with a trigger instead of a task.
+    %assign eventHandler = ::CompiledModel.EventHandler[ehIdx]
+
+    %% We just need the TID from the EntryPointInfo.
+    %assign stIdx = FcnGetTaskSampleTimeIndex(eventHandler)
+    %if SLibGetUsingTimerServiceLevel() >= 3
+        %assign currentTimeExpr = FcnGetExtModeCurrentTimeExprForSampleTime(stIdx)
+    %else
+        %assign currentTimeExpr = FcnGetExtModeCurrentTimeExprForSampleTimeFromTaskRTM(eventHandler, stIdx)
+    %endif
+    extmodeSimulationTime_T currentTime = \
+    (extmodeSimulationTime_T) %<currentTimeExpr>;
+%endfunction
+
+
+%% Function: FcnCacheCallTimerService_PreStep_Function =============================================
+%%
+%% Abstract:
+%%
+%%  Cache a switchyard function to call the Timing Service "PreStep"
+%%  behavior for the specified task.
+%function FcnCacheCallTimerService_PreStep_Function(numPeriodicTasks) void
+    %assign intType = LibGetDataTypeNameFromId(::CompiledModel.tSS_INTEGER)
+    %if FcnNeedsSwitchyardForTimerServicePrePostStepDispatch(numPeriodicTasks)
+        %openfile tmpFcnBuf
+        static void runTimerServicePreStep(%<intType> taskIdT) {
+            %assign taskToTimingMap = FcnCreateTaskIdMap(numPeriodicTasks)
+            switch(taskIdT) {
+                %foreach idx = taskToTimingMap.NumTasks
+                    case %<idx> :
+                    %<FcnTimerService_PreStep(taskToTimingMap.Map[idx].TimingId)>
+                    break;
+                %endforeach
+            }
+        }
+        %closefile tmpFcnBuf
+        %<SLibCacheCodeToFile("mainSrc_fcn_defn", tmpFcnBuf)>
+    %endif
+%endfunction
+
+%% Function: FcnDispatchTimerService_PreStep =======================================================
+%%
+%% Abstract:
+%%
+%%  Generate a call to the Timing Service "PreStep" function, either
+%%  directly (for a single periodic task) or via a dispatch function
+%%  (for multiple periodic tasks).
+%function FcnDispatchTimerService_PreStep(numPeriodicTasks, taskIdVar) Output
+    %if SLibGetUsingTimerServiceLevel() < 3
+        %return
+    %endif
+    %if FcnNeedsSwitchyardForTimerServicePrePostStepDispatch(numPeriodicTasks)
+        runTimerServicePreStep(%<taskIdVar>);
+    %else
+        %assign taskToTimingMap = FcnCreateTaskIdMap(numPeriodicTasks)
+        %<FcnTimerService_PreStep(taskToTimingMap.Map[0].TimingId)>
+    %endif
+%endfunction
+
+
+%% Function: FcnCacheCallTimerService_PostStep_Function ============================================
+%%
+%% Abstract:
+%%
+%%  Cache a switchyard function to call the Timing Service "PostStep"
+%%  behavior for the specified task.
+%function FcnCacheCallTimerService_PostStep_Function(numPeriodicTasks) void
+    %if FcnNeedsSwitchyardForTimerServicePrePostStepDispatch(numPeriodicTasks)
+        %openfile tmpFcnBuf
+        static void runTimerServicePostStep(int taskId) {
+            %assign taskToTimingMap = FcnCreateTaskIdMap(numPeriodicTasks)
+            switch(taskId) {
+                %foreach idx = taskToTimingMap.NumTasks
+                    case %<idx> :
+                    %<FcnTimerService_PostStep(taskToTimingMap.Map[idx].TimingId)>
+                    break;
+                %endforeach
+            }
+        }
+        %closefile tmpFcnBuf
+        %<SLibCacheCodeToFile("mainSrc_fcn_defn", tmpFcnBuf)>
+    %endif
+%endfunction
+
+
+%% Function: FcnDispatchTimerService_PostStep ======================================================
+%%
+%% Abstract:
+%%  Generate switchyard to update the time tick counter for the task
+%%  indicated by variable taskIdVar.
+%%
+%function FcnDispatchTimerService_PostStep(numPeriodicTasks, taskIdVar) Output
+    %if SLibGetUsingTimerServiceLevel() < 3
+        %return
+    %endif
+    %if FcnNeedsSwitchyardForTimerServicePrePostStepDispatch(numPeriodicTasks)
+        runTimerServicePostStep(%<taskIdVar>);
+    %else
+        %assign taskToTimingMap = FcnCreateTaskIdMap(numPeriodicTasks)
+        %<FcnTimerService_PostStep(taskToTimingMap.Map[0].TimingId)>
+    %endif
+%endfunction
+
+
+%% Function: FcnCreateTaskIdMap ====================================================================
+%%
+%% Abstract:
+%%  Generate an array mapping the taskId to the task record (if appropriate)
+%%  and the timingId.
+%%
+%%  i.e., timingId = taskToTimingMap.Map[taskId].TimingId
+%%        task     = taskToTimingMap.Map[taskId].Task
+%%
+%function FcnCreateTaskIdMap(numPeriodicTasks)
+    %createrecord taskToTimingMap {}
+    %if LibIsDeploymentDiagram()
+        %% Task id is obtained by taking the tasks from each event handler
+        %% in sequential order.  Timing id is computed from the task.
+        %assign nTasks = 0
+        %foreach ehIdx = ::CompiledModel.NumEventHandlers
+            %assign eventHandler = ::CompiledModel.EventHandler[ehIdx]
+            %foreach innerTaskIdx = eventHandler.NumTasks
+                %assign task = eventHandler.Task[innerTaskIdx]
+                %addtorecord taskToTimingMap Map { \
+                    TimingId FcnGetTaskSampleTimeIndex(task) \
+                    Task task }
+                    %assign nTasks = nTasks + 1
+                %endforeach %% innerTaskIdx
+            %endforeach %% ehIdx
+            %addtorecord taskToTimingMap NumTasks nTasks
+    %else
+        %% Timing and task ids are synonymous
+        %foreach idx = numPeriodicTasks
+            %addtorecord taskToTimingMap Map { \
+                TimingId idx }
+            %endforeach
+            %addtorecord taskToTimingMap NumTasks numPeriodicTasks
+    %endif
+    %return taskToTimingMap
+%endfunction
+
+
+%% Function: FcnNeedsSwitchyardForTimerServicePrePostStepDispatch
+%%
+%% Abstract:
+%%  Returns true if we need to generate a switchyard function to
+%%  dispatch the correct pre/post step functions based on the task ID passed
+%%  as runtime.
+%function FcnNeedsSwitchyardForTimerServicePrePostStepDispatch(numPeriodicTasks)
+    %% The switch yard is generated if the timing service is enabled,
+    %% and either there is more than one periodic task, or explicit partitions
+    %% are in use (in which case, the task id -> timing id is not necessarily
+    %% 1-1).
+    %return SLibGetUsingTimerServiceLevel() >= 3 && \
+    FcnNeedsSwitchyardForGetCurrentTime(numPeriodicTasks)
+%endfunction
+
+
+%% Function: FcnNeedsSwitchyardForGetCurrentTime ===================================================
+%%
+%% Abstract:
+%%  Returns true if we need to use a switchyard to dispatch getting the
+%%  current time based on the task ID at runtime.
+%function FcnNeedsSwitchyardForGetCurrentTime(numPeriodicTasks)
+    %return numPeriodicTasks > 1
+%endfunction
+
+%endif  %%if EXISTS(_EXTMODEUTILSLIB_) == 0

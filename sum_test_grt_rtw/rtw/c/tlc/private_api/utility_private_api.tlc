@@ -1,0 +1,641 @@
+%if EXISTS(_UTILITY_PRIVATE_API_) == 0
+%assign ::_UTILITY_PRIVATE_API_ = 1
+
+%%
+%% Copyright 2020-2023 The MathWorks, Inc.
+%%
+
+%include "modelrefutil_api.tlc"
+
+%% Function: FcnGetIdentifierFromFullPath
+%% Description:
+%%      Returns root variable name for the specifed full path
+%%
+%function FcnGetIdentifierFromFullPath(fullPath) void
+    %% possible patterns for full path include a, &a, a[0], a.b, a->b, (a).b
+    %assign str = CGMODEL_ACCESS("String.lstrip", fullPath, "&(")
+    %assign p = CGMODEL_ACCESS("String.firstOf", str, "[.-)", 0)
+    %assign identifier = (p >= 0 ? CGMODEL_ACCESS("String.substr", str, 0, p) : str)
+    %return identifier
+%endfunction %% FcnGetIdentifierFromFullPath
+
+
+%% Function: LibBlockName ==========================================================================
+%% Abstract:
+%%   This returns the Name of the block
+%function LibBlockName(block) void
+    %return CGMODEL_ACCESS("Block.Name", block.BlockIdx[0], block.BlockIdx[2])
+%endfunction %% LibBlockName
+
+
+%% Function: LibGrSrcExists ========================================================================
+%% Abstract:
+%%   This returns if the block has valid graphical system and block index
+%function LibGrSrcExists(block) void
+    %return CGMODEL_ACCESS("Block.GrSrcExists", block.BlockIdx[0], block.BlockIdx[2])
+%endfunction %% LibGrSrcExists
+
+
+%% Function: LibGrBlockPath ========================================================================
+%% Abstract:
+%%   This returns path of a graphical block
+%function LibGrBlockPath(block) void
+    %return CGMODEL_ACCESS("Block.GrPath", block.BlockIdx[0], block.BlockIdx[2])
+%endfunction %% LibGrBlockPath
+
+
+%% Function: LibSubsystemSLName ====================================================================
+%% Abstract:
+%%   This returns the SLName of the subsysem
+%function LibSubsystemSLName(ssIdx) void
+    %return CGMODEL_ACCESS("Subsystem.SLName", ssIdx)
+%endfunction %% LibSubsystemSLName
+
+
+%% Function: LibSubsystemSLNameExists ==============================================================
+%% Abstract:
+%%   This returns the SLName of the subsysem
+%function LibSubsystemSLNameExists(ssIdx) void
+    %return CGMODEL_ACCESS("Subsystem.SLNameExists", ssIdx)
+%endfunction %% LibSubsystemSLNameExists
+
+
+%% Function: LibSubsystemName ======================================================================
+%% Abstract:
+%%   This returns the Name of the subsysem
+%function LibSubsystemName(ssIdx) void
+    %if ssIdx < CGMODEL_ACCESS("CGModel.NumSubsystems")
+        %return CGMODEL_ACCESS("Subsystem.Name", ssIdx)
+    %endif
+
+    %% to handle the case where new subSystems are added
+    %if EXISTS(::CompiledModel.Subsystem[ssIdx])
+        %return ::CompiledModel.Subsystem[ssIdx].Name
+    %endif
+%endfunction %% LibSubsystemName
+
+
+%% Function: LibUnmangledPathName ==================================================================
+%% Abstract:
+%%   This is an internal function that is called by LibGetBlockPath.
+%%   You should use LibGetBlockPath if possible.
+%%
+%%   A block path can contain new-lines and troublesome character sequences
+%%   such as /* and */. This function constructs the actual block path when
+%%   passed SLName. The function LibMangledPathName transforms the path
+%%   (mangles it) such that there are no new lines or troublesome characters.
+%%
+%% TopTester: test/toolbox/simulink/variants/var-vss-codevariants/tcodevariants1.m
+%%
+%function LibUnmangledPathName(name) void
+    %if SLibGetBlockCommentType() == "BlockSIDComment"
+        %return FEVAL("coder.internal.getBlockFullPath", LibGetModelName(), name)
+    %endif
+
+    %if Accelerator || IsModelReferenceSimTarget()
+        %% Accelerator encodes names, return its name.
+        %return name
+    %endif
+
+    %assign sysName = SYSNAME(name)
+    %if sysName[0] == ""
+        %return name
+    %elseif sysName[0] == "Root"
+        %return LibGetModelName() + "/" + sysName[1]
+    %else
+        %assign idNum = IDNUM(sysName[0])
+        %assign subsystemNum = idNum[1] - 1
+        %if LibSubsystemSLNameExists(subsystemNum)
+            %return LibUnmangledPathName(LibSubsystemSLName(subsystemNum)) + "/" + sysName[1]
+        %else
+            %return LibUnmangledPathName(LibSubsystemName(subsystemNum)) + "/" + sysName[1]
+        %endif
+    %endif
+%endfunction %% LibUnmangledPathName
+
+
+%% Function: LibMangledPathName ====================================================================
+%% Abstract:
+%%   This is an internal function that is called by LibGetFormattedBlockPath.
+%%   You should use LibGetFormattedBlockPath if possible.  Only use this function
+%%   if you don't have block record.
+%%
+%% TopTester: test/toolbox/simulink/variants/var-vss-codevariants/tcodevariants1.m
+%%
+%function LibMangledPathName(name) void
+    %if SLibGetBlockCommentType() == "BlockSIDComment"
+        %return FEVAL("coder.internal.getMangledBlockFullPath", LibGetModelName(), name)
+    %endif
+
+    %if Accelerator || IsModelReferenceSimTarget()
+        %% Accelerator encodes names, return its name.
+        %return name
+    %endif
+
+    %assign sysName = SYSNAME(name)
+    %if sysName[0] == ""
+        %return name
+    %elseif sysName[0] == "Root"
+        %return LibGetModelName() + "/" + sysName[1]
+    %else
+        %assign idNum = IDNUM(sysName[0])
+        %assign subsystemNum = idNum[1] - 1
+        %return LibMangledPathName(LibSubsystemName(subsystemNum)) + "/" + sysName[1]
+    %endif
+%endfunction %% LibMangledPathName
+
+%% Function: SLibIsERTTarget =======================================================================
+%% Abstract:
+%%   Return true if it is ERT target or target derived from ERT
+%%   Note, this is different from SLibIsERTCodeFormat().
+%%   ERT Target always uses ERTCodeFormat, but target that uses ERTCodeFormat
+%%   is NOT always ERT target.
+%%
+%%   Questions: when use SLibIsERTTarget(), when use SLibIsERTCodeFormat?
+%%     Use SLibIsERTTarget() if the feature is an ERT only feature.
+%%     Use SLibIsERTCodeFormat() if you just need find out the code style.
+%%
+%%
+%function SLibIsERTTarget() void
+    %return CGMODEL_ACCESS("CGModel.IsERTTarget")
+%endfunction
+%% Function: SLibIsNdIndexingFeatureOn =============================================================
+%% Abstract:
+%%   SLibIsNdIndexingFeatureOn true if the ND indexing feature is on.
+%%
+%function SLibIsNdIndexingFeatureOn() void
+    %return CGMODEL_ACCESS("CGModel.IsNdIndexing")
+%endfunction %% SLibIsNdIndexingFeatureOn
+
+%% Function: SLibRegisterSharedUtility =============================================================
+%% Abstract:
+%%   This function provides an interface to register TLC utilities
+%%   It registers the TLC utility in the Shared Code Manager and
+%%   returns the update utility string (based on Shared utilities
+%%   identifier format control in Configuration Parameters).
+%%
+%function SLibRegisterSharedUtility(block, utilFcnStr) void
+    %if !ISEMPTY(block)
+        %assign updatedUtilFcnStr = CGMODEL_ACCESS("Utilities.RegisterSCMUtility", block.BlockIdx[0], block.BlockIdx[2], utilFcnStr)
+    %else
+        %assign updatedUtilFcnStr = CGMODEL_ACCESS("Utilities.RegisterSCMUtility", -1, -1, utilFcnStr)
+    %endif
+    %if TYPE(updatedUtilFcnStr) == "Number"
+        %assign errArgs = ["%<utilFcnStr>", "%<LibGetModelName()>"]
+        %<SLibReportErrorWithIdAndArgs("RTW:codeGen:sharedUtilitiesInsufficentChecksumLength",errArgs)>
+    %endif
+    %return updatedUtilFcnStr
+%endfunction
+
+%% Function: SLibSupportNonfiniteLiterals ==========================================================
+%% Abstract:
+%%   SLibSupportNonfiniteLiterals true if the suppport nonfinite literals
+%%   feature is on.
+%%
+%function SLibSupportNonfiniteLiterals() void
+    %return CGMODEL_ACCESS("CGModel.SupportNonfiniteLiterals")
+%endfunction %% SLibSupportNonfiniteLiterals
+
+%function SLibPrepValue(data, typeId) void
+    %if ISSLDATAREF(data)
+        %return data
+    %endif
+    %assign nRows = SIZE(data, 0)
+    %assign nCols = SIZE(data, 1)
+    %%
+    %with ::CompiledModel
+        %assign prmClass = TYPE(data)
+        %if prmClass == "Vector"
+            %if nCols == 1
+                %assign prmVal = data[0]
+                %if LibGetDataTypeIdAliasedThruToFromId(typeId) == tSS_BOOLEAN
+                    %assign prmVal = (prmVal == 1)
+                %endif
+            %else
+                %assign prmVal = data
+                %if LibGetDataTypeIdAliasedThruToFromId(typeId) == tSS_BOOLEAN
+                    %foreach idx = nCols
+                        %assign prmVal[idx] = (prmVal[idx] == 1)
+                    %endforeach
+                %endif
+            %endif
+        %elseif prmClass == "Matrix"
+            %if nRows == 1 && nCols == 1
+                %assign prmVal = data[0][0]
+                %if LibGetDataTypeIdAliasedThruToFromId(typeId) == tSS_BOOLEAN
+                    %assign prmVal = (prmVal == 1)
+                %endif
+            %elseif nRows == 1
+                %assign prmVal = [0:%<nCols-1>]
+                %if LibGetDataTypeIdAliasedThruToFromId(typeId) == tSS_BOOLEAN
+                    %foreach idx = nCols
+                        %assign prmVal[idx] = (data[0][idx] == 1)
+                    %endforeach
+                %else
+                    %foreach idx = nCols
+                        %assign prmVal[idx] = data[0][idx]
+                    %endforeach
+                %endif
+            %elseif nCols == 1
+                %assign prmVal = [0:%<nRows-1>]
+                %if LibGetDataTypeIdAliasedThruToFromId(typeId) == tSS_BOOLEAN
+                    %foreach idx = nRows
+                        %assign prmVal[idx] = (data[idx][0] == 1)
+                    %endforeach
+                %else
+                    %foreach idx = nRows
+                        %assign prmVal[idx] = data[idx][0]
+                    %endforeach
+                %endif
+            %else
+                %assign prmVal = data
+                %if LibGetDataTypeIdAliasedThruToFromId(typeId) == tSS_BOOLEAN
+                    %foreach rowIdx = nRows
+                        %foreach colIdx = nCols
+                            %assign prmVal[rowIdx][colIdx] = (prmVal[rowIdx][colIdx] == 1)
+                        %endforeach
+                    %endforeach
+                %endif
+            %endif
+        %else
+            %if LibGetDataTypeIdAliasedThruToFromId(typeId) == tSS_BOOLEAN
+                %assign prmVal = (data == 1)
+            %else
+                %assign prmVal = data
+            %endif
+        %endif
+        %return prmVal
+    %endwith
+%endfunction
+
+%% SLibGrBlockCommentName ======================================================
+%% Abstract:
+%%   SLibGrBlockName return the Simulink block name for a given
+%%   BlockHierarchyMap block index, or the RLS comment name if
+%%   the block resides in a reusable library subsystem.
+%% TopTester: test/toolbox/simulink/variants/var-inline-vsrc-systemtests/tmg1317695_VC1.m
+%%
+%function SLibGrBlockCommentName(grBlockIndex) void
+    %return CGMODEL_ACCESS("Block.GrBlockCommentName", grBlockIndex[0], grBlockIndex[1], SLibGetBlockCommentType())
+%endfunction %% SLibGrBlockName
+
+%% Function: SLibIsDeploymentDiagramType()
+%% Abstract:
+%%   Returns true if block diagram type is deployment diagram
+%function SLibIsDeploymentDiagramType() void
+    %return CGMODEL_ACCESS("CGModel.BlockDiagramType") == "deploymentdiagram"
+%endfunction
+
+%% Function: SLibIsValidGraphicalBlock()
+%% Abstract:
+%%   Returns true if pair of indices map to a valid graphicalBlock
+%function SLibIsValidGraphicalBlock(grSystemIdx, grBlockIdx) void
+    %return CGMODEL_ACCESS("CGModel.IsValidGraphicalBlock", grSystemIdx, grBlockIdx)
+%endfunction
+
+%function SLibMangledGrBlockPathHelper(grBlockIndex) void
+    %% to support custom added graphicalSubsystems and graphicalBlocks in TLCRuntime
+    %with ::CompiledModel.BlockHierarchyMap
+        %assign grSubSys = Subsystem[grBlockIndex[0]]
+        %assign grBlock  = grSubSys.Block[grBlockIndex[1]]
+        %if SLibGetBlockCommentType() == "BlockSIDComment"
+            %return FEVAL("coder.internal.getMangledBlockFullPath", "%<LibGetModelName()>", grBlock.Name)
+        %endif
+
+        %assign sysName  = SYSNAME(grBlock.Name)
+
+        %if grSubSys.SubsystemBlockIndex[0] == -1
+            %return grSubSys.SLName + "/" + sysName[1]
+        %endif
+
+        %if grSubSys.MaskType == "Stateflow" && sysName[1] == " SFunction "
+            %return SLibMangledGrBlockPath(grSubSys.SubsystemBlockIndex)
+        %endif
+
+        %return SLibMangledGrBlockPath(grSubSys.SubsystemBlockIndex) + "/" + sysName[1]
+
+    %endwith
+%endfunction
+
+%% SLibMangledGrBlockPath ======================================================
+%% Abstract:
+%%   SLibMangledGrBlockPath return the Simulink block name for a given
+%%   BlockHierarchyMap block index.
+%% TopTester: test/toolbox/simulink/variants/var-vss-codevariants/tcodevariants1.m
+%%
+%function SLibMangledGrBlockPath(grBlockIndex) void
+    %if grBlockIndex[1] != -1
+        %if SLibIsValidGraphicalBlock(grBlockIndex[0], grBlockIndex[1])
+            %assign grBlockName = CGMODEL_ACCESS("BlockHierarchyMap.BlockName", grBlockIndex[0], grBlockIndex[1])
+            %if SLibGetBlockCommentType() == "BlockSIDComment"
+                %return FEVAL("coder.internal.getMangledBlockFullPath", "%<LibGetModelName()>", grBlockName)
+            %endif
+
+            %assign sysName  = SYSNAME(grBlockName)
+            %assign grSubsystemBlockIndices = CGMODEL_ACCESS("BlockHierarchyMap.SubsystemBlockAndIndex", grBlockIndex[0])
+            %if grSubsystemBlockIndices[0] == -1
+                %return CGMODEL_ACCESS("BlockHierarchyMap.Subsys.SLName", grBlockIndex[0]) + "/" + sysName[1]
+            %endif
+
+            %if CGMODEL_ACCESS("BlockHierarchyMap.Subsys.MaskType", grBlockIndex[0]) == "Stateflow" && sysName[1] == " SFunction "
+                %return SLibMangledGrBlockPath(grSubsystemBlockIndices)
+            %endif
+
+            %return SLibMangledGrBlockPath(grSubsystemBlockIndices) + "/" + sysName[1]
+        %endif
+
+        %return SLibMangledGrBlockPathHelper(grBlockIndex)
+    %endif
+
+    %return "synthesized_block"
+
+%endfunction %% SLibMangledGrBlockPath
+
+%% Function: SLibGetReimAndIdx =====================================================================
+%% Abstract:
+%%   Split the input argument sigIdx into reim and idx.
+%%
+%function SLibGetReimAndIdx(sigIdx) void
+    %%
+    %assign idxType = TYPE(sigIdx)
+    %%
+    %if idxType == "String"
+        %%
+        %assign idNum = IDNUM(sigIdx)
+        %%
+    %elseif idxType == "Number"
+        %%
+        %assign idNum = ["", %<sigIdx>]
+        %%
+    %else
+        %assign errTxt = "The last input argument '%<sigIdx>' is of type " ...
+            "'%<idxType>', expecting an argument of type \"Number\" or " ...
+            "\"String\". "
+        %<LibReportError(errTxt)>
+        %%
+        %assign idNum = "error"
+    %endif
+    %%
+    %return idNum
+    %%
+%endfunction %% SLibGetReimAndIdx
+
+%% SLibGrBlockName =============================================================
+%% Abstract:
+%%   SLibGrBlockName return the Simulink block name for a given
+%%   BlockHierarchyMap block index.
+%%
+%function SLibGrBlockName(grBlockIndex) void
+    %return CGMODEL_ACCESS("BlockHierarchyMap.BlockName", grBlockIndex[0], grBlockIndex[1])
+%endfunction %% SLibGrBlockName
+
+%% Function: SLibGetBlockCommentType ===============================================================
+%% Abstract:
+%%   Returns the BlockCommentType
+%%
+%function SLibGetBlockCommentType() void
+    %if !EXISTS (::CommentType)
+        %assign ::CommentType = CGMODEL_ACCESS("CGModel.ConfigSet", "BlockCommentType")
+    %endif
+
+    %return ::CommentType
+%endfunction %% SLibGetBlockCommentType
+
+%% Function: LibAddIdentifier ======================================================================
+%% Abstract:
+%%   Adds an identifier/value pair to a specified scope.
+%%
+%%   Adding a duplicate identifier (i.e. same name as one that already
+%%   exists in rec) with a different value than that in rec will result
+%%   in an error.
+%%
+%%   Adding a duplicate identifier with equal value has no effect.
+%%
+%function LibAddIdentifier(rec, name, value) void
+    %if ISFIELD(rec, name)
+        %%
+        %% name already exists in rec, therefore, exit if value is
+        %% different, otherwise, ignore
+        %%
+        %if !ISEQUAL(rec.%<name>, value)
+            %%
+            %% Trying to modify a name (note that if it's the same we'll
+            %% just ignore the request)
+            %%
+            %assign oldValue = rec.%<name>
+            %assign warnTxt = "Modifying %<name> from %<oldValue> to %<value>"
+            %<LibReportWarning(warnTxt)>
+            %openfile errTxt
+
+
+            Adding %<name> would change the current record value.
+
+            %if EXISTS(Type)
+                Current Type: %<Type>
+            %endif
+            %if EXISTS(Name)
+                Current Name: %<Name>
+            %endif
+            %closefile errTxt
+            %<LibReportFatalError(errTxt)>
+        %endif
+    %else
+        %%
+        %% adding name is safe
+        %%
+        %addtorecord rec %<name> value
+    %endif
+%endfunction
+
+%% Function: SLibGenSourcesComment =================================================================
+%% Abstract:
+%%   Called by the model-wide TLC code to generate the
+%%     '  * SOURCES: file1.c file2.c ...'
+%%   comment.
+%% TopTester: test/toolbox/simulink/blocks/lib_Discrete/DiscreteTimeIntegrator/rtw/tdintegrt.m
+%%
+%function SLibGenSourcesComment() void
+    %return CGMODEL_ACCESS("CGModel.GenCommentWithPrefix", "  * SOURCES: ", "c")
+%endfunction %% SLibGenSourcesComment
+
+%% Function: LibFormatTime =========================================================================
+%% Abstract:
+%%   Convertes a time in microseconds to a string in the form of "h m s".
+%%
+%function LibFormatTime(time_us) void
+    %assign time_ms = CAST("Number", time_us/1000)
+    %assign minutes_ms = time_ms % 3600000
+    %assign hours = (time_ms - minutes_ms) / 3600000
+    %assign seconds_ms = minutes_ms % 60000
+    %assign minutes = (minutes_ms - seconds_ms) / 60000
+    %assign seconds = FORMAT(CAST("Real", seconds_ms) / 1000, "CONCISE")
+    %if hours > 0
+        %return "%<hours>h %<minutes>m %<seconds>s"
+    %endif
+    %if minutes > 0
+        %return "%<minutes>m %<seconds>s"
+    %endif
+    %return "%<seconds>s"
+%endfunction
+
+%% Function: IsRealInfRequired =====================================================================
+%% Abstract:
+%%  Returrns true if non finite value inf required for the given system
+%%
+%function IsRealInfRequired(currentSystemIdx)
+    %return CGMODEL_ACCESS("CGModel.System.IsRealInfRequired",currentSystemIdx)
+%endfunction %% IsRealInfRequired
+
+%% Function: IsRealMinusInfRequired ================================================================
+%% Abstract:
+%%  Returrns true if non finite value -inf required for the given system
+%%
+%function IsRealMinusInfRequired(currentSystemIdx)
+    %return CGMODEL_ACCESS("CGModel.System.IsRealMinusInfRequired",currentSystemIdx)
+%endfunction %% IsRealMinusInfRequired
+
+%% Function: IsRealNaNRequired =====================================================================
+%% Abstract:
+%%  Returrns true if non finite value nan required for the given system
+%%
+%function IsRealNaNRequired(currentSystemIdx)
+    %return CGMODEL_ACCESS("CGModel.System.IsRealNaNRequired",currentSystemIdx)
+%endfunction %% IsRealNaNRequired
+
+%% Function: LibNeedRealNonFinite ==================================================================
+%% Abstract:
+%%   Set appropriate flags:
+%%      o ::NeedRealInf
+%%      o ::NeedRealMinusInf
+%%      o ::NeedRealNaN
+%%   to indicate that non-finite values are being accessed.
+%%
+%%   The value argument can be one of: {inf, -inf, nan, "inf", "-inf", "nan"}
+%% TopTester: test/toolbox/simulink/blocks/lib_MathOperations/Product/rtw/tNumerics_product_float.m
+%%
+%function LibNeedRealNonFinite(value) void
+
+    %% Error out if this model should not be using nonfinites.
+    %% This check should be migrated to TgtFcnLib which will
+    %% cover both TLC and CGIR
+    %if EXISTS(::supportNonFinite) == 0
+        %assign ::supportNonFinite = CGMODEL_ACCESS("CGModel.ConfigSet", "SupportNonFinite")
+    %endif
+
+    %%
+    %% Get past a TLC bug which says
+    %%  nan == inf
+    %%  nan == -inf
+    %% Also get past a TLC bug that doesn't allow you to change
+    %% the value mid-stream of the if-then-else evaluation.
+    %%
+    %assign vType = TYPE(value)
+    %if vType == "Real"
+        %assign typeId = ::CompiledModel.tSS_DOUBLE
+    %elseif vType == "Real16"
+        %assign typeId = ::CompiledModel.tSS_HALF
+    %else
+        %assign typeId = ::CompiledModel.tSS_SINGLE
+    %endif
+    %if vType == "Real" || vType == "Real32" || vType == "Real16"
+        %if ISNAN(value)
+            %assign newValue = "nan"
+        %elseif value == rtInf
+            %assign newValue = "inf"
+        %elseif value == rtMinusInf
+            %assign newValue = "-inf"
+        %else
+            %<LibReportFatalError("Unknown value: %<value>")>
+        %endif
+        %assign value = newValue
+    %endif
+
+    %if TYPE(::supportNonFinite) == "String" && (::supportNonFinite == "off" || ::supportNonFinite == "0")
+        %assign errArgs = ["%<value>", "%<LibGetModelName()>"]
+        %<SLibReportErrorWithIdAndArgs("RTW:tlc:NonFiniteSupport", errArgs)>
+    %endif
+
+    %% If we support nonfinite literals, nothing more to do
+    %if SLibSupportNonfiniteLiterals()
+        %%When generating nonfinites from CPP inform CG model that nonfinites are needed
+        %assign retValUnused = %<CGMODEL_ACCESS("CGModel.nonfiniteSupportNeeded", TLC_TRUE)>
+        %return
+    %endif
+    %assign currentSystemIdx = ::CurrentSystemIdx >= 0 ? ::CurrentSystemIdx : GetBaseSystemIdx()
+    %switch value
+      %case "inf"
+        %if !IsRealInfRequired(currentSystemIdx)
+            %assign ::NeedRealInf = 1
+            %<CGMODEL_ACCESS("CGModel.System.SetNeedRealInf",currentSystemIdx,TLC_TRUE, typeId)>
+        %endif
+        %break
+      %case "-inf"
+        %if !IsRealMinusInfRequired(currentSystemIdx)
+            %assign ::NeedRealMinusInf = 1
+            %<CGMODEL_ACCESS("CGModel.System.SetNeedRealMinusInf",currentSystemIdx,TLC_TRUE, typeId)>
+        %endif
+        %break
+      %case "nan"
+        %if !IsRealNaNRequired(currentSystemIdx)
+            %assign ::NeedRealNaN = 1
+            %<CGMODEL_ACCESS("CGModel.System.SetNeedRealNaN",currentSystemIdx,TLC_TRUE, typeId)>
+        %endif
+        %break
+      %default
+        %<LibReportFatalError("Unknown non-finite value: %<value>")>
+    %endswitch
+
+%endfunction %% end LibNeedRealNonFinite
+
+%% Function: LibCheckValue =========================================================================
+%% Abstract:
+%%   LibCheckValue determines if a value is non-finite and if so, sets the
+%%   appropriate access flag.
+%%
+%function LibCheckValue(reserved, value) void
+    %%multiwords/biglong fixpt value is in a string representation
+    %%breakpoint
+    %if TYPE(value)!="String" && !ISFINITE(value)
+        %<LibNeedRealNonFinite(value)>
+    %endif
+%endfunction %% LibCheckValue
+
+%% Function: SLibGetNullDefinitionFromTfl
+%% Abstract:
+%%   Return the definition of NULL in the TFL registration
+%%
+%function SLibGetNullDefinitionFromTfl()
+    %assign nulldef = LibGetMathConstant("NULL", ::CompiledModel.tSS_INTEGER)
+
+    %if ISEMPTY(nulldef)
+        %return "(NULL)"
+    %else
+        %return nulldef
+    %endif
+%endfunction
+
+%function SLibIsHostBasedSimulationTarget() void
+    %return (::CodeFormat == "S-Function" || ...
+        ::Accelerator || ::isRSim || ::isRAccel ...
+        || IsModelReferenceSimTarget())
+%endfunction
+
+%% Function: SLibIndentFile ========================================================================
+%% Abstract:
+%%   Indent a file with c_beautifier utility from within TLC.
+%%
+%function SLibIndentFile(fileName,modelName) void
+    %assign fromTLC = TLC_TRUE
+    %<FEVAL("rtwprivate","cBeautifierWithOptions",fileName,modelName,fromTLC)>
+%endfunction
+
+%% Function: LibGetStaticStorageSpecifierIfNeeded
+%%
+%% Abstract: If the function needs to be appended with static storage
+%%           specifier, this function returns the keyword "static"
+%%           else it returns an empty string
+%function LibGetStaticStorageSpecifierIfNeeded() void
+    %return CGMODEL_ACCESS("CGModel.GetStaticStorageSpecifierIfNeeded")
+%endfunction
+
+%endif %% _UTILITY_PRIVATE_API_

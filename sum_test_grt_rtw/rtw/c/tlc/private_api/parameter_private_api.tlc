@@ -1,0 +1,383 @@
+%%
+%%
+%% Copyright 2020-2023 The MathWorks, Inc.
+%%
+%% Abstract:
+%%   This Thin TLC library file contains all the functions required for accessing
+%%   block parameters.
+%%
+%if EXISTS(::_PARAM_PRIVATE_API_) == 0
+%assign ::_PARAM_PRIVATE_API_ = 1
+
+%realformat "CONCISE"
+
+%function SLibIsBlockParameter(param) void
+    %return (ISFIELD(param, "RecordType") && ...
+        param.RecordType == "BlockParameter" && ...
+        ISFIELD(param, "RecordIdx") && ...
+        ISFIELD(param, "BlockParamIdx"))
+%endfunction
+
+%% Function: SLibGetModelParameterIndex ============================================================
+%% Abstract:
+%%   Get the index of the specified parameter from the parameter record.
+%%
+%function SLibGetModelParameterIndex(param) void
+    %assign mdlParamIdx = -1
+    %if !ISFIELD(param, "RecordType")
+        %return mdlParamIdx
+    %endif
+
+    %if "ModelParameter" == param.RecordType
+        %assign idNum        = IDNUM(param.LogicalSrc)
+        %assign mdlParamIdx  = idNum[1]
+    %endif
+    %return mdlParamIdx
+%endfunction
+
+%function SLibGetNumModelParameterValues(param) void
+    %if ISFIELD(param, "NumPrmValues")
+        %return param.NumPrmValues
+    %endif
+
+    %assign paramIdx = SLibGetModelParameterIndex(param)
+    %if (paramIdx != -1)
+        %if CGMODEL_ACCESS("CGModel.IsParameterSerializationEnabled", paramIdx)
+            %return CGMODEL_ACCESS("CGModel.GetNumParameterValues", paramIdx)
+        %endif
+    %endif
+
+    %return 0
+%endfunction
+
+%function SLibParamIsBusInBaseWorkspace(param) void
+    %if !CGMODEL_ACCESS("CGModel.GetEnableGetModelParamValue")
+        %return TLC_FALSE
+    %endif
+    %if ISFIELD(param, "Object") && ISFIELD(param.Object, "ObjectProperties") && ISFIELD(param.Object.ObjectProperties, "DataType")
+        %return (param.Object.ObjectProperties.DataType == "BusObject")
+    %endif
+    %return TLC_FALSE
+%endfunction
+
+%function SLibGetParameterValue(param) void
+    %% The model parameter could have been set an explicit value in the TLC. If that is the case, then we honor
+    %% The Value field in the parameter record over the value cached in the CGMODEL(which is now stale).
+    %if SLibParamIsBusInBaseWorkspace(param)
+        %return [1]
+    %endif
+    %assign modelParamIdx = SLibGetModelParameterIndex(param)
+    %if ISFIELD(param, "Value") || ...
+        modelParamIdx == -1     || ...
+        !CGMODEL_ACCESS("CGModel.IsParameterSerializationEnabled", modelParamIdx)
+        %return param.Value
+    %endif
+
+    %return CGMODEL_ACCESS("CGModel.GetParameterValue", modelParamIdx, 0)
+%endfunction
+
+%function SLibGetParameterValueAtIdx(param, valueIdx) void
+    %% The model parameter could have been set an explicit value in the TLC. If that is the case, then we honor
+    %% The Value field in the parameter record over the value cached in the CGMODEL(which is now stale).
+    %assign modelParamIdx = SLibGetModelParameterIndex(param)
+    %if ISFIELD(param, "Values") || ...
+        modelParamIdx == -1     || ...
+        !CGMODEL_ACCESS("CGModel.IsParameterSerializationEnabled", modelParamIdx)
+        %return param.Values[valueIdx].Value
+    %endif
+
+    %return CGMODEL_ACCESS("CGModel.GetParameterValue", modelParamIdx, valueIdx)
+%endfunction
+
+%% Function: SLibGetValueFromParamRec ==============================================================
+%% Abstract:
+%%   Get value of a parameter from the parameter record. For a parameter inside
+%%   a For Each subsystem which has partitioned mask parameter, the parameter
+%%   record contains an array of values. ValueAccessIdx is used to index the
+%%   array
+%%
+%function SLibGetValueFromParamRec(param, ordinalValuesForEnums) void
+    %assign dtID = LibBlockParameterDataTypeId(param)
+    %assign numParamValues = SLibGetNumModelParameterValues(param)
+    %if (numParamValues == 0) || (numParamValues == 1)
+        %if ordinalValuesForEnums && LibIsEnumDataType(dtID)
+            %if ISFIELD(param, "OrdinalValue")
+                %return param.OrdinalValue
+            %else
+                %assert ISEQUAL(LibBlockParameterName(param), "From Workspace Data")
+            %endif
+        %endif
+        %assign prmValue = SLibGetParameterValue(param)
+    %else
+        %if ISFIELD(param, "ValueAccessIdx")
+            %% param may have different values for different iterations in a For-Each subsystem.
+            %% ValueAccessIdx is a temporary field served as an iteration index
+            %assign prmValue = SLibGetParameterValueAtIdx(param, param.ValueAccessIdx)
+        %else
+            %assign prmValue = SLibGetParameterValueAtIdx(param, 0)
+        %endif
+    %endif
+
+    %if ordinalValuesForEnums && LibIsEnumDataType(dtID)
+        %% Get ordinal values from underlying numeric values
+        %assign nRows = SIZE(prmValue, 0)
+        %assign nCols = SIZE(prmValue, 1)
+        %assign width = nRows * nCols
+        %foreach idx = width
+            %assign prmValue[idx] = SLibGetEnumTypeIndexFromValue(dtID, prmValue[idx])
+        %endforeach
+    %endif
+
+    %return prmValue
+%endfunction
+
+%% Function: SLibGetSizeOfValueFromParamRec ========================================================
+%% Abstract:
+%%   Get size of value of a parameter from the parameter record.
+%%   Result is a 2-element vector: [nRows, nCols]
+%%
+%function SLibGetSizeOfValueFromParamRec(param)
+    %assign prmValue = SLibGetValueFromParamRec(param, TLC_FALSE)
+    %return SIZE(prmValue)
+%endfunction
+
+%% Function: SLibGetWidthOfValueFromParamRec =======================================================
+%% Abstract:
+%%   Get width of value of a parameter from the parameter record.
+%%
+%function SLibGetWidthOfValueFromParamRec(param)
+    %assign prmSize = SLibGetSizeOfValueFromParamRec(param)
+    %return prmSize[0] * prmSize[1]
+%endfunction
+%% Function: SLibGetTypeOfValueFromParamRec ========================================================
+%% Abstract:
+%%   Get TLC type of value of a parameter from the parameter record.
+%%
+%function SLibGetTypeOfValueFromParamRec(param)
+    %assign prmValue = SLibGetValueFromParamRec(param, TLC_FALSE)
+    %return TYPE(prmValue)
+%endfunction
+
+
+%function FcnGetNonBuiltInRe(prmStrVal) void
+    %% multiword complex 1+2i is in the format of " {0x1UL, 0x0UL} + {0x2UL, 0x0UL} i"
+    %return CGMODEL_ACCESS("String.getRealPart", prmStrVal)
+%endfunction
+
+%function FcnGetNonBuiltInIm(prmStrVal) void
+    %% multiword complex 1+2i is in the format of " {0x1UL, 0x0UL} + {0x2UL, 0x0UL} i "
+    %return CGMODEL_ACCESS("String.getImagPart", prmStrVal)
+%endfunction
+
+%function SLibGetBlockParameterContainerCGTypeId(param) void
+    %if ISFIELD(param, "RecordIdx") && ISFIELD(param, "BlockParamIdx")
+        %return CGMODEL_ACCESS("Block.ParameterContainerDataTypeId", ...
+            param.RecordIdx[0], param.RecordIdx[1], param.RecordIdx[2])
+    %endif
+    %return LibGetRecordContainerDataTypeId(param)
+%endfunction
+
+%function SLibComplexError(param, complex, reim) void
+    %if !complex && reim == tImagPart
+        %return TLC_FALSE
+    %endif
+    %if complex && reim != tRealPart && reim != tImagPart
+        %assign errTxt = "The parameter %<LibBlockParameterName(param)> is complex.  Hence, " ...
+            "the caller should specify whether the real part or the imaginary  " ...
+            "part is to be returned."
+        %<LibBlockReportError([],errTxt)>
+    %endif
+    %% imaginary part of a non-complex parameter is NULL
+    %return TLC_TRUE
+%endfunction %% SLibComplexError
+
+%function SLibIsMatrixVector(param, prmValue) void
+    %assign nRows = SIZE(prmValue, 0)
+    %assign value = prmValue
+
+    %% treat 1 x n matrix as vector
+    %if TYPE(prmValue) == "Matrix"
+        %if nRows > 1
+            %assign errTxt = "Must access the parameter %<LibBlockParameterName(param)> via "...
+                "LibBlockMatrixParameterValue."
+            %<LibBlockReportError([], errTxt)>
+        %endif
+        %assign value = prmValue[0]
+    %endif
+    %return value
+%endfunction %% SLibIsMatrixVector
+
+%function SLibGetValueForBuiltInDataType(pIdx, complex, value, reim) void
+    %if complex
+        %if reim == tRealPart
+            %assign pValue = REAL(value[pIdx])
+        %elseif reim == tImagPart
+            %assign pValue = IMAG(value[pIdx])
+        %else
+            %assign pValue = ""
+            %assign errTxt = "Invalid input argument (%<elIdx>).  Expecting " ...
+                "either %<tRealPart> or %<tImagPart>."
+            %<LibBlockReportError([], errTxt)>
+        %endif
+    %else
+        %assign pValue = value[pIdx]
+    %endif
+    %return pValue
+%endfunction %% SLibGetValueForBuiltInDataType
+
+%function SLibGetValueForNonBuiltInTypeForFixpt(pIdx, complex, value, reim) void
+    %if complex
+        %if reim == tRealPart
+            %assign theVal = FcnGetNonBuiltInRe(value[pIdx])
+        %elseif reim == tImagPart
+            %assign theVal = FcnGetNonBuiltInIm(value[pIdx])
+        %else
+            %assign theVal = ""
+            %assign errTxt = "Invalid input argument (%<elIdx>).  Expecting " ...
+                "either %<tRealPart> or %<tImagPart>."
+            %<LibBlockReportError([], errTxt)>
+        %endif
+    %else
+        %assign theVal = value[pIdx]
+    %endif
+    %return theVal
+%endfunction %% SLibGetValueForNonBuiltInTypeForFixpt
+
+%function SLibBlockParameterValueCore(blockParam, pIdx, complex, reim) void
+    %assert ISFIELD(blockParam, "BlockParamIdx")
+    %if !SLibComplexError(blockParam, complex, reim)
+        %return ""
+    %endif
+
+    %% Determine true size
+    %assign prmValue = SLibGetValueFromParamRec(blockParam, TLC_TRUE)
+
+    %assign value = SLibIsMatrixVector(blockParam, prmValue)
+
+
+    %assign dTypeId =  LibBlockParameterDataTypeId(blockParam)
+    %% Check for floating-point types if integer only code
+    %if ::PurelyIntegerCode && LibIsBuiltInOrCustomFloatDatatype(dTypeId)
+        %<SLibCacheIntegerOnlyWarning(Name,"Parameter")>
+    %endif
+
+    %if LibIsEnumDataType(dTypeId)
+        %% Return enum string instead of ordinal number (cannot be complex).
+        %return SLibGetEnumTypeCodeGenStringFromIndex(dTypeId, REAL(value[pIdx]))
+
+    %elseif (LibIsBuiltInDataType(LibGetDataTypeStorageIdFromId(dTypeId)) || ...
+        LibIsHalfDataType(dTypeId))
+        %% Get the value
+        %assign pValue = SLibGetValueForBuiltInDataType(pIdx, complex, value, reim)
+
+        %% Inform the code generator of any non-finites, etc.
+        %<LibCheckValue(0, pValue)>
+
+        %% Return the actual value with the appropriate data type cast.
+        %% need raw value to be used in a tlc expression
+        %return SLibGetCastedValueFromId(SLibGetBlockParameterContainerCGTypeId(blockParam), pValue)
+
+        %% 33+ bit are in string representation
+    %elseif LibIsNonBuiltInTypeNeededForFixpt(dTypeId)
+        %return SLibGetValueForNonBuiltInTypeForFixpt(pIdx, complex, value, reim)
+    %endif
+    %% Structure/opaque data type
+
+    %% Must be scalar or vector
+    %% - nRows must be 1 - checked above)
+    %% - nCols = SIZE(prmValue, 1)
+    %return SLibGetValueForNonBuiltInTypeForStructure(blockParam, prmValue, pIdx, dTypeId, value, "")
+%endfunction
+
+%% Function: SLibPrepParameterCore =================================================================
+%% Abstract:
+%%   Helper function for LibPrepParameter.
+%%   Second argument controls if enums are returned as ordinal/underlying value.
+%%
+%%   See also: LibPrepParameter
+%%
+%function SLibPrepParameterCore(param, ordinalValuesForEnums) void
+    %assign prmValue = SLibGetValueFromParamRec(param, ordinalValuesForEnums)
+    %assign prmVal = SLibPrepParameterCoreFromValue(param, prmValue)
+    %return prmVal
+%endfunction  %% LibPrepParameterCore
+
+
+%% Function: SLibPrepParameterCoreFromValue ========================================================
+%% Abstract:
+%%   Helper function for getting parameter value (SLibPrepParameterCore)
+%%   Returns the parameter value handling cases for vectors, matrix etc.
+%%
+%%   See also: SLibPrepParameterCore
+%%
+%function SLibPrepParameterCoreFromValue(param, prmValue)
+    %if ISSLDATAREF(prmValue)
+        %return prmValue
+    %endif
+    %assign nRows = SIZE(prmValue, 0)
+    %assign nCols = SIZE(prmValue, 1)
+    %%
+    %assign prmClass = TYPE(prmValue)
+    %if prmClass == "Vector"
+        %if nCols == 1
+            %assign prmVal = prmValue[0]
+            %if LibGetDataTypeIdAliasedThruToFromId(LibGetRecordDataTypeId(param)) == tSS_BOOLEAN
+                %assign prmVal = (prmVal == 1)
+            %endif
+        %else
+            %assign prmVal = prmValue
+            %if LibGetDataTypeIdAliasedThruToFromId(LibGetRecordDataTypeId(param)) == tSS_BOOLEAN
+                %foreach idx = nCols
+                    %assign prmVal[idx] = (prmVal[idx] == 1)
+                %endforeach
+            %endif
+        %endif
+    %elseif prmClass == "Matrix"
+        %if nRows == 1 && nCols == 1
+            %assign prmVal = prmValue[0][0]
+            %if LibGetDataTypeIdAliasedThruToFromId(LibGetRecordDataTypeId(param)) == tSS_BOOLEAN
+                %assign prmVal = (prmVal == 1)
+            %endif
+        %elseif nRows == 1
+            %assign prmVal = [0:%<nCols-1>]
+            %if LibGetDataTypeIdAliasedThruToFromId(LibGetRecordDataTypeId(param)) == tSS_BOOLEAN
+                %foreach idx = nCols
+                    %assign prmVal[idx] = (prmValue[0][idx] == 1)
+                %endforeach
+            %else
+                %foreach idx = nCols
+                    %assign prmVal[idx] = prmValue[0][idx]
+                %endforeach
+            %endif
+        %elseif nCols == 1
+            %assign prmVal = [0:%<nRows-1>]
+            %if LibGetDataTypeIdAliasedThruToFromId(LibGetRecordDataTypeId(param)) == tSS_BOOLEAN
+                %foreach idx = nRows
+                    %assign prmVal[idx] = (prmValue[idx][0] == 1)
+                %endforeach
+            %else
+                %foreach idx = nRows
+                    %assign prmVal[idx] = prmValue[idx][0]
+                %endforeach
+            %endif
+        %else
+            %assign prmVal = prmValue
+            %if LibGetDataTypeIdAliasedThruToFromId(LibGetRecordDataTypeId(param)) == tSS_BOOLEAN
+                %foreach rowIdx = nRows
+                    %foreach colIdx = nCols
+                        %assign prmVal[rowIdx][colIdx] = (prmVal[rowIdx][colIdx] == 1)
+                    %endforeach
+                %endforeach
+            %endif
+        %endif
+    %else
+        %if LibGetDataTypeIdAliasedThruToFromId(LibGetRecordDataTypeId(param)) == tSS_BOOLEAN
+            %assign prmVal = (prmValue == 1)
+        %else
+            %assign prmVal = prmValue
+        %endif
+    %endif
+    %return prmVal
+%endfunction
+
+%endif

@@ -1,0 +1,20 @@
+%if !EXISTS(::_CODEFORMAT_PRIVATE_API_)
+%assign ::_CODEFORMAT_PRIVATE_API_ = 1
+%%
+%% Copyright 2020 The MathWorks, Inc.
+%%
+
+%% Function: SLibIsERTCodeFormat
+%% Abstract:
+%%  Return true when Embedded-C code format is used.
+%%  Note: Not only ERT target use Embedded-C code format, other targets
+%%  such as GRT target uses rtModel also use Embedded-C code format
+%%
+%%  see comments of SLibIsERTTarget for more information
+%%
+%function SLibIsERTCodeFormat() void
+    %return ::CodeFormat == "Embedded-C"
+%endfunction
+
+
+%endif %% _CODEFORMAT_PRIVATE_API_

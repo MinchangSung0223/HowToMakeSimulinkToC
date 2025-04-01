@@ -1,0 +1,74 @@
+%%
+%% Copyright 2020 The MathWorks, Inc.
+%%
+
+%if EXISTS(::_CACHE_SHAREDUTILS_API_) == 0
+%assign ::_CACHE_SHAREDUTILS_API_ = 1
+
+%% Function: LibPushStackSharedUtilsIncludes =======================================================
+%% Abstract:
+%%   Push vector of header files into logical-top of stack ::GlobalSharedUtilsIncludes.
+%%
+%%   Example:
+%%        %<LibPushStackSharedUtilsIncludes("")> to push stack an empty layer
+%%
+%function LibPushStackSharedUtilsIncludes(stackVector) void
+    %<CGMODEL_ACCESS("CGModel.PushStackSharedUtilsIncludes", stackVector)>
+%endfunction
+
+%% Function: LibPushEmptyStackSharedUtils ==========================================================
+%% Abstract:
+%%   Push empty vector into logical-top of stack ::GlobalSharedUtilsIncludes
+%%      This increases depth of stack by 1.
+%%
+%%   Example:
+%%        %<LibPushEmptyStackSharedUtils()>,.
+%%
+%function LibPushEmptyStackSharedUtils() void
+    %<CGMODEL_ACCESS("CGModel.PushEmptyStackSharedUtils")>
+%endfunction
+
+%% Function: LibPopStackSharedUtilsIncludes ========================================================
+%% Abstract:
+%%   Pop vector of header files from logical-top of stack ::GlobalSharedUtilsIncludes.
+%%     It will return the popped vector.
+%%
+%%   Example:
+%%        %assign top=LibPopStackSharedUtilsIncludes() to pop top of stack.
+%%
+%function LibPopStackSharedUtilsIncludes() void
+    %return CGMODEL_ACCESS("CGModel.PopStackSharedUtilsIncludes")
+%endfunction
+
+%% Function: LibAddtoSharedUtilsIncludes ===========================================================
+%% Abstract:
+%%   Incrementally add include files vector currently at logical-top of stack ::GlobalSharedUtilsIncludes.
+%%   If the file already exists in vector, it won't be added
+%%
+%%   Example:
+%%     current stack is ['<math.h>','<float.h>'], after
+%%        %<LibAddtoSharedUtilsIncludes("include.h")>
+%%     current stack becomes ['<math.h>','<float.h>', '"include.h"']
+%%
+%function LibAddtoSharedUtilsIncludes(incFileName) void
+    %<CGMODEL_ACCESS("CGModel.AddtoSharedUtilsIncludes", incFileName)>
+%endfunction
+
+%% Function: LibAddtoSharedUtilsIncludesVector =====================================================
+%% Abstract:
+%%   Vector version of LibAddtoSharedUtilsIncludes. It's adding each element of
+%%   input vector to vector currently at logical-top of stack.   Normally, it's used with
+%%   LibPopStackSharedUtilsIncludes to combine two layers of stack together.
+%%
+%%   Example:
+%%        %assign GSUStackBuf = LibPopStackSharedUtilsIncludes()
+%%        %<LibAddtoSharedUtilsIncludesVector(GSUStackBuf)>
+%%
+%function LibAddtoSharedUtilsIncludesVector(inputVet) void
+    %if TYPE(inputVet) == "Vector"
+        %<CGMODEL_ACCESS("CGModel.AddtoSharedUtilsIncludesVector", inputVet)>
+    %endif
+%endfunction
+
+%endif %% ::_CACHE_SHAREDUTILS_API_
+%% [EOF] cache_sharedutils_api.tlc

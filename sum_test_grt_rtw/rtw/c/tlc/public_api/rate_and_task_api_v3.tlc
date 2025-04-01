@@ -1,0 +1,47 @@
+%if EXISTS(::_RATE_AND_TASK_API_V3_) == 0
+%assign ::_RATE_AND_TASK_API_V3_ = 1
+%%
+%% Copyright 2021-2023 The MathWorks, Inc.
+%%
+
+%function LibGetT() void
+    %<SLibV3CallsiteValid("LibGetT")>
+    %return CGMODEL_ACCESS("Block.LibGetT", BlockIdx[0], BlockIdx[2], ...
+        ::CurrentBlockFcn, ::CurrentBlockTid)
+%endfunction
+
+%function LibGetTaskTime(tid) void
+    %<SLibV3CallsiteValid("LibGetTaskTime")>
+    %return CGMODEL_ACCESS("Block.LibGetTaskTime", BlockIdx[0], BlockIdx[2], ...
+        ::CurrentBlockFcn, ::CurrentBlockTid, tid)
+%endfunction
+
+%function LibGetClockTickHigh(tid) void
+    %<SLibV3CallsiteValid("LibGetClockTickHigh")>
+    %return CGMODEL_ACCESS("Block.LibGetClockTickHigh", BlockIdx[0], BlockIdx[2], ...
+        ::CurrentBlockFcn, ::CurrentBlockTid, tid)
+%endfunction
+
+%function LibGetClockTick(tid) void
+    %<SLibV3CallsiteValid("LibGetClockTick")>
+    %return CGMODEL_ACCESS("Block.LibGetClockTick", BlockIdx[0], BlockIdx[2], ...
+        ::CurrentBlockFcn, ::CurrentBlockTid, tid)
+%endfunction
+
+%function LibGetClockTickStepSize(tid) void
+    %<SLibV3CallsiteValid("LibGetClockTickStepSize")>
+    %return CGMODEL_ACCESS("Block.LibGetClockTickStepSize", BlockIdx[0], BlockIdx[2], ...
+        ::CurrentBlockFcn, ::CurrentBlockTid, tid)
+%endfunction
+
+%function LibGetElapseTime(system) void
+    %return CGMODEL_ACCESS("Block.LibGetElapseTime", BlockIdx[0], BlockIdx[2], ...
+        ::CurrentBlockFcn, ::CurrentBlockTid)
+%endfunction
+
+%function LibGetElapseTimeCounter(system) void
+    %return CGMODEL_ACCESS("Block.LibGetElapseTimeCounter", BlockIdx[0], BlockIdx[2], ...
+        ::CurrentBlockFcn, ::CurrentBlockTid)
+%endfunction
+
+%endif %% ::_RATE_AND_TASK_API_V3_

@@ -1,0 +1,118 @@
+%% ============================================================================
+%%
+%%
+%% Copyright 2022-2023 The MathWorks, Inc.
+
+%if EXISTS(_SFCNUTIL_) == 0
+%assign _SFCNUTIL_ = 1
+
+%function SLibGetSFcnNonFinite() void
+    %assign realType = LibGetDataTypeNameFromId(::CompiledModel.tSS_DOUBLE)
+    %openfile tBuff
+    %if SLibRealNonFinitesRequired() && !SLibSupportNonfiniteLiterals()
+        %<LibGenMathFcnCall("initnonfinite", ::CompiledModel.tSS_DOUBLE, ...
+            "sizeof(%<realType>)", "")>;
+    %endif
+    %closefile tBuff
+
+    %openfile nonFinitesBuffer
+    %if !WHITE_SPACE(tBuff)
+
+        /* non-finites */
+        %<tBuff>\
+    %endif
+    %closefile nonFinitesBuffer
+
+    %return nonFinitesBuffer
+
+%endfunction
+
+%% Function: SLibNoninlinedSfcnStaticFcn ===========================================================
+%% Abstract:
+%%  Generate static functions used by noninlined sfunctions.
+%%
+%function SLibNoninlinedSfcnStaticFcn() void
+    %assign charType = LibGetDataTypeNameFromId(::CompiledModel.tSS_CHAR)
+    %assign intType = LibGetDataTypeNameFromId(::CompiledModel.tSS_INTEGER)
+    %openfile retBuf
+    %assign fcnName = "RegNumInputPorts"
+    %assign fcnReturns = "static %<intType>"
+    %assign fcnParams = "SimStruct *S, %<intType> nInputPorts"
+    %createrecord fcnRec {Name fcnName; Returns fcnReturns; Params fcnParams; Abstract ""; ...
+        Category "utility"; GeneratedBy "sfcnutil.tlc"}
+    %<SLibDumpFunctionBanner(fcnRec)>
+    %undef fcnRec
+    #if defined(MATLAB_MEX_FILE) || defined(RT_MALLOC)
+    %<fcnReturns> %<fcnName>(%<fcnParams>) {
+        _ssSetNumInputPorts(S,nInputPorts);
+        return true;
+    }
+
+    %assign fcnName = "RegNumOutputPorts"
+    %assign fcnReturns = "static %<intType>"
+    %assign fcnParams = "SimStruct *S, %<intType> nOutputPorts"
+    %createrecord fcnRec {Name fcnName; Returns fcnReturns; Params fcnParams; Abstract ""; ...
+        Category "utility"; GeneratedBy "sfcnutil.tlc"}
+    %<SLibDumpFunctionBanner(fcnRec)>
+    %undef fcnRec
+    %<fcnReturns> %<fcnName>(%<fcnParams>) {
+        _ssSetNumOutputPorts(S,nOutputPorts);
+        return true;
+    }
+
+    %assign fcnName = "FcnSetErrorStatus"
+    %assign fcnReturns = "static %<intType>"
+    %assign fcnParams = "const SimStruct *S, DTypeId arg2"
+    %createrecord fcnRec {Name fcnName; Returns fcnReturns; Params fcnParams; Abstract ""; ...
+        Category "utility"; GeneratedBy "sfcnutil.tlc"}
+    %<SLibDumpFunctionBanner(fcnRec)>
+    %undef fcnRec
+    %<fcnReturns> %<fcnName>(%<fcnParams>)
+    {
+        static %<charType> msg[256];
+
+        if (strlen(ssGetModelName(S)) < 128) {
+            snprintf(msg, sizeof(msg), "S-function %s does not have a tlc file. ...
+                It cannot use macros that access regDataType field in simstruct.", ...
+                ssGetModelName(S));
+        } else {
+            snprintf(msg, sizeof(msg), "A S-function does not have a tlc file. ...
+                It cannot use macros that access regDataType field in simstruct.");
+        }
+
+        ssSetErrorStatus(S, msg);
+
+        UNUSED_PARAMETER(arg2);
+        return 0;
+    }
+
+    %% g2156267: add wrapper functions
+    %% of FcnSetErrorStatus to remove cast warnings in GCC8.3
+    %%
+    %assign fcnWrapper = "FcnSetErrorStatusWithReturnPtr"
+    %assign fcnReturns = "static void *"
+    %assign fcnParams = "const SimStruct *S, DTypeId arg2"
+    %<fcnReturns> %<fcnWrapper>(%<fcnParams>)
+    {
+        %<fcnName>(S,0);
+        UNUSED_PARAMETER(arg2);
+        return 0;
+    }
+
+    %assign fcnWrapper = "FcnSetErrorStatusWithArgPtr"
+    %assign fcnReturns = "static %<intType>"
+    %assign fcnParams = "const SimStruct *S, const void* arg2"
+    %<fcnReturns> %<fcnWrapper>(%<fcnParams>)
+    {
+        %<fcnName>(S,0);
+        UNUSED_PARAMETER(arg2);
+        return 0;
+    }
+    #endif
+    %closefile retBuf
+
+    %return retBuf
+%endfunction %% SLibNoninlinedSfcnStaticFcn
+
+%endif %% _SFCNUTIL_
+%% [EOF] sfcnutil.tlc

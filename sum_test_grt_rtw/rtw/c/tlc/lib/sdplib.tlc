@@ -1,0 +1,21 @@
+%%
+%% Copyright 2022 The MathWorks, Inc.
+%%
+%% Abstract:
+%%   This TLC library file contains SDP related functions.
+%%
+
+%if EXISTS(_SDPLIB_) == 0
+%assign _SDPLIB_ = 1
+
+%function SLibWillBufferBeSynthesizedForSender(sigRec)
+    %return ISFIELD(sigRec, "WillASeparateBufferBeUsedForSenderIfNeeded")
+%endfunction
+
+%function SLibWillBufferBeSynthesizedForReceiver(sigRec)
+    %return ISFIELD(sigRec, "WillASeparateBufferBeUsedForReceiverIfNeeded")
+%endfunction
+
+%endif %% _SDPLIB_ Do not add anything after this line
+
+%% [EOF] sdplib.tlc

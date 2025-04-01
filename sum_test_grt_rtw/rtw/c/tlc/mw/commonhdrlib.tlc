@@ -1,0 +1,2563 @@
+%% ============================================================================
+%% File : commonhdrlib.tlc
+%%
+%% Abstract:
+%%   This system TLC library file contains functions that are common
+%%   between the different code generators for producing the model's
+%%   header file.
+%%
+%% Copyright 1994-2023 The MathWorks, Inc.
+%%
+%% ============================================================================
+%selectfile NULL_FILE
+
+%if EXISTS(_COMMONHDRLIB_) == 0
+%assign _COMMONHDRLIB_ = 1
+
+%include "commonhdr_api.tlc"
+%include "commonhdr_private_api.tlc"
+
+%% DocFunction{Other Useful Functions}: LibEmitPlatformTypeIncludes =========
+%% Abstract:
+%%    Emit code to include headers for all platform types. For example, if
+%%    DataTypeReplacement is set to CDataTypesFixedWidth, and no custom data
+%%    type names are specified, the emitted code will be:
+%%
+%%        #include <stdint.h>
+%%        #include <stdbool.h>
+%%
+%%    If DataTypeReplacement is set to CoderTypedefs, the emitted code will be:
+%%
+%%        #include "rtwtypes.h"
+%%
+%function LibEmitPlatformTypeIncludes() void
+    %return SLibEmitIncludesForBasicTypesAll()
+%endfunction
+
+%% Function: SLibEmitIncludesForBasicTypesAll ======================================================
+%% Abstract:
+%%    Emit code to include headers for all basic types (equivalent to emitting
+%%    '#include "rtwtypes.h"' if classic types are in effect).
+%function SLibEmitIncludesForBasicTypesAll() void
+    %assign basicTypesHeaders = SLibCoderBasicTypesFilenames()
+    %assign numBasicTypesHeaders = SIZE(basicTypesHeaders, 1)
+    %openfile buf
+    %foreach idx1 = numBasicTypesHeaders
+        %assign basicTypesHeader = basicTypesHeaders[idx1]
+        %if basicTypesHeader[0] == "<"
+            #include %<basicTypesHeader>
+        %else
+            %% Add double quotes
+            #include %<"\"%<basicTypesHeader>\"">
+        %endif
+    %endforeach
+    %closefile buf
+    %return buf
+%endfunction
+
+%% Function: SLibVarGroupBasicTypesAll =============================================================
+%% Abstract:
+%%    If BasicTypes=classic all basic types are defined by rtwtypes.h. if BasicTypes=standard,
+%%    there are typically different header files for each of a) boolean, b) fixed width integers,
+%%    c) other basic types
+%function SLibVarGroupBasicTypesAll() void
+    %return CGMODEL_ACCESS("FileRepository.getVarGroupBasicTypesAll")
+%endfunction
+
+%% Function: SLibVarGroupBasicTypesOther ===========================================================
+%% Abstract:
+%%    Return symbol that resolves to the appropriate header file. For example, it resolves to
+%%    rtwtypes.h (providing definitions for int_T, uint_T, real_T, real32_T, real64_T etc), if
+%%    DataTypeReplacement is set to CoderTypedefs, or is empty if is set to CDataTypesFixedWidth
+%function SLibVarGroupBasicTypesOther() void
+    %return CGMODEL_ACCESS("FileRepository.getVarGroupBasicTypesOther")
+%endfunction
+
+%% Function: SLibVarGroupBasicTypeBool =============================================================
+%% Abstract:
+%%    Return symbol that resolves to the appropriate header file. For example, it resolves to
+%%    rtwtypes.h, if DataTypeReplacement is set to CoderTypedefs, or is empty if is set to
+%%    CDataTypesFixedWidth
+%function SLibVarGroupBasicTypeBool() void
+    %return CGMODEL_ACCESS("FileRepository.getVarGroupBasicTypeBool")
+%endfunction
+
+%% Function: SLibVarGroupBasicTypesFixedWidthInt ===================================================
+%% Abstract:
+%%    Return symbol that resolves to the appropriate header file. For example, it resolves to
+%%    rtwtypes.h (providing definitions for uint8_T, int8_T etc.), if DataTypeReplacement is set to
+%%    CoderTypedefs, or is empty if is set to CDataTypesFixedWidth
+
+%% Make names of these functions consistent with C++ function name
+
+%function SLibVarGroupBasicTypesFixedWidthInt() void
+    %return CGMODEL_ACCESS("FileRepository.getVarGroupBasicTypesFixedWidthInt")
+%endfunction
+
+%function SLibGetOldStrNames() void
+    %return !((CodeFormat == "RealTime") || (SLibIsERTCodeFormat()))
+%endfunction
+
+%function SLibGetPrmsName(oldStrNames) void
+    %return oldStrNames ? ::tDefaultParameters : "%<LibGetParametersStruct()>"
+%endfunction
+
+%% Function: LibCacheModelStructureDefinitions =====================================================
+%% Abstract:
+%%   This function creates the guts of each model structure.  It should be
+%%   called after all code is generated, and just prior to final model
+%%   registration.
+%%
+%% TopTester: test/toolbox/simulink/variants/var-vss-condexecuted/tContPortGecks.m
+%%
+%function LibCacheModelStructureDefinitions() void
+    %<LibCacheExportedGlobalSignalsDefinition()>
+    %<LibCacheCustomReusableSignalsDefinition()>
+    %<LibCacheImportedExternSignalsDefinition()>
+    %<LibCacheImportedExternPointerSignalsDefinition()>
+    %if CodeFormat != "S-Function" || Accelerator
+        %<LibCacheNonAutoStorageClassDWorkDefinition()>
+    %endif
+    %if !SLibAutosarActive()
+        %<LibCacheExternalInputsStructDefinitionByVarGroup()>
+        %<LibCacheExternalOutputsStructDefinitionByVarGroup()>
+        %<LibCacheExternalInputSizesStructDefinition()>
+        %<LibCacheExternalOutputSizesStructDefinition()>
+    %endif
+%endfunction
+
+
+%% Function: SLibTunableButUnused ==================================================================
+%% Abstract:
+%%    Determine if a parameter has tunable storage class but is not used
+%%
+%function SLibTunableButUnused(prm) void
+    %if !ISFIELD(prm, "TunableButUnused")
+        %return TLC_FALSE
+    %endif
+    %return prm.TunableButUnused
+%endfunction
+
+%% Function: FcnOmitParameter ======================================================================
+%% Abstract:
+%%    For an Embedded-Code optimization, omit unaccessed parameters when
+%%    not generating an s-function, and parameters are inlined (don't do
+%%    when not inlined since we only access the parameters of the first
+%%    instance of a reused subsystem
+%%
+%function FcnOmitParameter(prm) void
+    %if prm.UseAUTOSARFunctions == 1
+        %% Omit parameters which are transformed into AUTOSAR access function
+        %return TLC_TRUE
+    %elseif prm.TestpointIndex >= 0
+        %return TLC_FALSE
+    %elseif prm.SuppressInRTW
+        %return TLC_TRUE
+    %else
+        %% keep params that accessed by macros
+        %return InlineParameters == 1 && SLibIsERTTarget() && ...
+            !GenerateErtSFunction && !IsModelReferenceSimTarget() && ...
+            (!prm.UseAccessFunctions &&  !prm.WasAccessedAsVariable && !SLibTunableButUnused(prm))
+    %endif
+%endfunction
+
+
+%% Function: SLibOmitRecord ========================================================================
+%% Abstract:
+%%    Returns true if variable associated with a record in the RTW file has been
+%%    eliminated from the generated code, and can therefor be omitted in the
+%%    initialization and interface API code generation.
+%%
+%function SLibOmitRecord(aRecord) void
+    %if ISEMPTY(aRecord)
+        %return TLC_FALSE
+    %endif
+
+    %if ISFIELD(aRecord, "IsRemovedInIR") && aRecord.IsRemovedInIR
+        %return TLC_TRUE
+    %endif
+
+    %if ISFIELD(aRecord, "RecordType") && (aRecord.RecordType == "DWork")
+        %if FcnGetOptimizedAwayInTLC(aRecord)
+            %return TLC_TRUE
+        %endif
+    %endif
+
+    %if ISFIELD(aRecord, "RecordType") && (aRecord.RecordType == "ModelParameter")
+        %if FcnOmitParameter(aRecord)
+            %return TLC_TRUE
+        %endif
+    %endif
+    %return TLC_FALSE
+%endfunction
+
+%% Function: SLibSkipAlloc =========================================================================
+%% Abstract:
+%%    Returns true if we should skip allocation/deallocation for a data record
+%function SLibSkipAlloc(recType, recIdx) void
+    %assign dataRec = SLibGetDataRecForVarGroupMember(recType, recIdx)
+    %return SLibOmitRecord(dataRec)
+%endfunction
+
+%% Function: LibGetChildSystemStructCommentName ====================================================
+%% Abstract:
+%%   Given a system index and a child SS block (not graphical), this function returns
+%%   the properly formatted name for comments. Used for nested structures. This handles the
+%%   formatting of shared function comments vs. regular comments.
+%%
+%% TopTester: test/toolbox/simulink/variants/var-vss-condexecuted/tContPortGecks.m
+%% TopTester: test/toolbox/simulink/variants/var-inline-vsrc-systemtests/tVariantSource7.m
+%%
+%function LibGetChildSystemStructCommentName(sysIdx, childSSBlock)
+    %assign dataGrSrcBlk = ISFIELD(childSSBlock, "GrSrc") ? SLibGrBlock(childSSBlock.GrSrc) : []
+    %if (LibSystemIsReusedLibraryFcn(System[sysIdx]) && !ISEMPTY(dataGrSrcBlk) && ...
+        ISFIELD(dataGrSrcBlk, "RLSCommentName"))
+        %assign commentName = dataGrSrcBlk.RLSCommentName
+    %else
+        %if SLibGetBlockCommentType() == "BlockSIDComment"
+            %assign commentName = ::CompiledModel.System[childSSBlock.BlockIdx[1]].SIDCommentName
+        %else
+            %assign commentName = "'" + childSSBlock.Name + "'"
+            %if ::CompiledModel.System[childSSBlock.BlockIdx[1]].Synthesized
+                %assign origBlkSet = ISFIELD(::CompiledModel.System[childSSBlock.BlockIdx[1]],"OriginatorBlock")
+                %if origBlkSet
+                    %assign origBlockName = ::CompiledModel.System[childSSBlock.BlockIdx[1]].OriginatorBlock
+                    %assign commentName = "'" + origBlockName + "'"
+                %else
+                    %assign commentName = ""
+                %endif
+            %endif
+        %endif
+    %endif
+    %return commentName
+%endfunction
+
+%% Function: FcnGetChildSystemTypedefs =============================================================
+%% Abstract:
+%%   Generic function called by functions that generate typedefs for the
+%%   various data structures. This creates the definitons for Child systems
+%%   that have typedef.
+%%
+%% TopTester: test/toolbox/simulink/variants/var-vss-sigobj/tVSSSigObj.m
+%% TopTester: test/toolbox/simulink/variants/var-vss-codevariants/tcodevariants3.m
+%%
+%function FcnGetChildSystemTypedefs(sysIdx, struct, typetag) void
+    %assign childsysTypedefs = ""
+    %assign numElements = 0
+    %assign res = ["", 0] %% TLC bug workaround
+    %assign inlineFcn = "SLibGetSystem%<struct>"
+    %with ::CompiledModel.System[sysIdx]
+        %if NumChildSystems > 0
+            %if struct == "Parameters"
+                %assign childSystems = ChildPrmStructs
+            %else
+                %assign childSystems = ChildSystems
+            %endif
+            %openfile childsysTypedefs
+            %foreach childIdx = NumChildSystems
+                %assign chIdx = childSystems[childIdx]
+                %% Is first memory instance ? And not a reduced subsystem
+                %if chIdx[1] == 0 && chIdx[3] > -1
+                    %assign   blk = System[chIdx[2]].Block[chIdx[3]]
+
+                    %% look into this subsystem only it belongs to current
+                    %% constructed partition
+                    %if (struct == "CStates" || ...
+                        struct == "CStateDeriv" || ...
+                        struct == "ContStatesDisabled") && ...
+                        SLibIsPartitionGrouping() && ...
+                        EXISTS(::GlobalCurrentPID) && ...
+                        !ISEMPTY(::GlobalCurrentPID) && ...
+                        ::GlobalCurrentPID >= 0 && ...
+                        ::GlobalCurrentPID != SLibGetPIDFromBlock(blk, 0)
+                        %continue
+                    %endif
+
+                    %with blk
+                        %assign childSys = System[CallSiteInfo.SystemIdx]
+                        %% If a child is a standalone subsystem, do not
+                        %% include it in this hierarchy.
+                        %if childSys.StandaloneSubsystem
+                            %continue
+                        %endif
+                        %%if ISFIELD(CallSiteInfo, "%<struct>"Arg) && childSys.Has%<struct>Arg
+                        %if !SLibSystemHasOwnDataScope(childSys)
+                            %assign inlRes = %<inlineFcn>(childSys.SystemIdx)
+                            %assign numElements = numElements + inlRes[1]
+                            %<inlRes[0]>\
+                        %elseif childSys.Has%<struct>Arg
+                            %assign csIdx       = blk.CallSiteIdx
+                            %assign varGroupIdx = FcnSysVarGroupIndex(childSys, typetag, csIdx)
+                            %if varGroupIdx < 0
+                                %continue
+                            %endif
+                            %assign structType  = SLibVarGroupType(varGroupIdx, typetag)
+                            %assign structName  = SLibVarGroupName(varGroupIdx)
+                            %assign comment    = "/* '%<childSys.Name>' */"
+                            %if SLibSysVarGroupUsedAsMatrix(System[childSys.SystemIdx],typetag, csIdx)
+                                %assign structWidth = SLibSysVarGroupWidth(System[childSys.SystemIdx],typetag, csIdx)
+                                %<structType> %<structName>[%<structWidth>]; %<comment>
+                            %else
+                                %<structType> %<structName>; %<comment>
+                            %endif
+                            %assign numElements = numElements + 1
+                        %endif
+                    %endwith
+                %endif
+            %endforeach
+            %closefile childsysTypedefs
+        %endif %% NumChildSystems > 0
+    %endwith %% System[sysIdx]
+    %if numElements > 0
+        %assign res[0] = "%<childsysTypedefs>"
+        %assign res[1] = %<numElements>
+    %endif
+    %return res
+%endfunction %% FcnGetChildSystemTypedefs
+
+
+%% Function: SLibAddPreprocessingFunctionsToCommonIncludes =========================================
+%% Abstact:
+%%   This function registers header files for preprocessing logging functions
+%% TopTester: test/toolbox/simulink/variants/var-vss-condexecuted/tContPortGecks.m
+%%
+%function SLibAddPreprocessingFunctionsToCommonIncludes(sysIdx) void
+    %assign system = ::CompiledModel.System[sysIdx]
+    %assign module = ::CompiledModel.RTWCGModules.RTWCGModule[system.CGIRModuleIdx]
+    %foreach fcnIdx = module.NumSubFunctions
+        %assign fcn = module.Function[fcnIdx]
+        %if ISFIELD(fcn, "LoggingWrapperType")
+            %<SLibAddToCommonIncludes(fcn.Name + ".h")>
+        %endif
+    %endforeach
+%endfunction %% SLibAddPreprocessingFunctionsToCommonIncludes
+
+
+%% Function: SLibContainsToWorkspaceBlocks =========================================================
+%% Abstact:
+%%   This function returns true if the model contains ToWorkspace blocks
+%% TopTester: test/toolbox/simulink/variants/var-inline-general/tVariantsAndSubmodels.m
+%%
+%function SLibContainsToWorkspaceBlocks()
+    %assign containsToWorkspace = TLC_FALSE
+    %foreach sysIdx = ::CompiledModel.NumSystems
+        %assign system = ::CompiledModel.System[sysIdx]
+        %foreach blkIdx = system.NumBlocks
+            %assign block = system.Block[blkIdx]
+            %if block.Type == "ToWorkspace" || block.Type == "SignalToWorkspace"
+                %assign containsToWorkspace = TLC_TRUE
+                %break
+            %endif
+        %endforeach
+        %if containsToWorkspace
+            %break
+        %endif
+    %endforeach
+    %return containsToWorkspace
+%endfunction %% SLibContainsToWorkspaceBlocks
+
+
+%% Function: LibRegCommonIncludes ==================================================================
+%% Abstact:
+%%   This function registers header files necessary to compile a standalone
+%%   system.
+%%
+%function LibRegCommonIncludes(sysIdx) void
+    %%
+    %% Common Includes
+    %%
+    %% TopTester: test/toolbox/simulink/variants/var-vss-sigobj/tVSSSigObj.m
+    %% TopTester: test/toolbox/simulink/variants/var-inline-vsrc-systemtests/tVariantSource6.m
+    %% TopTester: test/toolbox/simulink/variants/modelVariants/tVariantsBasic.m
+    %% TopTester: test/toolbox/simulink/variants/var-vss-codevariants/tcodevariants4.m
+    %% TopTester: test/toolbox/simulink/variants/var-inline-vsrc/tVariantSource3.m
+
+    %% Basic types headers rtwtypes.h, stdbool.h, stdint.h, cstdint according to
+    %% language standard settings
+    %%
+    %% TopTester: test/toolbox/rtw/targets/ert/tLangStandardTypes.m
+    %% TopTester: test/toolbox/rtw/targets/ert/tResolvedTypesTlc.m
+    %assign stdHeaders = SLibCoderBasicTypesFilenames()
+    %foreach fIdx = SIZE(stdHeaders, 1)
+        %<SLibAddToCommonIncludes(stdHeaders[fIdx])>
+    %endforeach
+
+    %if LibUseOldFilePackagingInfrastructure()
+        %if ::needZeroCrossingTypes
+            %<SLibAddToCommonIncludes(SLibCoderZerocrossingTypesFilename())>
+        %endif
+
+        %if LibIsHalfPrecisionUsed()
+            %<SLibAddToCommonIncludes(SLibCoderHalfTypeHdrFilename())>
+        %endif
+
+        %if SLibDeclareImageTypeUsage()
+            %<SLibAddToCommonIncludes(SLibCoderImageTypeHdrFilename())>
+        %endif
+    %endif
+
+    %if ::CompiledModel.OpaqueFBT
+        %<SLibAddToNonSharedIncludes("OpaqueTypeFbt.hpp")>
+    %endif
+
+    %if SLibDeclareImageTypeUsage()
+        %assign result = FEVAL("rtwprivate", "addImageTypeBuildInfo", ::CompiledModel.OrigName)
+    %endif
+
+    %if !GenRTModel || SLibModelHierarchyContainsNoninlinedSfcn() || ...
+        IsModelReferenceForASimstructBasedTarget() || ...
+        GenerateGRTWrapper
+        %if (::CompiledModel.NumChildSFunctions > 0) && ...
+            !Accelerator && CodeFormat != "S-Function"
+            %assign fpath = FEVAL("matlabroot") + "\\rtw\\c\\src"
+            %assign tf = FEVAL("coder.internal.callBuildInfo", ::CompiledModel.Name, 1, "addSourceFiles", "rt_matrx.c", fpath, "TLC")
+            %assign tf = FEVAL("coder.internal.callBuildInfo", ::CompiledModel.Name, 1, "addSourceFiles", "rt_printf.c", fpath, "TLC")
+        %endif
+        %<SLibAddToNonSharedIncludes("simstruc.h")>
+        %<SLibAddToStaticHeaders("simstruc.h")>
+        %<SLibAddToNonSharedIncludes("fixedpoint.h")>
+    %elseif SLibIsERTCodeFormat()
+        %% All xPC (SLRT) builds enable ExtMode, but ExtMode is set to 0 (see setuplib.tlc)
+        %assign isSLRT = (EXISTS(xPC) && (xPC == 1)) || ...
+            (EXISTS(slrealtime) && (slrealtime == 1))
+        %if ::ExtMode == 1 || (SLibRemoveSimstrucFromRtwtypes() && isSLRT)
+            %if ::ExtMode == 1
+                %if !LibUseOldFilePackagingInfrastructure()
+                    %<SLibAddArrayToNonSharedIncludes(SLibCoderBasicTypesFilenames())>
+                %endif
+            %endif
+            %<SLibAddToNonSharedIncludes("rtw_extmode.h")>
+            %<SLibAddToNonSharedIncludes("sysran_types.h")>
+        %endif
+        %if ::CompiledModel.ConfigSet.SupportContinuousTime == 1
+            %<SLibAddToNonSharedIncludes("rtw_continuous.h")>
+            %<SLibAddToStaticHeaders("rtw_continuous.h")>
+            %if !PurelyIntegerCode
+                %<SLibAddToNonSharedIncludes("rtw_solver.h")>
+            %endif
+            %if SLibGetIsFixedStepZeroCrossingEnabled()
+                %<SLibAddToNonSharedIncludes("solver_zc.h")>
+            %endif
+
+            %% if RemoveHideChild feature is on, also include above files in private.h file(if exists).
+            %if IsRemoveHideChildFeatureOn() && !SLibIsCompactFileFormat()
+                %assign privateFileName = SLibGetFullFileNameForCode("mdl_priv_hdr_incl")
+                %<SLibUpdateHeadersNeededByFile(privateFileName, "rtw_continuous.h")>
+                %if !PurelyIntegerCode
+                    %<SLibUpdateHeadersNeededByFile(privateFileName, "rtw_solver.h")>
+                %endif
+                %if SLibGetIsFixedStepZeroCrossingEnabled()
+                    %<SLibUpdateHeadersNeededByFile(privateFileName, "solver_zc.h")>
+                %endif
+            %endif
+        %endif
+    %endif
+
+    %if isRSim %% ok ModelReference
+        %if isRAccel
+            %<SLibAddToNonSharedIncludes("raccel.h")>
+            %<SLibAddToNonSharedIncludes("slsv_diagnostic_codegen_c_api.h")>
+            %if ISFIELD(::CompiledModel,"ModelHasParallelForEachSS") && ...
+                ::CompiledModel.ModelHasParallelForEachSS
+                %<SLibAddToNonSharedIncludes("slexec_parallel.h")>
+            %endif
+            %if ::GenCPP && ...
+                (::CompiledModel.ConfigSet.DenormalBehavior == "FlushToZero") && (CGMODEL_ACCESS("CGModel.SetDenormalBehavior") == 1)
+                %<SLibAddToNonSharedIncludes("slexec_vm_simstruct_bridge.h")>
+            %endif
+        %else
+            %<SLibAddToNonSharedIncludes("rsim.h")>
+        %endif
+    %endif
+
+    %if (IsModelReferenceSimTarget() || isRAccel) && ...
+        ::CompiledModel.NumChildSFunctions > 0
+        %assign sfcnLoaderHeader = "sfcn_loader_c_api.h"
+        %openfile sfcnLoaderInclTempBuf
+        #include "%<sfcnLoaderHeader>"
+        %closefile sfcnLoaderInclTempBuf
+        %<SLibCacheCodeToFile("mdl_src_custom_incl", sfcnLoaderInclTempBuf)>
+    %endif
+
+    %if MatFileLogging != 0
+        %assign mroot = FEVAL("matlabroot")
+        %assign fpath = FULLFILE(mroot, "rtw", "c", "src")
+        %if isRAccel || IsModelReferenceSimTarget()
+            %<SLibAddToNonSharedIncludes("rt_logging_simtarget.h")>
+        %else
+            %assign tf = FEVAL("coder.internal.callBuildInfo", ::CompiledModel.Name, 1, "addSourceFiles", "rt_logging.c", fpath, "TLC")
+            %<SLibAddGeneratedFileToList("rt_logging.c", "other", "source", fpath)>
+            %<SLibAddToNonSharedIncludes("rt_logging.h")>
+        %endif
+        %if SLibContainsToWorkspaceBlocks() && CGMODEL_ACCESS("CGModel.RowMajorDimensionSupport") == 1
+            %<SLibAddToCommonIncludes("<stdlib.h>")>
+        %endif
+    %endif
+
+    %if ::CompiledModel.SupportNonFinite && ...
+        SLibSupportNonfiniteLiterals()
+        %if !SLibIsCompactFileFormat() && SLibRealNonFinitesRequired()
+            %<SLibAddToNonSharedIncludes("rt_nonfinite.h")>
+        %endif
+        %if GenCPP
+            %<SLibAddToNonSharedIncludes("<cmath>")>
+        %else
+            %<SLibAddToNonSharedIncludes("math.h")>
+        %endif
+    %endif
+
+    %if ::CompiledModel.GenUtilsSrcInSharedLocation == 1
+        %<SLibAddPreprocessingFunctionsToCommonIncludes(sysIdx)>
+    %endif
+
+    %if CreateTransitionTable == 1
+        %<SLibAddToNonSharedIncludes("dt_info.h")>
+    %endif
+
+    %if (ExtMode == 1)
+        %if !ExtModeXCP || ExtModeXCPClassicInterface
+            %<SLibAddToNonSharedIncludes("ext_work.h")>
+        %else
+            %if (NumSynchronousSampleTimes != 1) && CombineOutputUpdateFcns && ((::CompiledModel.FixedStepOpts.SolverMode == "SingleTasking") || (NumContStates > 0))
+                %% If the model is Multirate, the model step needs to explicitly invoke the ext_mode.h APIs
+                %% when single tasking is enabled.
+                %% The extmodeEvent() also needs to be invoked in modelStep0 when the model contains Continuous States
+                %<SLibAddToNonSharedIncludes("ext_mode.h")>
+            %endif
+        %endif
+    %endif
+
+    %if UsingMalloc || isRSim || isRSimWithSolverModule %% ok Model Reference
+        %<SLibAddToNonSharedIncludes("<stdlib.h>")>
+    %endif
+
+    %if SLibIsAutosarSubComponent()
+        %openfile memBuf
+        #ifdef INCLUDE_RTE_HEADER
+        #include RTE_COMPONENT_HEADER
+        #endif
+        %closefile memBuf
+        %<SLibCacheCodeToFile("mdl_hdr_custom_incl", memBuf)>
+    %endif
+
+    %if SLibAutosarActive()
+        %% autosar files might need basic type definitions
+        %<SLibAddArrayToNonSharedIncludes(SLibCoderBasicTypesFilenames())>
+        %if MultiInstanceERTCode
+            %% Add Rte_<swc>.h to model_private.h (only once)
+            %if !ISFIELD(RTWAutosar, "Rte_SWC_Header_Included")
+                %addtorecord RTWAutosar Rte_SWC_Header_Included TLC_TRUE
+                %assert !SLibIsCompactFileFormat() %% Must have Modular File packaging
+                %openfile tmpBuf
+                #include "%<MainAutosarInterfaceName()>.h"
+                %closefile tmpBuf
+                %<SLibCacheCodeToFile("mdl_priv_hdr_incl", tmpBuf)>
+                %assign headerFile = "%<MainAutosarInterfaceName()>.h"
+                %assign modelPrivateFile = "%<LibGetMdlPrvHdrBaseName()>.h"
+                %<SLibUpdateHeadersNeededByFile(SLibGetFullFileNameForCode("mdl_priv_hdr_incl"), headerFile)>
+                %<SLibUpdateHeadersNeededByFile(SLibGetFullFileNameForCode("mdl_src_incl"), modelPrivateFile)>
+            %endif
+        %else
+            %<SLibAddToNonSharedIncludes("%<MainAutosarInterfaceName()>.h")>
+        %endif
+    %elseif SLibAdaptiveAutosarActive()
+        %openfile memBuf
+        #include <memory>
+        %closefile memBuf
+        %<SLibCacheCodeToFile("mdl_hdr_incl", memBuf)>
+        %<SLibUpdateHeadersNeededByFile(SLibGetFullFileNameForCode("mdl_hdr_incl"), "<memory>")>
+    %endif
+
+
+    %%
+    %% Custom user code for adding header files which
+    %% contain profiling information
+    %%
+    %<SLibGenProfHeaders()>
+
+%endfunction %% LibRegCommonIncludes
+
+%% Function: LibDumpCommonDefines ==================================================================
+%% Abstract:
+%%    Common Defines - Does not include generic model defines.
+%%    Returns macros necessary to compile a standalone system.
+%% TopTester: test/toolbox/simulink/variants/var-vss-sigobj/tVSSSigObj.m
+%%
+%function LibDumpCommonDefines(sysIdx) void
+    %openfile tmpDefineBuf
+
+    %if UsingMalloc || isRSim
+        %<LibDeclareMemoryAllocationMacros()>\
+    %endif
+
+    %closefile tmpDefineBuf
+    %return tmpDefineBuf
+%endfunction %% LibDumpCommonDefines
+
+%% Function: LibDeclareERTDefines ==================================================================
+%% Abstract:
+%%   Returns ERT specific macros necessary to compile a standalone system.
+%%
+%% TopTester: test/toolbox/simulink/variants/var-bus-vss/tDefaultVariants.m
+%%
+%function LibDeclareERTDefines(sysIdx) void
+    %openfile tmpDefineBuf
+    %if MatFileLogging == 1 || GenerateGRTWrapper
+        %if GenerateGRTWrapper
+            #define QUOTE1(name) #name
+            #define QUOTE(name) QUOTE1(name)    /* need to expand name */
+        %endif
+        %if MatFileLogging == 1
+            #ifndef SAVEFILE
+            #define MATFILE2(file) #file ".mat"
+            #define MATFILE1(file) MATFILE2(file)
+            #define MATFILE MATFILE1(MODEL)
+            #else
+            %if !GenerateGRTWrapper  %% QUOTE is not defined yet
+                #define QUOTE1(name) #name
+                #define QUOTE(name) QUOTE1(name)    /* need to expand name */
+            %endif
+            #define MATFILE QUOTE(SAVEFILE)
+            #endif
+        %endif
+    %endif
+    %closefile tmpDefineBuf
+    %return tmpDefineBuf
+%endfunction
+
+%% Function: LibSFcnPreSimstrucDefines =============================================================
+%% Abstract:
+%%   Return the neccesary macros the need to be declared before the
+%%   simstruct will be included for the S-Function target and Accelerator.
+%%
+%% TopTester: test/toolbox/simulink/variants/modelVariants/tVariantsBasic.m
+%%
+%function LibSFcnPreSimstrucDefines(system) void
+    %assign tmpDefineBuf = ""
+
+    %openfile tmpDefineBuf
+    %assign tmpName = Accelerator ? "simulink_only_sfcn" : Name
+    %if system.Type == "root"
+        #define S_FUNCTION_NAME %<tmpName>
+    %endif
+    #define S_FUNCTION_LEVEL 2
+    #ifndef RTW_GENERATED_S_FUNCTION
+    #define RTW_GENERATED_S_FUNCTION
+    #endif
+    %closefile tmpDefineBuf
+    %return tmpDefineBuf
+%endfunction %% LibSFcnPreSimstrucDefines
+
+%% Function: LibSFcnPostSimstrucDefines ============================================================
+%% Abstract:
+%%   Return the neccesary macros the need to be declared after the
+%%   simstruct is included for the S-Function target and Accelerator.
+%%
+%% TopTester: test/toolbox/simulink/variants/modelVariants/tVariantsBasic.m
+%%
+%function LibSFcnPostSimstrucDefines() void
+    %assign tmpDefineBuf = ""
+    %if !Accelerator
+        %openfile tmpDefineBuf
+        #if !defined(MATLAB_MEX_FILE)
+        #include "rt_matrx.h"
+        #endif
+
+        #if !defined(RTW_SFUNCTION_DEFINES)
+        #define RTW_SFUNCTION_DEFINES
+        %<SLibGetStructDefHeader("", "LocalS", "")>
+        void *blockIO;
+        void *defaultParam;
+        void *nonContDerivSig;
+        %<SLibGetStructDefTail("LocalS", "")>
+
+        #define %<RTMSet("LocalBlockIO","io")> ...
+            ((LocalS *)%<RTMGet("UserData")>)->blockIO = ((void *)(io))
+        #define %<RTMGet("LocalBlockIO")> ...
+            ((LocalS *)%<RTMGet("UserData")>)->blockIO
+
+        #define %<RTMSet("LocalDefaultParam", "paramVector")> ...
+            ((LocalS *)%<RTMGet("UserData")>)->defaultParam = (paramVector)
+        #define %<RTMGet("LocalDefaultParam")> ...
+            ((LocalS *)%<RTMGet("UserData")>)->defaultParam
+
+        #define %<RTMSet("LocalNonContDerivSig", "pSig")> ...
+            ((LocalS *)%<RTMGet("UserData")>)->nonContDerivSig = (pSig)
+        #define %<RTMGet("LocalNonContDerivSig")> ...
+            ((LocalS *)%<RTMGet("UserData")>)->nonContDerivSig
+        #endif
+
+        %closefile tmpDefineBuf
+    %endif
+    %return tmpDefineBuf
+%endfunction
+
+%% Toptetser: test/toolbox/rtw/targets/AUTOSAR/Variants/tValueVariants.m
+%% TopTester: test/toolbox/simulink/variants/var-vss-condexecuted/tContPortFcnCall3.m
+%% Toptetser: test/toolbox/simulink/variants/var-vss-codevariants/tcodevariants1.m
+%%
+%function SLibGenerateProprocessorDefnForVariantObjectsWithCSC() void
+    %% Abstract:
+    %% generate pre-processor definitions for CSC's used in variant choice
+    %% blocks.
+    %if ISFIELD(GlobalMemoryMap,"CustomData")
+        %openfile tmpFcnBuf
+        %assign nDataRecs = GlobalMemoryMap.NumCustomData
+        %foreach dataRecIdx = nDataRecs
+            %assign customDataRec = GlobalMemoryMap.CustomData[dataRecIdx]
+            %assign nData         = customDataRec.NumData
+            %assign cscDefn       = SLibGetCSCDefForCSC(customDataRec)
+
+            %foreach dataIdx = nData
+                %if nData == 1
+                    %assign data = customDataRec.Data
+                %else
+                    %assign data = customDataRec.Data[dataIdx]
+                %endif
+
+                %with data
+                    %if (SLibGetDataInitForData(cscDefn, data) == "Macro" && cscDefn.DataScope == "Imported")
+                        %assign id   = LibGetRecordIdentifier(data.RTWRecord)
+                        %assign varName = LibGetRecordVarName(data.RTWRecord)
+                        %if SLibAutosarActive() && LibHasCustomStorage(data.RTWRecord) && ...
+                            ISEQUAL(LibGetCustomStorageClassName(data.RTWRecord), "SystemConstant")
+                            %% Access the "contents" section of the SystemConstant record and get the
+                            %% prefixed name
+                            %assign id = SLibAccessCustomDataNoMacroCasts(data.RTWRecord,"contents","","","")
+                            %assign varName = SLibAccessCustomDataNoMacroCasts(data.RTWRecord,"contents","","","")
+                        %endif
+                        %assign ppIf = ""
+                        %if EXISTS(data.PPIf)
+                            %assign ppIf = data.PPIf
+                        %endif
+                        %assign ppEndif = ""
+
+                        %if EXISTS(data.PPEndIf)
+                            %assign ppEndif = data.PPEndIf
+                        %endif
+
+                        %if varName == id
+                            %assign idDescr = "value of parameter \"%<varName>\""
+                        %else
+                            %assign idDescr = "variable \"%<id>\" for the parameter \"%<varName>\""
+                        %endif
+
+                        %if !ISEMPTY(ppIf)
+                            %<ppIf>
+                            #ifndef %<id>
+                            #error The %<idDescr> is not defined
+                            #endif
+                            %<ppEndif>
+                        %endif
+                    %endif
+                %endwith
+            %endforeach
+        %endforeach
+        %closefile tmpFcnBuf
+        %return tmpFcnBuf
+    %endif
+%endfunction
+
+%% Function: SLibIsCodeCompileNMVCoderGroupEmpty ===================================================
+%% Abstract:
+%%   Returns true if there is no element in the coder group __CodeCompileVariants.
+%%
+%function SLibIsCodeCompileNMVCoderGroupEmpty(coderGroup) void
+    %return ISFIELD(coderGroup, "SynthesizedNamePrefix") && ...
+        !ISEMPTY(coderGroup.SynthesizedNamePrefix) && ...
+        (coderGroup.SynthesizedNamePrefix == "_CCVariants") && ...
+        (coderGroup.GroupContains == "NoElement")
+%endfunction
+
+%% Function: SLibGenerateVariantStuff ==============================================================
+%% Abstract:
+%%   Generate Simulink.Variant definitions and constraint checking
+%%
+%% TopTester: test/toolbox/simulink/variants/var-vss-codevariants/tcodevariants1.m
+%%
+%function SLibGenerateVariantStuff() void
+    %assign flag = TLC_FALSE
+    %assign needsComment = TLC_FALSE
+    %% Direct emission will happen in C++ for normal MATLAB variables.
+    %% This minor change is to take care of the field needsComment.
+    %foreach groupIdx = ::CompiledModel.NumCoderDataGroups
+        %assign group = ::CompiledModel.CoderDataGroup[groupIdx]
+        %assign flag = SLibIsCodeCompileNMVCoderGroupEmpty(group)
+        %if flag == TLC_TRUE
+            %break
+        %endif
+    %endforeach
+    %assign needsComment = (!flag && ::CompiledModel.IsCCNMVParamExist) ? TLC_FALSE : TLC_TRUE
+
+    %openfile simVarObj
+    %if CGMODEL_ACCESS("CGModel.InlineSimulinkVariantObjectsInCompile") == 0
+        %<SLibDeclareSimulinkVariantObjects(TLC_FALSE, needsComment)>
+    %endif
+    %closefile simVarObj
+    %<SLibCacheCodeToFile("data_simulink_variant_include", simVarObj)>
+    %undef nmvDefinitions
+    %undef simVarObj
+    %% Simulink.Variant definitions
+    %openfile simulinkVariantObjects
+    %% if the Simulink.Variants are evaporated in the generated code, keep them in the define section
+    %if CGMODEL_ACCESS("CGModel.InlineSimulinkVariantObjectsInCompile") == 1
+        %<SLibDeclareSimulinkVariantObjects(TLC_FALSE, needsComment)>\
+    %endif
+    %closefile simulinkVariantObjects
+    %<SLibCacheCodeToFile("data_simulink_variant_define", simulinkVariantObjects)>
+    %undef simulinkVariantObjects
+
+    %assign hasVariantParameters = CGMODEL_ACCESS("CGModel.GetModelHasVariantParameters")
+
+    %assign hasVariant = ::CompiledModel.HasVariants || hasVariantParameters
+    %if !(hasVariant)
+        %return
+    %endif
+
+    %% Simulink.Params or mpt.Params  with guards
+    %openfile paramWithGuards
+    %% Add CSC symbols used in Variant choices
+    %% This is called here to make sure that we have #defines' for Variant objects
+    %% created already.The #error checks for Simulink.Parameters were done in customstoragelib.tlc
+    %% but at that time we don't have #define's for Simulink.Variant objects so it is invalid to
+    %% add protection in customstoragelib.tlc for Simulink.Parameters used in Variant choices.
+    %% we do it to here, so that generated code looks correct.
+    %<SLibGenerateProprocessorDefnForVariantObjectsWithCSC()>
+    %closefile paramWithGuards
+    %%<SLibCacheCodeToFile("mdl_priv_macro_define", paramWithGuards)>
+    %<SLibCacheCodeToFile("param_variant_errorChecks", paramWithGuards)>
+    %undef paramWithGuards
+    %<SLibEmitErrorChecksForVariants()>
+%endfunction
+
+%% Function: SLibEmitErrorChecksForVariants
+%% Abstract:
+%% Emit out the variant error checks created for Inline variant blocks,
+%% variant subsystem blocks, variant parameters which we already have
+%% constructed in C++ in variants emission plugin.
+%function SLibEmitErrorChecksForVariants() void
+
+    %% constraint checking
+    %assign variantErrorCheckConstraints = GET_FILE_REP_SCRATCH_BUFFER_CONTENTS("VariantErrorChecksToModelTypesOrHeader")
+    %% TopTester: test/toolbox/simulink/variants/var-parameter/tAlignment.m
+    %% TopTester: test/toolbox/simulink/variants/var-parameter/tDefaultChoice.m
+    %% TopTester: test/toolbox/simulink/variants/var-parameter/tSharedParamsModelRef.m
+    %% TopTester: test/toolbox/simulink/variants/var-any-matlab-expr-support/tAllEnumsSupport.m
+    %% TopTester: test/toolbox/simulink/variants/var-param-slparamvals/tCppCodeGeneration.m
+
+    %% Currently, the error checks are emitted in model_types.h or model.h
+    %% depending on whether the file packaging is Modular or Compact. If the
+    %% file packaging is Modular, the error checks will be dumped in model_types.h
+    %% and if it is compact, error checks will be dumped to model.h
+
+    %% Whether it is model_types.h or model.h, we always dump them in the
+    %% data_simulink_variant_define section, which is the defines section in the
+    %% file.
+    %% But there are several other categories getting dumped in the
+    %% data_simulink_variant_define section. They are as follows:
+    %%       1. Enums used in Code Compile
+    %%       2. Simulink.Variant definition
+    %%       3. ImportedDefine or Define storage class error check
+    %%       4. Symbolic Error constraint error check
+    %%       5. Variant Error checks
+
+    %% So if we direct emit the variant error checks in C++, we will
+    %% cause issues with the ordering of the above items and will also cause
+    %% several build issues.
+    %% That is because, we use the enums for the variant control expressions in
+    %% error checks. So, they must be defined before error checks.
+    %% So, use the TLC file repository buffer to store the contents of the
+    %% variant error checks and then dump them in TLC to not cause build issues
+    %% and also not to modify the existing ordering of the above categories.
+
+    %% TopTester: test/toolbox/rtw/targets/AUTOSAR/Variants/tVariantControl2.m
+    %% TopTester: test/toolbox/rtw/targets/AUTOSAR/Variants/tVariants6.m
+    %% TopTester: test/toolbox/simulink/variants/var-defaultvariant/t_mBoschMdl_3.m
+    %% TopTester: test/toolbox/simulink/variants/var-general/tERTFilePackagingFormat.m
+
+    %<SLibCacheCodeToFile("data_simulink_variant_define", ...
+        variantErrorCheckConstraints)>
+%endfunction
+
+
+%% Function: SLibDeclarePrimitiveTypedefs ==========================================================
+%% Abstract:
+%%   Uses intrinsic types.
+%%
+%function SLibDeclarePrimitiveTypedefs() void
+    %openfile tmpFcnBuf
+    %% This is by design, do not remove this function since we will
+    %% have primitive typedefs in the future.
+    %if 0
+
+        /* Primitive typedefs */
+        #ifndef TMW_PRIMITIVE_TYPEDEFS
+        #define TMW_PRIMITIVE_TYPEDEFS
+        #endif
+    %endif
+    %closefile tmpFcnBuf
+    %return tmpFcnBuf
+%endfunction
+
+%% Function: LibDeclareGenericModelDefines =========================================================
+%% Abstract:
+%%   Declare generic model defines
+%%
+%function LibDeclareGenericModelDefines() void
+    %openfile tmpFcnBuf
+    #define MODEL_NAME %<Name>
+    #define NSAMPLE_TIMES (%<NumSampleTimes>) /* Number of sample times */
+    #define NINPUTS (%<NumModelInputs>)       /* Number of model inputs */
+    #define NOUTPUTS (%<NumModelOutputs>)     /* Number of model outputs */
+    #define NBLOCKIO (%<BlockOutputs.NumSignalsInBlockIO>) ...
+        /* Number of data output port signals */
+    #define NUM_ZC_EVENTS (%<NumZCEvents>) /* Number of zero-crossing events */
+
+    %closefile tmpFcnBuf
+    %return tmpFcnBuf
+%endfunction
+
+%% Function: LibDeclareNCSTATES ====================================================================
+%% Abstract:
+%%   Create the number of continous states define.
+%%
+%function LibDeclareNCSTATES() void
+    %openfile tmpFcnBuf
+    #ifndef NCSTATES
+    #define NCSTATES (%<NumContStates>)   /* Number of continuous states */
+    #elif NCSTATES != %<NumContStates>
+    # error Invalid specification of NCSTATES defined in compiler command
+    #endif
+
+    %closefile tmpFcnBuf
+    %return tmpFcnBuf
+%endfunction
+
+%% Function: SLibDeclareSimulinkVariantObjects =====================================================
+%% Abstract:
+%%   Create the #define for each Simulink.Variant object, which are used
+%%   to select model code variants when IsStub is equal to False.
+%%   Create the #define for each Autosar.VariationPointProxy object, which are used
+%%   to select model code variants when IsStub is equal to True.
+%%
+%% TopTester: test/toolbox/simulink/variants/var-vss-codevariants/tcodevariants1.m
+%% TopTester: test/toolbox/simulink/variants/var-vss-condexecuted/tContPortGecks.m
+%% TopTester: test/toolbox/simulink/variants/var-vss-condexecuted/tContPortEnable.m
+%function SLibDeclareSimulinkVariantObjects(IsStub, NeedsComment) void
+    %openfile tmpSVBuf
+    %if ISFIELD(::CompiledModel, "CodeVariants")
+        %if ::CompiledModel.CodeVariants.NumSimulinkVariantObjects > 0
+            %with ::CompiledModel.CodeVariants
+                %assign numSVIdxs = NumVariantObjectOrderedIndexs
+                %foreach svIdxIdx = numSVIdxs
+                    %% get the index of the SV object from the table of indexes,
+                    %% which is in SV object dependency order
+                    %assign svIdx = VariantObjectOrderedIndexs[svIdxIdx]
+                    %with SimulinkVariantObject[svIdx]
+                        %% if the Condition is same as Name, it means we are using
+                        %% conditions directly, and not Simulink.Variant objects.
+                        %% We don't need to create #define for Conditions.
+                        %if Name != Condition
+                            %% For non-stub file, we  generate the simulink variant definition,
+                            %% For stub file, we generate the autosar variationpointproxy definition
+                            %% For R2013b, IsImported is true only for Autosar VPPs. It needs to be fixed
+                            %% in future versions.
+                            %if IsStub && IsImported
+                                #ifndef Rte_SysCon_%<Name>
+                                #define Rte_SysCon_%<Name> (%<Condition>)
+                                #endif
+                            %elseif !IsStub && !IsImported
+                                #ifndef %<Name>
+                                #define %<Name> (%<Condition>)
+                                #endif
+                            %endif
+                        %endif
+                    %endwith
+                %endforeach
+            %endwith
+        %endif
+    %endif
+    %% Add Variant symbols from Model ref
+    %assign mdlRefBlks = ISFIELD(::CompiledModel,"ModelReferenceBlocks") ? ...
+        ::CompiledModel.ModelReferenceBlocks : []
+    %if !ISEMPTY(mdlRefBlks)
+        %foreach rowIdx = SIZE(mdlRefBlks,0)
+            %assign mdlRefInfo   = mdlRefBlks[rowIdx]
+            %assign mSysIdx      = mdlRefInfo[0]
+            %assign bIdx         = mdlRefInfo[1]
+            %assign blkInterface = GetModelrefInterface(System[mSysIdx].Block[bIdx])
+            %if ISFIELD(blkInterface, "CodeVariants")
+                %assign variantControl = blkInterface.CodeVariants.VariantControl
+                %if ISFIELD(variantControl, "Variant")
+                    %assign numVariants = SIZE(variantControl.Variant, 1)
+                    %foreach idx = numVariants
+                        %assign variant = variantControl.Variant[idx]
+                        %% TopTester: test/toolbox/simulink/variants/var-sl-variantobjects/tmTrueCondVariantObject.m
+                        %% If we have a data record like below, VariantControl {Variant { Condition ""} }
+                        %% somewhere the conversion will happen in MATLAB and MATLAB interprets this empty string
+                        %% as an empty character array and converts this to VariantControl { Variant { Condition []} }.
+                        %% There is no way to fix it while writing the record in modelrefinterface.tlc in
+                        %% SLibGetCodeVariants since its being written as "" only, so fixing it here.
+                        %if ISEMPTY(variant.Condition)
+                            %assign variant.Condition = ""
+                        %endif
+                        %if variant.Name != variant.Condition
+                            %if IsStub && variant.IsImported
+                                #ifndef Rte_SysCon_%<variant.Name>
+                                #define Rte_SysCon_%<variant.Name> (%<variant.Condition>)
+                                #endif
+                            %elseif !IsStub && !variant.IsImported
+                                #ifndef %<variant.Name>
+                                #define %<variant.Name> (%<variant.Condition>)
+                                #endif
+                            %endif
+                        %endif
+                    %endforeach
+                %endif
+            %endif
+        %endforeach
+    %endif
+    %closefile tmpSVBuf
+    %if !ISEMPTY(tmpSVBuf) && !WHITE_SPACE(tmpSVBuf)
+        %assign comment =  NeedsComment ? "/* Model Code Variants */" : ""
+        %openfile retBuf
+        %<comment>
+        %<tmpSVBuf>
+        %closefile retBuf
+        %return retBuf
+    %else
+        %return
+    %endif
+%endfunction
+
+%% Function: SLibEnumeralPreprocessorSymbol ========================================================
+%% Abstract:
+%%   Create a unique preprocessor symbol for an enumeral of an enumerated
+%%   type. The symbol consists of the type name with the enumeral name
+%%   appended.
+%%
+%% TopTester: test/toolbox/simulink/variants/var-general/tEnumVariants1.m
+%function SLibEnumeralPreprocessorSymbol(enumDataTypeId, enumIdx) void
+    %assign enumTypeName = LibGetDataTypeNameFromId(enumDataTypeId)
+    %assign enumeralName = SLibGetEnumTypeCodeGenStringFromIndexForVariantPreprocessor(enumDataTypeId, enumIdx)
+    %return "%<enumTypeName>_%<enumeralName>"
+%endfunction
+
+%% Function: SLibParamIsVariantControlParamInVariantCondition ======================================
+%% Abstract:
+%%   Checks if the given parameter is used in a variant condition
+%%   that appears as a preprocessor condition in the generated code.
+%function SLibParamIsVariantControlParamInVariantCondition(dataRec) void
+    %return (SLibIsParameterType(dataRec) && dataRec.IsVariantControlPrmInCondExpr)
+%endfunction
+
+%% Function: SLibParamIsVariantControlParamInDimensionsExpression ==================================
+%% Abstract:
+%%   Checks if the given parameter is used in a dimension expression
+%%   that is preserved in the generated code.
+%function SLibParamIsVariantControlParamInDimensionsExpression(dataRec) void
+    %return (SLibIsParameterType(dataRec) && dataRec.IsVariantControlPrmInDimsExpr)
+%endfunction
+
+%% Function: SLibParamIsVariantControlParam ========================================================
+%% Abstract:
+%%   Checks if the given parameter is used as a variant control variable.
+%function SLibParamIsVariantControlParam(dataRec) void
+    %return ((dataRec.RecordType == "ModelParameter") && ...
+        (SLibParamIsVariantControlParamInVariantCondition(dataRec) || ...
+        SLibParamIsVariantControlParamInDimensionsExpression(dataRec)))
+%endfunction
+
+%% Function: FcnUpdateMdlRefGuardedHeader ==========================================================
+%% Abstract:
+%%   Construct the custom guarded header & notify  the given system's
+%%   source and header file
+%function FcnUpdateMdlRefGuardedHeader(systemIdx, childHeader) void
+    %if !LibUseOldFilePackagingInfrastructure()
+        %assign needsHideChild = !IsRemoveHideChildFeatureOn()
+        %openfile guardedChildHeader
+        %if needsHideChild
+            %<GetHideChildDefineSymbol("ifndef")>\
+        %endif
+        #include "%<childHeader>"
+        %if needsHideChild
+            %<GetHideChildDefineSymbol("endif")>\
+        %endif
+        %closefile guardedChildHeader
+        %<FcnNotifyMdlRefGuardedHeader(systemIdx,childHeader,guardedChildHeader)>
+    %endif
+%endfunction
+
+
+%% Function: FcnNotifyMdlRefGuardedHeader ==========================================================
+%% Abstract:
+%%   Map the guarded header string for the model reference child header
+%%   and notify the given system's(systemIdx) source and header files
+%function FcnNotifyMdlRefGuardedHeader(systemIdx, childHeader, guardedChildHeader) void
+    %assign needsHideChild = !IsRemoveHideChildFeatureOn()
+    %% If remove hide child feature is on, do not update header file anymore.
+    %% However, #includes would still be generated in header file. Having a geck(g2758136)
+    %% for checking if it is necessary or not.
+    %if needsHideChild
+        %assign systemHdr = SLibGetFullFileNameForSystemCode("sys_hdr_incl", systemIdx)
+        %<SLibUpdateMdlRefGuardedHeader(systemHdr , childHeader, guardedChildHeader)>
+    %endif
+    %assign systemSrc = SLibGetFullFileNameForSystemCode("sys_src_incl", systemIdx)
+    %<SLibUpdateMdlRefGuardedHeader(systemSrc , childHeader, guardedChildHeader)>
+%endfunction
+
+%% Function: LibCacheSystemIncludes ================================================================
+%% Abstract:
+%%   Goes through each system, and caches the include of any child
+%%   systems that will be parented by the system.
+%%   Called in *wide.tlc.
+%%
+%% TopTester: test/toolbox/simulink/variants/var-vss-condexecuted/tContPortGecks.m
+%% TopTester: test/toolbox/simulink/variants/var-bus-compositeports/tCompositePorts.m
+%%
+%function LibCacheSystemIncludes(sysIdx) void
+    %% Cache necessary includes
+    %assign system = System[sysIdx]
+    %assign needsHideChild = !IsRemoveHideChildFeatureOn()
+    %if (system.FileNameOwnerIdx == sysIdx)
+        %openfile sysheader
+        %foreach idx = SIZE(system.IncludedChildSystemIdx,1)
+            %assign inChildSysIdx = system.IncludedChildSystemIdx[idx]
+            %assign inChildSys = ::CompiledModel.System[inChildSysIdx]
+            %assign inChildSysFileName = CGMODEL_ACCESS("CGModel.System.HeaderFileName", inChildSys.SystemIdx)
+            %assign childSysFileNeeded = LibSystemIsReusedLibraryFcn(System[sysIdx]) || ...
+                SLibModelHasServicePortDWork()
+            %if !childSysFileNeeded && needsHideChild
+                %<GetHideChildDefineSymbol("ifndef")>\
+            %endif
+            %if LibIsGlobalServer(inChildSys)
+                %% simulink functions are class members so do not include their headers
+                %assign isRapidAccelOnlyOrSFcnTarget = (isRSim && !isRAccel) || CodeFormat == "S-Function"
+                %if !::GenerateClassInterface && (!SLibIsHostBasedSimulationTarget() || isRapidAccelOnlyOrSFcnTarget)
+                    %% If the filename is server (not compact) then we that means
+                    %% we have generated a private file which also needs to
+                    %% be included
+                    %if inChildSysFileName == inChildSys.Identifier
+                        %assign childHeader = inChildSys.Identifier + "_private.h"
+                        #include "%<childHeader>"
+                        %if !childSysFileNeeded
+                            %<FcnUpdateMdlRefGuardedHeader(system.SystemIdx, childHeader)>
+                        %endif
+                        %% We always need to include the server.h
+                    %endif
+                    %if !SLibAutosarActive() && ...
+                        inChildSys.IsConstUncalledFunction == "no"
+                        %if CGMODEL_ACCESS("FileRepository.getEnableFileControlForSimulinkFcns")
+                            %assign headerFile = CGMODEL_ACCESS("FileRepository.getHeaderFileForFunctionName", inChildSys.Identifier)
+                        %else
+                            %assign headerFile = inChildSys.Identifier + ".h"
+                        %endif
+                        #include "%<headerFile>"
+                        %if !childSysFileNeeded
+                            %<FcnUpdateMdlRefGuardedHeader(system.SystemIdx, headerFile)>
+                        %endif
+                    %endif
+                %endif
+            %elseif(inChildSysFileName != CGMODEL_ACCESS("CGModel.System.HeaderFileName", system.SystemIdx))
+                #include "%<inChildSysFileName>.h"
+            %endif
+            %if !childSysFileNeeded && needsHideChild
+                %<GetHideChildDefineSymbol("endif")>\
+            %endif
+        %endforeach
+        %assign hasMdlRefIsClass = TLC_FALSE
+
+        %assign mdlTypesHdrFileName = SLibGetFileNameForCode("mdl_types_hdr")
+        %assign mdlTypesHdrIncluded = TLC_FALSE
+
+        %assign numMdlRefBlks = system.NumIncludedModelReference
+        %foreach rowIdx = numMdlRefBlks
+            %% a row matrix containing [sysIdx, bIdx]
+            %assign mdlRefInfo = system.IncludedModelReference[rowIdx]
+            %assign mSysIdx = mdlRefInfo.SysIdx
+            %assign bIdx    = mdlRefInfo.BlockIdx
+            %assign blk     = ::CompiledModel.System[mSysIdx].Block[bIdx]
+            %assert 0 == blk.DeletedInIR
+            %assign blockInterface = GetModelrefInterface(blk)
+            %assign name           = blockInterface.FileName + ".h"
+            %assign condition = CGMODEL_ACCESS("FileRepository.getFileVariantCondition",name)
+            %openfile variantCondOpenBuf
+            %if !ISEMPTY(condition)
+                #if %<condition>
+            %endif
+            %closefile variantCondOpenBuf
+            %openfile childCondOpenBuf
+            %if !SLibModelHasServicePortDWork() && needsHideChild
+                %<GetHideChildDefineSymbol("ifndef")>\
+            %endif
+            %closefile childCondOpenBuf
+            %openfile childCondCloseBuf
+            %if !SLibModelHasServicePortDWork() && needsHideChild
+                %<GetHideChildDefineSymbol("endif")>\
+            %endif
+            %closefile childCondCloseBuf
+            %openfile variantCondCloseBuf
+            %if !ISEMPTY(condition)
+                #endif
+            %endif
+            %closefile variantCondCloseBuf
+            %openfile hideChildDefineBuf
+            %if ( blockInterface.IsScalableBuild && ...
+                !ISEMPTY(blockInterface.HideChildDefineSymbol) && ...
+                !blk.MdlRefIsCPPClassGenMode) && needsHideChild
+                #define %<blockInterface.HideChildDefineSymbol>
+            %endif
+            %closefile hideChildDefineBuf
+            %openfile childInclBuf
+            %if blockInterface.AncestorAllocatesCoderDataGroups || ...
+                !( blk.MdlRefIsCPPClassGenMode && ...
+                (blockInterface.IsScalableBuild || CGMODEL_ACCESS("CGModel.getUseOperatorNewForModelRefRegistration") ))
+                #include "%<name>"
+            %endif
+            %closefile childInclBuf
+
+            %openfile guardedChildBuf
+            %<variantCondOpenBuf>
+            %<childCondOpenBuf>
+            %<hideChildDefineBuf>
+            %<childCondCloseBuf>
+            %<childInclBuf>
+            %<variantCondCloseBuf>
+            %closefile guardedChildBuf
+
+            %if LibUseOldFilePackagingInfrastructure()
+                %<guardedChildBuf>
+            %elseif !WHITE_SPACE(hideChildDefineBuf) && ...
+                !WHITE_SPACE(childInclBuf)
+                %<FcnNotifyMdlRefGuardedHeader(system.SystemIdx, name, guardedChildBuf)>
+            %endif
+            %if blk.MdlRefIsCPPClassGenMode
+                %assign hasMdlRefIsClass = TLC_TRUE
+            %endif
+        %endforeach
+        %<SLibOutputRequiredLangStdSystemHeaders(hasMdlRefIsClass)>
+        %closefile sysheader
+        %<LibAddToSystemField(system, "SystemIncludes", sysheader)>
+    %endif
+%endfunction %% LibCacheSystemIncludes
+
+%% Function: LibCacheUtilityIncludes ===============================================================
+%% Abstract:
+%%   Goes through each system, and caches the include of any utilities
+%%   that will be parented by the system.
+%%   Called in *wide.tlc.
+%%
+%% TopTester: test/toolbox/simulink/variants/var-vss-sigobj/tVSSSigObj.m
+%%
+%function LibCacheUtilityIncludes(sysIdx) void
+    %% Cache necessary includes
+    %if !LibUseOldFilePackagingInfrastructure()
+        %return
+    %endif
+    %assign system = System[sysIdx]
+    %if (system.FileNameOwnerIdx == sysIdx)
+        %openfile utilheader
+        %assign rtwModule = RTWCGModules.RTWCGModule[system.CGIRModuleIdx]
+        %assign headers = rtwModule.FcnHeaders
+        %assign numHeaders = SIZE(headers, 0)
+        %foreach idx = numHeaders
+            %assign headerIdx = headers[idx][0]
+            %assign incFileName = ::CompiledModel.RTWCGStrings[headerIdx]
+            %assign modelHeaderFileName = LibGetMdlPubHdrBaseName() + ".h"
+            %assign moduleFileTypeIdx = headers[idx][1]
+            %% opening a file for storing header with their variant condition
+            %openfile variantguardingforSLFcn
+            %assign condition = CGMODEL_ACCESS("FileRepository.getFileVariantCondition",incFileName)
+            %assign hlen = SIZE(incFileName, 1)
+            %% guarding to be done only for Simulink function headers and not for header files like <string.h>
+            %if !ISEMPTY(condition) && ((incFileName[0] != "<") && (incFileName[hlen-1] != ">"))
+                #if %<condition>
+                #include "%<incFileName>"
+                #endif
+            %endif
+            %closefile variantguardingforSLFcn
+            %% storing the buffer in UtilityIncludes field for dumping it later in the code
+            %<LibAddToSystemField(system,"UtilityIncludes",variantguardingforSLFcn)>
+            %if (incFileName != modelHeaderFileName) && ISEMPTY(condition)
+                %<FcnAppendSystemFcnHeaders(system, incFileName, moduleFileTypeIdx)>
+            %endif
+        %endforeach
+        %closefile utilheader
+    %endif
+%endfunction %% LibCacheSystemIncludes
+
+%% Function: LibDumpUtilityIncludes ================================================================
+%% Abstract:
+%%   Dumps the details stored in UtilityIncludes section in LibCacheUtilityIncludes function
+%%
+%function LibDumpUtilityIncludes(system) void
+    %assign utilityIncludes = LibGetSystemField(system, "UtilityIncludes")
+    %if !WHITE_SPACE(utilityIncludes) && LibUseOldFilePackagingInfrastructure()
+        %openfile utilityIncludeBuffer
+        %<utilityIncludes>
+        %closefile utilityIncludeBuffer
+        %return utilityIncludeBuffer
+    %else
+        %return ""
+    %endif
+%endfunction %% LibDumpUtilityIncludes
+
+
+%% Function: LibCacheSharedTypeIncludes ============================================================
+%% Abstract:
+%%  For a particular system, only if it's an RLS, cache the includes for
+%%  the shared data types it uses.
+%%
+%% TopTester: test/toolbox/simulink/variants/var-inline-vsrc-systemtests/tmreuse_across_models.m
+%% TopTester: test/toolbox/simulink/blocks/sb2sl/tsb2slmdlref.m
+%%
+%function LibCacheSharedTypeIncludes(sysIdx) void
+    %% Cache necessary includes
+    %assign system = System[sysIdx]
+    %openfile sysheader
+    %if LibSystemIsReusedLibraryFcn(system)
+        %<LibEmitPlatformTypeIncludes()>
+        %if system.DumpZCInclude
+            #include "%<SLibCoderZerocrossingTypesFilename()>"
+        %endif
+    %endif
+    %if SLibUsedMultiwordTypes()
+        %assign multiwordFileName = SLibCoderMultiwordTypesFilename()
+        %if LibSystemIsReusedLibraryFcn(system)
+            %assign rtwCtx = ::CompiledModel.RTWContext
+            %assign isMultiword = SLibIsHostBasedSimulationTarget() ? ...
+                TLC_TRUE : ...
+                FEVAL("rtwprivate", "retrieveMultiWordUtilitiesAndFunctions", "%<MasterSharedCodeManagerFile>", rtwCtx, CGMODEL_ACCESS("CGModel.System.HeaderFileName", system.SystemIdx))
+            %if isMultiword
+                #include "%<multiwordFileName>"
+            %endif
+        %else
+            #include "%<multiwordFileName>"
+        %endif
+    %endif
+    %if SLibUsedModelReferenceTypes() && ...
+        ::tMdlRefTimingBridgeAccessed && ...
+        (LibSystemIsRoot(system) || ...
+        IsModelReferenceBaseSys(system))
+        %<SLibUpdateHeadersNeededByFile(SLibGetFullFileNameForCode("baseMdl_hdr_child_system_incl"), ...
+            SLibCoderModelReferenceTypesFilename())>\
+        #include "%<SLibCoderModelReferenceTypesFilename()>"
+    %endif
+    %if LibSystemIsReusedLibraryFcn(system) || LibIsGlobalServer(system)
+        %if ISFIELD(system, "IncludedSharedDataTypes")
+            %foreach idx = SIZE(system.IncludedSharedDataTypes,1)
+                #include %<system.IncludedSharedDataTypes[idx]>
+            %endforeach
+        %endif
+    %endif
+    %if SLibUsedHalfPrecisionTypes()
+        %if LibSystemIsReusedLibraryFcn(system)
+            #include "%<SLibCoderHalfTypeHdrFilename()>"
+        %endif
+    %endif
+    %if SLibDeclareImageTypeUsage()
+        %if LibSystemIsReusedLibraryFcn(system)
+            #include "%<SLibCoderImageTypeHdrFilename()>"
+        %endif
+    %endif
+    %closefile sysheader
+    %<LibAddToSystemField(system, "SharedTypeIncludes", sysheader)>
+%endfunction %% LibCacheSharedTypeIncludes
+
+%% Function: LibDumpSystemIncludes =================================================================
+%% Abstract:
+%%   Dumps headers(C)/specifications(Ada) of the systems non-inlined
+%%   children systems.
+%%
+%% TopTester: test/toolbox/simulink/blocks/sb2sl/tsb2slmdlref.m
+%%
+%function LibDumpSystemIncludes(system) void
+    %assign systemIncludes = LibGetSystemField(system, "SystemIncludes")
+    %if !WHITE_SPACE(systemIncludes) && LibUseOldFilePackagingInfrastructure()
+        %openfile sysIncludeBuffer
+
+        /* Child system includes */
+        %<systemIncludes>
+        %closefile sysIncludeBuffer
+        %return sysIncludeBuffer
+    %else
+        %return ""
+    %endif
+%endfunction %% LibDumpSystemIncludes
+
+%% TopTester: test/toolbox/simulink/variants/var-inline-vsrc-systemtests/tmg1317695_VC1.m
+%%
+%function LibCacheSharedDataIncludes(sysIdx) void
+    %% Cache necessary includes
+    %assign system = System[sysIdx]
+    %if LibSystemIsReusedLibraryFcn(system)
+        %openfile sysheader
+
+        %if ISFIELD(system, "SystemSharedDataIncludes")
+            %foreach idx = SIZE(system.SystemSharedDataIncludes,1)
+                %assign sharedDataHeader = system.SystemSharedDataIncludes[idx]
+                #include %<sharedDataHeader>
+            %endforeach
+        %endif
+        %closefile sysheader
+        %<LibAddToSystemField(system, "SystemSharedDataIncludes", sysheader)>
+    %endif
+%endfunction
+
+%%TopTester: test/toolbox/simulink/blocks/sb2sl/tsb2slmdlref.m
+%%
+%function LibDumpSharedDataIncludes(system) void
+    %assign sharedDataIncludes = LibGetSystemField(system, "SystemSharedDataIncludes")
+    %if !WHITE_SPACE(sharedDataIncludes)
+        %openfile sharedDataIncludeBuffer
+
+        /* Shared Data Includes */
+        %<sharedDataIncludes>
+
+        %closefile sharedDataIncludeBuffer
+        %return sharedDataIncludeBuffer
+    %else
+        %return ""
+    %endif
+%endfunction
+
+%% Function: LibDumpSharedTypeIncludes =============================================================
+%% Abstract:
+%%   Dumps headers of shared types used by a system.
+%%
+%%TopTester: test/toolbox/simulink/blocks/sb2sl/tsb2slmdlref.m
+%%
+%function LibDumpSharedTypeIncludes(system) void
+    %assign sharedTypeIncludes = LibGetSystemField(system, "SharedTypeIncludes")
+    %if !WHITE_SPACE(sharedTypeIncludes) && CGMODEL_ACCESS("FileRepository.getUseFilePackagingParser") == 0
+        %openfile sharedTypeIncludeBuffer
+
+        /* Shared type includes */
+        %<sharedTypeIncludes>
+
+        %closefile sharedTypeIncludeBuffer
+        %return sharedTypeIncludeBuffer
+    %else
+        %return ""
+    %endif
+%endfunction %% LibDumpSharedTypeIncludes
+
+%% DocFunction{Code Configuration Functions}: LibAddToSystemCustomIncludes ==========
+%% Abstract:
+%%   Adds #include item to system header file
+%%
+%%   Call this function from BlockInstanceSetup method of block so that different
+%%   S-functions can #include different files. Specify locals bare, "myInclude.h",
+%%   and include path files are speficied in braces, "<sysinclude.h>". Each
+%%   call to this function adds the file to the list only if it is not already
+%%   there.
+%%
+%function LibAddToSystemCustomIncludes(system, incFileName) void
+    %assign ownerFileSystem = ::CompiledModel.System[system.FileNameOwnerIdx]
+    %assign customIncludes = LibGetSystemField(ownerFileSystem, "CustomIncludes")
+
+    %assign p = CGMODEL_ACCESS("String.find", customIncludes, incFileName)
+    %if p < 0
+        %assign buffer = ""
+        %openfile buffer
+        %if incFileName[0] == "<" || incFileName[0] == "\""
+            #include %<incFileName>
+        %else
+            #include %<"\"%<incFileName>\"">
+        %endif
+        %closefile buffer
+        %<LibAddToSystemField(ownerFileSystem, "CustomIncludes", buffer)>
+    %endif
+%endfunction
+
+%% Function: SLibDumpSystemCustomIncludes ==========================================================
+%% Abstract:
+%%   Dumps custom headers used by a system.
+%%
+%function SLibDumpSystemCustomIncludes(system) void
+    %assign customIncludes = LibGetSystemField(system, "CustomIncludes")
+    %if !WHITE_SPACE(customIncludes)
+        %openfile customIncludeBuffer
+
+        /* Custom includes */
+        %<customIncludes>
+        %closefile customIncludeBuffer
+        %return customIncludeBuffer
+    %else
+        %return ""
+    %endif
+%endfunction %% SLibDumpSystemCustomIncludes
+
+%% Function: LibDumpSystemTypeDefs =================================================================
+%% Abstract:
+%%   Dump systems type definitions.
+%%
+%%TopTester: test/toolbox/simulink/blocks/sb2sl/tsb2slmdlref.m
+%%
+%function LibDumpSystemTypeDefs(system) void
+    %assign systemTypeDefs = LibGetSystemField(system, "SystemTypeDefs")
+    %if !WHITE_SPACE(systemTypeDefs)
+        %openfile sysTypeDefBuffer
+
+        /* Type definitions */
+        %<systemTypeDefs>
+        %closefile sysTypeDefBuffer
+        %return sysTypeDefBuffer
+    %else
+        %return ""
+    %endif
+%endfunction
+
+
+%% Function: LibDumpSystemFcnPrototype =============================================================
+%% Abstract:
+%%   This function return the function prototype definition for a non-inlined
+%%   system
+%%
+%%TopTester: test/toolbox/simulink/blocks/sb2sl/tsb2slmdlref.m
+%%
+%function LibDumpSystemFcnPrototype(system) void
+    %assign tmpFcnBuffer = ""
+    %if !WHITE_SPACE(LibGetSystemField(system, "SystemFcnPrototype"))
+        %assign needHideChildGuard = !IsRemoveHideChildFeatureOn() && ...
+            CGMODEL_ACCESS("CGModel.isSysFcnHiddenFromParent", system.SystemIdx)
+        %openfile tmpFcnBuffer
+        %if needHideChildGuard
+            %<GetHideChildDefineSymbol("ifndef")>\
+        %endif
+        %<LibDumpSystemPrototype(system)>\
+        %if needHideChildGuard
+            %<GetHideChildDefineSymbol("endif")>\
+        %endif
+        %closefile tmpFcnBuffer
+    %endif
+    %return tmpFcnBuffer
+%endfunction %% LibDumpSystemFcnPrototype
+
+%% Function: LibCachesSystemFcnPrototype ===========================================================
+%% Abstract:
+%%   This function cache function prototype definition for a non-inlined
+%%   system into corresponding file.
+%%
+%function LibCachesSystemFcnPrototype(system, fcnBuffer, updateRTMSymbols) void
+    %if ISEMPTY(fcnBuffer) || WHITE_SPACE(fcnBuffer)
+        %return
+    %endif
+
+    %assign nonInlSysIdx = system.NonInlinedParentSystemIdx
+    %if IsRemoveHideChildFeatureOn() && ...
+        CGMODEL_ACCESS("CGModel.isSysFcnHiddenFromParent", system.SystemIdx) && ...
+        CGMODEL_ACCESS("CGModel.dumpSysCodeIntoModelFile", system.SystemIdx)
+        %<SLibCacheCodeToFile("mdl_priv_constParam_decl", fcnBuffer)>
+        %assign targetFile = SLibGetFullFileNameForCode("mdl_priv_constParam_decl")
+    %else
+        %<SLibCacheSystemCodeToFile("sys_fcn_decl", system, fcnBuffer)>
+        %assign targetFile = SLibGetFullFileNameForSystemCode("sys_fcn_decl", system.SystemIdx)
+    %endif
+    %if updateRTMSymbols && SLibFcnBufferContainsRTM(fcnBuffer)
+        %<SLibUpdateLocalSymbolTableForFile(targetFile, SLibGetFcnDeclarationRTMSymbolName())>
+    %endif
+%endfunction %% LibCachesSystemFcnPrototype
+
+%% Function: LibDumpSystemBanner ===================================================================
+%% Abstract:
+%%   This function return the banner of a non-inlined system
+%%
+%function LibDumpSystemBanner(system) void
+    %assign bannerBuf = ""
+    %assign sysInfo = GetSystemNameForComments(system)
+    %openfile bannerBuf
+    /*
+    * Code generation for system %<sysInfo>
+    * For more details, see corresponding source file %<CGMODEL_ACCESS("CGModel.System.SourceFileName", system.SystemIdx)>.c
+    *
+    */
+    %closefile bannerBuf
+    %return bannerBuf
+%endfunction %% LibDumpSystemBanner
+
+%% Function: SLibFcnPrototypeToRec =================================================================
+%% Abstract:
+%%   Convert function declaration strings to a fcuntion record
+%%   fcnRec { Name, Params, Returns}
+%%   It will be %undef at the call site
+%%
+%function SLibFcnPrototypeToRec(fcnDecl)
+    %assign fcnRec = FEVAL("rtwprivate", "rtw_getFcnRecFromDecl", fcnDecl)
+    %return fcnRec
+%endfunction %% SLibFcnPrototypeToRec
+
+%% Function: LibDumpSystemHeader ===================================================================
+%% Abstract:
+%%   Dump required details in the Systems header file. (does not include
+%%   "root").
+%%     - #include for children systems
+%%     - Functionprototype for the system
+%%   This function is called from srthdr.tlc
+%%
+%%   NOTE:
+%%         We have included the main system header file here, this has to be
+%%         removed once we have split the vectors (Parameters, BIO, etc) and
+%%         put them in corresponding system header file.
+%%
+%% TopTester: test/toolbox/simulink/variants/var-vss-codevariants/tcodevariants_neg2.m
+%% TopTester: test/toolbox/simulink/variants/var-vss-condexecuted/tContPortGecks.m
+%%
+%function LibDumpSystemHeader(system) void
+    %if system.FileNameOwnerIdx == system.SystemIdx
+        %assign fileName  = SLibGetSystemHeaderFileName(system)
+        %% Subsystem prototypes
+        %openfile fcnBuff
+        %<LibDumpSystemFcnPrototype(system)>
+        %closefile fcnBuff
+        %assign rootSysFileName = GetRootSystemHeaderFileName()
+
+        %assert(CGMODEL_ACCESS("CGModel.System.HeaderFileName", system.SystemIdx) != rootSysFileName)
+
+        %assign duplicate = LibAddToModelHeaders(fileName)
+        %% Dump comments, only the first time
+        %assign bannerBuf = LibDumpSystemBanner(system)
+        %<LibRegCommonIncludes(system.SystemIdx)>
+        %assign includeBuf = SLibDumpCommonIncludes(system)
+        %<SLibCacheSystemCodeToFile("sys_hdr_ban", system, bannerBuf)>
+        %if IsModelReferenceBaseSys(system) && IsModelRefScalableBuild()
+            %if LibIsSystemField(system, "MRSystemFcnPrototype")
+                %% Make sure the system has some non-empty functions which need a
+                %% prototype. Registration (mr_mdl_initialize) function and RegMdlInfo
+                %% functions are handled separately and not included in this buffer.
+                %assign mrFcnBuff = LibGetSystemField(system, "MRSystemFcnPrototype")
+                %if !WHITE_SPACE(mrFcnBuff) && !GenerateClassInterface
+                    %<SLibCacheSystemCodeToFile("sys_fcn_prototype", ...
+                        system, mrFcnBuff)>
+                %endif
+            %endif
+        %endif
+        %if !(IsModelReferenceBaseSys(system) && GenerateClassInterface)
+            %<LibCachesSystemFcnPrototype(system, fcnBuff, TLC_TRUE)>
+        %endif
+        %%if !WHITE_SPACE(includeBuf)
+        %<SLibCacheSystemCodeToFile("sys_hdr_common_incl", system, includeBuf)>
+        %%endif
+        %% Include the types header file
+        %if !LibSystemIsReusedLibraryFcn(system) && !LibIsGlobalServer(system)
+            %assign mdlTypesHdrFileName = SLibGetFileNameForCode("mdl_types_hdr")
+            %if !WHITE_SPACE(mdlTypesHdrFileName)
+                %openfile typesIncludeBuf
+                #include "%<mdlTypesHdrFileName>.h"
+                %closefile typesIncludeBuf
+                %<SLibCacheSystemCodeToFile("sys_hdr_incl", system, typesIncludeBuf)>
+            %endif
+        %endif
+        %% Add service header file include when the system uses services.
+        %if ISFIELD(system,"DumpServiceInclude") && GETFIELD(system, "DumpServiceInclude")
+            %if !IsModelReferenceTarget()
+                %assign HeaderFile = LibGetRTEHeaderFileName()
+            %else
+                %assign HeaderFile = ::CompiledModel.Name + "_timer_proxy.h"
+            %endif
+            %openfile serviceHeader
+            #include "%<HeaderFile>"
+            %closefile serviceHeader
+            %<LibAddToSystemField(system, "CustomIncludes", serviceHeader)>
+        %endif
+        %<SLibCacheSystemCodeToFile("sys_hdr_incl", system, LibDumpSharedTypeIncludes(system))>
+        %<SLibCacheSystemCodeToFile("sys_hdr_incl_guarded", system, LibDumpSystemIncludes(system))>
+        %% for dumping the header files in the child models or else function implicit declaration error might occur during build
+        %<SLibCacheSystemCodeToFile("sys_hdr_incl_guarded", system, LibDumpUtilityIncludes(system))>
+        %<SLibCacheSystemCodeToFile("sys_hdr_custom_incl", system, SLibDumpSystemCustomIncludes(system))>
+
+
+        %% Intrinsic types
+        %% Primitive types
+        %<SLibCacheSystemCodeToFile("sys_primitive_typedef", system, ...
+            SLibDeclarePrimitiveTypedefs())>
+    %endif
+%endfunction %%  LibDumpSystemHeader
+
+%% Function: LibDeclareCompoundDataTypes ===========================================================
+%% Abstract:
+%%   Reserved for compound data types.
+%%
+%function LibDeclareCompoundDataTypes() void
+    %return ""
+%endfunction
+
+
+%% Function: LibDeclareMemoryAllocationMacros ======================================================
+%% Abstract:
+%%   Place in model.h the following macros.
+%% TopTester: test/toolbox/simulink/blocks/lib_Sources/Ground/rtw/tStringSupport.m
+%%
+%function LibDeclareMemoryAllocationMacros() void
+    %assign nulldef = SLibGetNullDefinitionFromTfl()
+    %assign fileName = SLibGetFullFileNameForCode("mdl_priv_data_define")
+    %openfile tmpFcnBuf
+    %%
+    %% rt_VALIDATE_MEMORY can only be used in the registration function.
+    %%
+    %if CodeFormat != "S-Function"
+        #if !defined(rt_VALIDATE_MEMORY)
+        %<SLibUpdateGlobalSymbolTableForFile(fileName, "rt_VALIDATE_MEMORY")>\
+        #define rt_VALIDATE_MEMORY(S, ptr) \
+    %else
+        %<SLibUpdateGlobalSymbolTableForFile(fileName, "ss_VALIDATE_MEMORY")>\
+        #if !defined(ss_VALIDATE_MEMORY)
+        #define ss_VALIDATE_MEMORY(S, ptr) \
+    %endif
+    if(!(ptr)) {%<"\\">
+    %<RTMSetErrStat("RT_MEMORY_ALLOCATION_ERROR")>;%<"\\">
+    %<"}">
+    #endif
+
+    #if !defined(rt_FREE)
+    %<SLibUpdateGlobalSymbolTableForFile(fileName, "rt_FREE")>\
+    #if !defined(_WIN32)
+    #define rt_FREE(ptr) \
+    if((ptr) != %<nulldef>) {%<"\\">
+    free((ptr));%<"\\">
+    (ptr) = %<nulldef>;%<"\\">
+    %<"}">
+    #else
+    /* Visual and other windows compilers declare free without const */
+    #define rt_FREE(ptr) \
+    if((ptr) != %<nulldef>) {%<"\\">
+    free((void *)(ptr));%<"\\">
+    (ptr) = %<nulldef>;%<"\\">
+    %<"}">
+    #endif
+    #endif
+
+    %closefile tmpFcnBuf
+    %return tmpFcnBuf
+%endfunction
+
+
+
+%% Function: LibCheckForValidMTaskDefine ===========================================================
+%% Abstract:
+%%   Add C directives to verify that the MULTITASKING define is correct for
+%%   the way the code was generated. Prior to version 3.0 (R11), the
+%%   MULTITASKING define was under user control. As of version 3.0, the
+%%   define now is controlled by Simulink based upon the Solver Mode
+%%   fixed step setting.
+%%
+%% TopTester: test/toolbox/simulink/variants/var-general/tStringSupport.m
+%% TopTester: test/toolbox/simulink/variants/var-general/tsvarDDG.m
+%%
+%function LibCheckForValidMTaskDefine() void
+    %openfile tmpFcnBuf
+    %if ::CompiledModel.SolverType == "FixedStep"
+        %if ::CompiledModel.FixedStepOpts.SolverMode == "MultiTasking"
+            %assign str = "Model (%<::CompiledModel.Name>) was built \\\n" ...
+                "in MultiTasking solver mode, however the MULTITASKING define \\\n" ...
+                "is not present. Please verify that your template makefile is \\\n" ...
+                "configured correctly."
+
+            #if !defined(MULTITASKING) && !defined(NRT)
+            #  error %<str>
+            #endif
+        %else
+            %assign str = "Model (%<::CompiledModel.Name>) was built in \\\n" ...
+                "SingleTasking solver mode, however the MULTITASKING define is " ...
+                "\\\npresent. If you have multitasking (e.g. -DMT or " ...
+                "-DMULTITASKING) \\\ndefined on the Code Generation page of Simulation " ...
+                "parameter dialog, please \\\nremove it and on the Solver page, " ...
+                "select solver mode \\\nMultiTasking. If the Simulation parameter " ...
+                "dialog is configured \\\ncorrectly, please verify that your " ...
+                "template makefile is \\\nconfigured correctly."
+
+            #if defined(MULTITASKING)
+            #  error %<str>
+            #endif
+        %endif
+    %else
+        %assign str = "Models using the variable step solvers cannot define " ...
+            "MULTITASKING"
+
+        #if defined(MULTITASKING)
+        #  error %<str>
+        #endif
+    %endif
+    %closefile tmpFcnBuf
+    %return tmpFcnBuf
+%endfunction %% LibCheckForValidMTaskDefine
+
+%function SLibUpdateInheritedRequirementsForExportFcn() void
+    %% For virtual subsystems, any requirements are promoted to the first
+    %% non-virtual parent. However, if the parent is a top level subsystem in
+    %% an export function model, they become entry point functions.
+    %% Add any inherited requirements to model.h as the spec suggets
+    %if !ReqsInCode || !SLibIsExportFcnDiagram()
+        %return
+    %endif
+    %if !ISFIELD(::CompiledModel.Requirements, "InheritedRequirements")
+        %addtorecord ::CompiledModel.Requirements InheritedRequirements ""
+    %endif
+    %assign system = System[GetBaseSystemIdx()]
+    %foreach childIdx = system.NumChildSystems
+        %assign sysId = system.ChildSystems[childIdx][0]
+        %assign myLocSS = System[sysId]
+        %% Safe to use first callsite because we are specifically concerned with the top level
+        %% subsystems in an export function model
+        %assign ssBlk = System[myLocSS.CallSites[0][2]].Block[myLocSS.CallSites[0][3]]
+        %assign commentToAdd =  FcnGetBlockRequirements(ssBlk)
+        %if !ISEMPTY(commentToAdd)
+            %assign ::CompiledModel.Requirements.InheritedRequirements = ::CompiledModel.Requirements.InheritedRequirements + commentToAdd
+        %endif
+    %endforeach
+%endfunction
+
+%% TopTester: test/toolbox/simulink/variants/var-vss-condexecuted/tContPortGecks.m
+%%
+%function LibDeclareSystemRequirements() void
+    %openfile tmpFcnBuf
+
+    %if ISFIELD(::CompiledModel, "Requirements")
+        /*-
+        %if SLibGetBlockCommentType() == "BlockPathComment"
+            * Requirements for '<Root>': %<Name>
+        %else
+            * Requirements for model: %<Name>
+        %endif
+        %if ISFIELD(::CompiledModel.Requirements, "Requirements")
+            %<::CompiledModel.Requirements.Requirements>
+        %endif
+        %<SLibUpdateInheritedRequirementsForExportFcn()>
+        %if ISFIELD(::CompiledModel.Requirements, "InheritedRequirements")
+            %<::CompiledModel.Requirements.InheritedRequirements>
+        %endif
+        */
+    %endif
+
+    %closefile tmpFcnBuf
+    %return tmpFcnBuf
+%endfunction
+
+%% Function: LibDeclareSystemHierarchy =============================================================
+%% Abstract:
+%%   Create the system hierarchy comment.
+%%
+%% TopTester: test/toolbox/simulink/variants/var-vss-sigobj/tVSSSigObj.m
+%% TopTester: test/toolbox/simulink/coreblocks/lib_MathOperations/Gain/rtw/tGainBlk_Codegencheck_ERTSFcn_Target.m
+%% TopTester: test/toolbox/simulink/blocks/Simulink_Extras/MatrixInterpolation/tNumerics_1DFlatClipDoubleDT_InterpExec.m
+%function LibDeclareSystemHierarchy() void
+    %openfile tmpFcnBuf
+
+    %% see if it is a right-click (subsystem) build.
+    %assign parentName = ""
+    %assign srcSubsysName = ""
+    %if ISFIELD(::CompiledModel, "SubsystemPathForRightClickBuild")
+        %assign parentName = ::CompiledModel.SubsystemPathForRightClickBuild
+        %assign srcSubsysName = ::CompiledModel.SubsystemNameForRightClickBuild
+    %endif
+    /*-
+    * The generated code includes comments that allow you to trace directly
+    * back to the appropriate location in the model.  The basic format
+    %if SLibGetBlockCommentType() == "BlockPathComment"
+        * is <system>/block_name, where system is the system number (uniquely
+        * assigned by Simulink) and block_name is the name of the block.
+        *
+    %else
+        * is 'block_name' ('SID'), where block_name is the name of the block
+        * and SID is the Simulink identifier of the block without the model name.
+        *
+    %endif
+    %if ISEMPTY(parentName)
+        * Use the MATLAB hilite_system command to trace the generated code back
+        * to the model.  For example,
+        *
+        %if SLibGetBlockCommentType() == "BlockPathComment"
+            * hilite_system('<S3>')    - opens system 3
+            * hilite_system('<S3>/Kp') - opens and selects block Kp which resides in S3
+        %else
+            * hilite_system(':3')    - opens block with Simulink identifier 'model:3'
+        %endif
+    %else
+        %%
+        %% Subsystem build
+        %%
+        %assign srcSubsys = parentName + "/" + srcSubsysName
+        * Note that this particular code originates from a subsystem build,
+        * and has its own system numbers different from the parent model.
+        * Refer to the system hierarchy for this subsystem below, and use the
+        * MATLAB hilite_system command to trace the generated code back
+        * to the parent model.  For example,
+        *
+        * hilite_system('%<srcSubsys>')    - opens subsystem %<srcSubsys>
+        * hilite_system('%<srcSubsys>/Kp') - opens and selects block Kp
+    %endif
+    %if SLibGetBlockCommentType() == "BlockPathComment"
+        *
+        * Here is the system hierarchy for this model
+        *
+        %if ISEMPTY(parentName)
+            * '<Root>' : '%<Name>'
+        %else
+            * '<Root>' : '%<parentName>'
+        %endif
+        %foreach sysIdx = NumSubsystems
+            %assign id   = sysIdx+1
+            %if ISEMPTY(parentName)
+                %assign path = LibMangledPathName(LibSubsystemName(sysIdx))
+            %else
+                %% Subsystem build: Skip hidden subsystems in the temporary model.
+                %assign sysName = SYSNAME(LibSubsystemName(sysIdx))
+                %if ISEQUAL(sysName[0], "Root") && !ISEQUAL(sysName[1], srcSubsysName)
+                    %continue
+                %endif
+                %assign path = SLibMangledSubsystemPathName(parentName,...
+                    LibSubsystemName(sysIdx))
+            %endif
+            %if id < 10
+                * '<S%<id>>'   : '%<path>'
+            %elseif id < 100
+                * '<S%<id>>'  : '%<path>'
+            %else
+                * '<S%<id>>' : '%<path>'
+            %endif
+        %endforeach
+    %endif
+    */
+    %closefile tmpFcnBuf
+    %return tmpFcnBuf
+%endfunction
+
+
+%% Function: LibDeclareReducedBlocks ===============================================================
+%% Abstract:
+%%   Create the reduced blocks comment.
+%%
+%% TopTester: test/toolbox/simulink/variants/var-vss-condexecuted/tContPortFcnCall3.m
+%% TopTester: test/toolbox/simulink/variants/var-vss-condexecuted/tContPortGecks.m
+%function LibDeclareReducedBlocks() void
+    %if (!ShowEliminatedStatements)
+        %return
+    %endif
+
+    %openfile tmpFcnBuf
+    %with ReducedBlocks
+        %if NumReducedBlocks > 0
+
+            /*-
+            * These blocks were eliminated from the model due to optimizations:
+            *
+            %foreach bIdx = NumReducedBlocks
+                %assign b = Block[bIdx]
+                %if SLibGetBlockCommentType() == "BlockPathComment"
+                    * Block '%<b.Name>' : %<b.OptimizationInfo>
+                %else
+                    %assign blkName = SLibGrBlockSIDCommentByIdx(b.GrSrc)
+                    * Block %<blkName> : %<b.OptimizationInfo>
+                %endif
+            %endforeach
+            */
+        %endif
+    %endwith
+    %closefile tmpFcnBuf
+    %return tmpFcnBuf
+%endfunction
+
+%% Function: SLibGetGroundDeclAndDefnTypeName ======================================================
+%% Abstract:
+%%   Returns the type name to be used in the extern declaration and definition statements
+%%   of variables used by ground block
+%%
+%% TopTester: test\toolbox\shared\slcc\unnamedTypes\tUnnamedTypeOutportGround.m
+%function SLibGetGroundDeclAndDefnTypeName(dtId)
+    %if LibDataTypeIsDynamicMatrix(dtId)
+        %assign cgTypeIdx = ::CompiledModel.DataTypes.DataType[dtId].CGTypeIdx
+        %return ::CompiledModel.CGTypes.CGType[cgTypeIdx].Name
+    %endif
+    %assign cgTypeIdx = SLibGetCGTypeFromSLTypeId(dtId)
+    %% If the data type is an Enum OR Struct AND cgTypeIdx != -1 return CGType name since it can be an unnamed type
+    %% so the the type name should have the "struct " or "enum " keyword. The CGType name already the keyword in the name.
+    %if (LibDataTypeIsBus(dtId) == 1 || LibIsEnumDataType(dtId) == 1) && cgTypeIdx != -1
+        %return ::CompiledModel.CGTypes.CGType[cgTypeIdx].Name
+    %endif
+    %return SLibGetDataTypeName(dtId)
+%endfunction
+
+
+
+%% Function: LibDumpGroundExterns ==================================================================
+%% Abstract:
+%%   Declare external references to ground variables
+%%
+%% TopTester: test/toolbox/simulink/blocks/lib_Sources/Ground/rtw/tStringSupport.m
+%%
+%function LibDumpGroundExterns() void
+    %assign fileName = LibGetModelFileFullName("ModelHeaderFile")
+    %openfile tmpFcnBuf
+    %%multiple sltypes/cgtypes might be created for the same imported type(e.g., std::string)
+    %%need to track and avoid redefinition/redeclaration of grounds for such imported types
+    %createrecord externedGroundNames {}
+    %with DataTypes
+        %foreach dtIdx = NumDataTypes
+            %assign dt = DataType[dtIdx]
+            %% Opaque types with constructors will dynamically initialize their ground
+            %if !ISEMPTY(SLibDataTypeConstructFcnName(dtIdx))
+                %assign qualifiers = ""
+            %else
+                %assign qualifiers = SLibGetGroundQualifiers()
+            %endif
+            %% real ground
+            %if SLibGetDataTypeGroundReqInMemory(dt.Id)
+                %assign groundName = SLibGetDtGroundName(dtIdx, TLC_FALSE, "")
+                %if ISFIELD(externedGroundNames,groundName)
+                    %continue
+                %endif
+                %openfile declaration
+                %if SLibAutosarCompilerAbstractionRequired()
+                    %<SLibAutosarCompilerAbstractionForDataDecl(TLC_TRUE, SLibGetGroundDeclAndDefnTypeName(dt.Id), TLC_FALSE, TLC_FALSE, CGMODEL_ACCESS("DataTypes.GetDataTypeGroundName", dt.Id), "DataGlobal")>;\
+                %else
+                    %<qualifiers> %<SLibGetGroundDeclAndDefnTypeName(dt.Id)> %<groundName>;\
+                %endif
+                /* %<SLibGetDataTypeName(dt.Id)> ground */
+                %closefile declaration
+                %<SLibApplyMemSecToDataDecl(declaration, ...
+                    "MemSecDataConstants", groundName)>\
+                %%avoid adding duplicate extern declaration
+                %addtorecord externedGroundNames %<groundName> 1
+                %<SLibUpdateGlobalSymbolTableForFile(fileName, groundName)>\
+                %if ISFIELD(dt, "ContainerCGTypeIdx") && dt.ContainerCGTypeIdx >= 0
+                    %<SLibUpdateCGTypeUsedByFile(fileName, dt.ContainerCGTypeIdx)>\
+                %elseif ISFIELD(dt, "CGTypeIdx") && dt.CGTypeIdx >= 0
+                    %<SLibUpdateCGTypeUsedByFile(fileName, dt.CGTypeIdx)>\
+                %endif
+            %endif
+            %% complex ground
+            %if ISFIELD(dt, "ComplexGroundReqInMemory") && dt.ComplexGroundReqInMemory
+                %assign groundName = dt.ComplexGroundName
+                %assign complexName = SLibGetContainerSLTypeComplexName(dt)
+                %if ISFIELD(externedGroundNames,groundName)
+                    %continue
+                %endif
+                %openfile declaration
+                %<qualifiers> %<complexName> %<groundName>;\
+                /* %<SLibGetDataTypeName(dt.Id)> complex ground */
+                %closefile declaration
+                %<SLibApplyMemSecToDataDecl(declaration, ...
+                    "MemSecDataConstants", groundName)>\
+                %%avoid adding duplicates extern declaration
+                %addtorecord externedGroundNames %<groundName> 1
+                %<SLibUpdateGlobalSymbolTableForFile(fileName, groundName)>\
+            %endif
+        %endforeach
+    %endwith
+    %closefile tmpFcnBuf
+    %return tmpFcnBuf
+%endfunction
+
+%% Function: LibDumpGroundDeclarations =============================================================
+%% Abstract:
+%%   Declares global ground variables.
+%%   Arguments:
+%%     declareAsStatic: declare ground local or global for 1 and 0,
+%%                      respectively.  That is, use "static" keyword if
+%%                      declareAsStatic == 1.
+%%
+%% TopTester: test/toolbox/simulink/blocks/lib_Sources/Ground/rtw/tStringSupport.m
+%%
+%function LibDumpGroundDeclarations(declareAsStatic) void
+    %assign keyword = declareAsStatic ? "static" : ""
+    %%multiple sltypes/cgtypes might be created for the same imported type(e.g., std::string)
+    %%need to track and avoid redefinition/redeclaration of grounds for such imported types
+    %%Need global vars to avoid multiple definitions from different files
+    %if !EXISTS(::definedGroundNames)
+        %createrecord ::definedGroundNames {}
+    %endif
+    %openfile tmpFcnBuffer
+    %with DataTypes
+        %foreach dtIdx = NumDataTypes
+            %assign dt = DataType[dtIdx]
+            %% real ground
+            %if SLibGetDataTypeGroundReqInMemory(dt.Id)
+                %if !ISFIELD(dt, "GroundAlreadyDefined")
+                    %assign name = CGMODEL_ACCESS("DataTypes.GetDataTypeGroundName", dt.Id)
+                    %if ISFIELD(definedGroundNames,name)
+                        %continue
+                    %endif
+                    %if !ISEMPTY(SLibDataTypeConstructFcnName(dtIdx))
+                        %assign qualifiers = ""
+                        %assign init = ""
+                    %elseif LibIsDataTypeCGClassType(dtIdx)
+                        %assign qualifiers = SLibGetGroundQualifiers()
+                        %assign init = ""
+                    %else
+                        %assign qualifiers = SLibGetGroundQualifiers()
+                        %assign init = " = %<LibGetGroundInitFromId(dtIdx)>"
+                    %endif
+                    %openfile definition
+                    %% Opaque types with constructors will dynamically initialize their ground
+                    %% and Class types with default constructor can skip ground initialization
+                    %if SLibAutosarCompilerAbstractionRequired()
+                        %<keyword> %<SLibAutosarCompilerAbstractionForDataDecl(TLC_TRUE, SLibGetGroundDeclAndDefnTypeName(dt.Id), TLC_FALSE, TLC_FALSE, name, "DataGlobal")>%<init>;\
+                    %else
+                        %<keyword> %<qualifiers> %<SLibGetGroundDeclAndDefnTypeName(dt.Id)> %<name>%<init>;\
+                    %endif
+                    /* %<SLibGetDataTypeName(dt.Id)> ground */\
+                    %closefile definition
+                    %assign definition = LibGetCppBracedInitStr(definition)
+                    %<SLibApplyMemSecToDataDefn(definition, ...
+                        "MemSecDataConstants", name)>\
+                    %% Guard against multiple definitions
+                    %addtorecord dt GroundAlreadyDefined TLC_TRUE
+                    %addtorecord ::definedGroundNames %<name> 1
+                    %if !ISEMPTY(::CurrentBufferFileName)
+                        %<SLibUpdateLocalSymbolTableForFile(::CurrentBufferFileName, name)>\
+                    %endif
+                %endif
+            %endif
+            %% complex ground
+            %if SLibGetDataTypeComplexGroundReqInMemory(dtIdx)
+                %if !ISFIELD(dt, "CmplxGroundAlreadyDefined")
+                    %assign groundName = dt.ComplexGroundName
+                    %if ISFIELD(definedGroundNames,groundName)
+                        %continue
+                    %endif
+                    %if ISFIELD(dt, "ContainerSLTypeIdx")
+                        %assign containerTypeIdx = dt.ContainerSLTypeIdx
+                        %assign complexName = LibGetDataTypeComplexNameFromId(containerTypeIdx)
+                    %else
+                        %assign complexName = LibGetDataTypeComplexNameFromId(dt.Id)
+                    %endif
+                    %if !ISEMPTY(SLibDataTypeConstructFcnName(dtIdx))
+                        %assign qualifiers = ""
+                    %else
+                        %assign qualifiers = SLibGetGroundQualifiers()
+                    %endif
+                    %assign equalSign = LibGetDataInitEqualSign()
+                    %openfile definition
+                    %if SLibAutosarCompilerAbstractionRequired()
+                        %<keyword> %<SLibAutosarCompilerAbstractionForDataDecl(TLC_TRUE, complexName, TLC_FALSE, TLC_FALSE, groundName, "DataGlobal")>%<equalSign> ...
+                            {%<dt.GroundValue>, %<dt.GroundValue>};\
+                    %else
+                        %<keyword> %<qualifiers> %<complexName> %<groundName>%<equalSign> ...
+                            {%<dt.GroundValue>, %<dt.GroundValue>};\
+                    %endif
+                    /* %<SLibGetDataTypeName(dt.Id)> complex ground */\
+                    %closefile definition
+                    %<SLibApplyMemSecToDataDefn(definition, ...
+                        "MemSecDataConstants", groundName)>\
+                    %% Guard against multiple definitions
+                    %addtorecord dt CmplxGroundAlreadyDefined TLC_TRUE
+                    %addtorecord ::definedGroundNames %<groundName> 1
+                    %if !ISEMPTY(::CurrentBufferFileName)
+                        %<SLibUpdateLocalSymbolTableForFile(::CurrentBufferFileName, groundName)>\
+                    %endif
+                %endif
+            %endif
+        %endforeach
+    %endwith
+    %closefile tmpFcnBuffer
+    %if !WHITE_SPACE(tmpFcnBuffer)
+        %return ("\n" + tmpFcnBuffer)
+    %else
+        %return ""
+    %endif
+%endfunction
+
+
+%% Function: FcnCommonHeaderInfo ===================================================================
+%% Abstract:
+%%   Output the comment header for generated code.
+%%
+%% TopTester: test/toolbox/simulink/blocks/lib_Sources/Ground/rtw/tStringSupport.m
+%%
+%function FcnCommonHeaderInfo() void
+    %openfile tmpFcnBuf
+    %if FEVAL("eval","~isempty(emit(coder.internal.watermark))")
+        %<FEVAL("eval","emit(coder.internal.watermark,'* ')")>
+        *
+    %endif
+    * Code generation for model "%<::CompiledModel.Name>".
+    *
+    * Model version              : %<ModelVersion>
+    * Simulink Coder version : %<Version>
+    %if GenerateFullHeader
+        * %<CorCPPForBuildLogsandComments()> source code generated on : %<TLC_TIME>
+    %endif
+    %if ISFIELD(::CompiledModel, "CompiledWarningMsg")
+        * Warning Messages           : %<CompiledWarningMsg>
+    %endif
+    %closefile tmpFcnBuf
+    %return tmpFcnBuf
+%endfunction
+
+%% Function: SLibCodeGenSettings ===================================================================
+%% Abstract:
+%%   Output comment on code generation configuration
+%%
+%% TopTester: test/toolbox/simulink/blocks/lib_Sources/Ground/rtw/tStringSupport.m
+%%
+%function SLibCodeGenSettings() void
+    %if !GenerateFullHeader
+        %return ""
+    %endif
+    %openfile tmpFcnBuf
+
+%%}
+Target selection: %<ConfigSet.SystemTargetFile>
+%if !SLibIsERTTarget()
+%%}
+Note: GRT includes extra infrastructure and instrumentation for prototyping
+%endif
+%%}
+Embedded hardware selection: %<ConfigSet.ProdHWDeviceType>
+%if !%<ConfigSet.ProdEqTarget>
+    %assign emulationHWComment = SLibEmulationHWComment()
+    %if !ISEMPTY(emulationHWComment)
+%%}}
+Emulation hardware selection: %<emulationHWComment>
+    %endif
+%endif
+%% Include objective priorities in the comments
+%if ISEMPTY(ConfigCheckComments)
+    %assign ::ConfigCheckComments = FEVAL(...
+        "coder.internal.genConfigCheckReportComments", LibGetModelName())
+%endif
+%<ConfigCheckComments>
+%closefile tmpFcnBuf
+%return tmpFcnBuf
+%endfunction
+
+%% Function: SLibCommonHeaderInfo ==================================================================
+%% Abstract:
+%%   Output the comment header for generated code.
+%%
+%function SLibCommonHeaderInfo() void
+    %assign tmpbuf = FEVAL("rtwprivate", "rtw_format_banner", "insert_comment_prefix", SLibCodeGenSettings())
+    %return FcnCommonHeaderInfo() + tmpbuf
+%endfunction
+
+%% DocFunction{Code Configuration Functions}: LibCommonHeaderInfo ====================
+%% Abstract:
+%%   Output the comment header for generated code.
+%%
+%function LibCommonHeaderInfo() void
+    %return SLibCommonHeaderInfo()
+%endfunction
+
+%% Function: SLibCommonUtilHeaderInfo() ==========================================================
+%% Abstract:
+%%   Output comment on code generation configuration if it is not in shared
+%%   directory.
+%%
+%function SLibCommonUtilHeaderInfo() void
+    %assign str = FcnCommonHeaderInfo()
+    %if !GenUtilsSrcInSharedLocation
+        %assign tmpbuf = FEVAL("rtwprivate", "rtw_format_banner", "insert_comment_prefix", SLibCodeGenSettings())
+        %assign str = str + tmpbuf
+    %endif
+    %return str
+%endfunction
+
+%% Function: SLibSystemBanner ======================================================================
+%% Abstract:
+%%   Output the banner for a generated system
+%%
+%function SLibSystemBanner(system) void
+    %assign sysInfo = GetSystemNameForComments(system)
+
+    %openfile tmpFcnBuf
+    * Code generation for system %<sysInfo>
+    *
+    * Model                      : %<::CompiledModel.Name>
+    * Model version              : %<ModelVersion>
+    * Simulink Coder version : %<Version>
+    %if GenerateFullHeader
+        * %<CorCPPForBuildLogsandComments()> source code generated on : %<TLC_TIME>
+    %endif
+    %closefile tmpFcnBuf
+    %return tmpFcnBuf
+%endfunction %% SLibSystemBanner
+
+
+%% Function: SLibGetSystemOutputFileName ===========================================================
+%%
+%% Abstract:
+%%    Convert a "base" filename to an appropriate output filename depending on
+%%    the language for which we are generating code.
+%%
+%function SLibGetSystemOutputFileName(system) void
+    %assign baseFileName = SLibGetSystemOutputSrcFileBaseName(system)
+    %assign baseFile     = baseFileName + "." + ::LangFileExt
+    %return(baseFile)
+%endfunction %% SLibGetSystemOutputFileName
+
+%% Function: SLibGetSystemHeaderFileName ===========================================================
+%%
+%% Abstract:
+%%    Convert a "base" filename to an appropriate header filename depending on
+%%    the language for which we are generating code.
+%%
+%function SLibGetSystemHeaderFileName(system) void
+    %assign baseFileName = SLibGetSystemOutputHdrFileBaseName(system)
+    %return("%<baseFileName>.h")
+%endfunction %% SLibGetSystemHeaderFileName
+
+%% Function: SLibAddSolverZcToBuildInfo() ==========================================================
+%% Abstract:
+%%   Add solver_zc.h to buildInfo
+%%
+%function SLibAddSolverZcToBuildInfo() void
+    %assign solverZcWithPath = "$(MATLAB_ROOT)/simulink/include/solver_zc.h"
+    %<SLibAddToStaticHeaders(solverZcWithPath)>
+%endfunction
+
+
+%% Function: LibAddToModelHeaders ==================================================================
+%% Abstract:
+%%      Add a file name to the list of headers needed to build this model
+%%      Returns 1 if the filename passed in was a duplicate (i.e. it was
+%%      already in the headers list) and 0 if it was not a duplicate.
+%%
+%% Toptetser: test/toolbox/simulink/variants/var-vss-codevariants/tcodevariants9.m
+%%
+%function LibAddToModelHeaders(newFile) void
+    %assign duplicate = 0
+    %% scan for duplicates
+    %if ::CompiledModel.NumHeaders > 0
+        %foreach idx = ::CompiledModel.NumHeaders
+            %if (::CompiledModel.Headers[idx] == "%<newFile>")
+                %assign duplicate = 1
+                %break
+            %endif
+        %endforeach
+        %if (!duplicate)
+            %assign ::CompiledModel.Headers = ::CompiledModel.Headers + "%<newFile>"
+            %assign ::CompiledModel.NumHeaders = ::CompiledModel.NumHeaders + 1
+        %endif
+    %else
+        %assign ::CompiledModel.Headers    = ::CompiledModel.Headers + "%<newFile>"
+        %assign ::CompiledModel.NumHeaders = 1
+    %endif
+    %return (duplicate)
+%endfunction %% LibAddToModelHeaders
+
+%% Function: SLibIncludeRTWGeneratedChildSysExportFile =============================================
+%% Abstract:
+%%   Include child s-function export files to model export file.
+%%
+%% TopTester: test/toolbox/simulink/blocks/lib_LookupTables/LookupTable2D/rtw/tlookup2d.m
+%%
+%function SLibIncludeRTWGeneratedChildSysExportFile() void
+    %if ISFIELD(::CompiledModel, "RTWGeneratedChildSfcnExportFiles")
+        %openfile includesBuf
+        %assign expFiles = ::CompiledModel.RTWGeneratedChildSfcnExportFiles
+        %<expFiles>
+        %if CodeFormat == "S-Function"
+            %assign tmpName = Accelerator ? "simulink_only_sfcn" : Name
+            #undef S_FUNCTION_NAME
+
+            #define S_FUNCTION_NAME %<tmpName>
+        %endif
+        %closefile includesBuf
+        %<SLibCacheCodeToFile("mdl_src_custom_incl", includesBuf)>
+    %endif
+%endfunction %% SLibIncludeRTWGeneratedChildSysExportFile
+
+%% Function: SLibDumpStructDefWithAlignment ========================================================
+%% Abstract:
+%%   Dump the defition of a struct type with alignment directive, if
+%% applicable.
+%%
+%% TopTester: test/toolbox/simulink/variants/var-vss-condexecuted/tContPortGecks.m
+%%
+%function SLibDumpStructDefWithAlignment(idTag, id, align, memBuf) void
+    %openfile structdef
+
+    %assign aSyntax = ""
+    %if structDAFlag.supported && align > 0
+        %assign aSyntax = SLibGetAlignmentSyntax(::CompiledModel.Name, id, "", ...
+            align, "DATA_ALIGNMENT_WHOLE_STRUCT")
+    %endif
+    %if !WHITE_SPACE(memBuf) %% This is a regular struct definition
+        %<SLibGetStructDefHeader(idTag, id, aSyntax)>
+        %<memBuf>            %% struct memebers
+        %<SLibGetStructDefTail(id, aSyntax)>
+    %else
+        %% If no struct member, then this code only declears struct in global namespace:
+        %% typedef struct idTag id;
+        %assert !(ISEMPTY(idTag) || WHITE_SPACE(idTag))
+        %assert !(ISEMPTY(id) || WHITE_SPACE(id))
+        %assign typedef = "typedef"
+        %switch(structDAFlag.position)
+          %case "DATA_ALIGNMENT_PREDIRECTIVE"
+            %<typedef> %<aSyntax> struct %<idTag> %<id>;
+            %break
+          %case "DATA_ALIGNMENT_PRECEDING_STATEMENT"
+            %<aSyntax>
+            %<typedef> struct %<idTag> %<id>;
+            %break
+          %case "DATA_ALIGNMENT_POSTDIRECTIVE"
+            %<typedef> struct %<idTag> %<id> %<aSyntax>;
+            %break
+          %case "DATA_ALIGNMENT_FOLLOWING_STATEMENT"
+            %<typedef> struct %<idTag> %<id>;
+            %<aSyntax>
+            %break
+          %default
+            %<typedef> struct %<idTag> %<id>;
+            %break
+        %endswitch
+    %endif
+    %closefile structdef
+
+    %return structdef
+%endfunction
+
+%assign ::UseParamIdentifierForSymbolicDim = TLC_FALSE
+
+%% Function: SLibScalarCSCP ========================================================================
+%% Abstract:
+%%   Return the identifier (symbol) for a scalar parameter (aParamIdx) with
+%%   custom storage class. The global switch ::UseParamIdentifierForSymbolicDim
+%%   is used to optionally return the original workspace parameter identifier.
+%%
+%% TopTester: test/toolbox/simulink/variants/var-bus-compositeports/tCompositePorts.m
+%%
+%function SLibScalarCSCP(aParamIdx) void
+    %if ::UseParamIdentifierForSymbolicDim
+        %assign mdlParam = ::CompiledModel.ModelParameters.Parameter[aParamIdx]
+        %return LibGetRecordIdentifier(mdlParam)
+    %else
+        %% CSC scalar parameters should not be casted when used as symbolic dimension
+        %assign preventCastForMacroAccess = TLC_TRUE
+        %return SLibCGIR_CSCP(aParamIdx, preventCastForMacroAccess, 1, "", -1, "", 0)
+    %endif
+%endfunction
+
+%% Function: SLibScalarAutosarSysConP ==============================================================
+%% Abstract:
+%%   Return the identifier (symbol) for a scalar parameter (aParamIdx) with
+%%   AUTOSAR SystemConstant coder group.
+%%
+%function SLibScalarAutosarSysConP(aParamIdx) void
+    %assign param = ::CompiledModel.ModelParameters.Parameter[aParamIdx]
+
+    %<SLibUpdateGlobalSymbolTableForFile("Rte_Cfg.h", param.OrigIdentifier)>
+
+    %% Emit actual Identifier
+    %return param.Identifier
+%endfunction
+
+%% Function: SLibGenerateConstraint ================================================================
+%% Abstract:
+%%   Generates an individual constraint (aConstraint) including comments and
+%%   error message.
+%%
+%function SLibGenerateConstraint(aConstraint, aOp, aInvOp, aNatOp) Output
+    %assign lhs = %<"\"" + aConstraint.lhs + "\"">
+    %assign rhs = %<"\"" + aConstraint.rhs + "\"">
+    %if aConstraint.NumGraphicalRefs > 0
+        /* Constraint '%<lhs> %<aOp> %<rhs>' registered by:
+        %foreach blkIdx = aConstraint.NumGraphicalRefs
+            * %<SLibGrBlockCommentName(aConstraint.GraphicalRef[blkIdx])>
+        %endforeach
+        */
+    %endif
+    #if %<lhs> %<aInvOp> %<rhs>
+    # error "The preprocessor definition '%<lhs>' must be %<aNatOp> '%<rhs>'"
+    #endif
+%endfunction
+
+%% Function: SLibGenerateDivisionConstraint ========================================================
+%% Abstract:
+%%   Generates an individual constraint (aConstraint) including comments and
+%%   error message.
+%%
+%function SLibGenerateDivisionConstraint(aConstraint) Output
+    %assign lhs = %<"\"" + aConstraint.lhs + "\"">
+    %assign rhs = %<"\"" + aConstraint.rhs + "\"">
+    #if (%<rhs> == 0) || ((%<lhs> % %<rhs>) != 0)
+    # error "The preprocessor definition '%<rhs>' must not be equal to zero and \
+    the division of '%<lhs>' by '%<rhs>' must not have a remainder."
+    #endif
+%endfunction
+
+%% Function: SLibGenerateModuloConstraint ==========================================================
+%% Abstract:
+%%   Generates an individual constraint (aConstraint) including comments and
+%%   error message.
+%%
+%function SLibGenerateModuloConstraint(aConstraint) Output
+    %assign rhs = %<"\"" + aConstraint.rhs + "\"">
+    #if (%<rhs> == 0)
+    # error "The preprocessor definition '%<rhs>' must not be equal to zero, \
+    since it is used as the right hand side of a modulo operation."
+    #endif
+%endfunction
+
+%% Function: SLibCachSymbolicDimensionConstraints ==================================================
+%% Abstract:
+%%   Adds symbolic dimensions preprocessor constraints to model_types.h
+%%
+%% TopTester: test/toolbox/rtw/targets/AUTOSAR/Variants/dimensionVariants/tDimensionVariants9.m
+%%
+%function SLibCachSymbolicDimensionConstraints() void
+    %with ::CompiledModel.SymbolicDimsConstraints
+        %assign symbolicDimsConstraintsBuff = ""
+        %openfile symbolicDimsConstraintsBuff
+        %if 0 < NumModuloSymbolicDims
+
+            /*
+            * Constraints for modulo operations in dimension variants
+            */
+            %foreach cstrIdx = NumModuloSymbolicDims
+                %assign divC = ModuloSymbolicDims[cstrIdx]
+                %<SLibGenerateModuloConstraint(divC)>
+            %endforeach
+        %endif
+        %if 0 < NumDivisionSymbolicDims
+
+            /*
+            * Constraints for division operations in dimension variants
+            */
+            %foreach cstrIdx = NumDivisionSymbolicDims
+                %assign divC = DivisionSymbolicDims[cstrIdx]
+                %<SLibGenerateDivisionConstraint(divC)>
+            %endforeach
+        %endif
+        %if 0 < NumEquivalentSymbolicDims || 0 < NumGreaterThanSymbolicDims
+
+            /*
+            * Registered constraints for dimension variants
+            */
+            %foreach cstrIdx = NumEquivalentSymbolicDims
+                %assign eqC = EquivalentSymbolicDims[cstrIdx]
+                %<SLibGenerateConstraint(eqC,"==","!=","equal to")>
+            %endforeach
+            %foreach cstrIdx = NumGreaterThanSymbolicDims
+                %assign gtC = GreaterThanSymbolicDims[cstrIdx]
+                %<SLibGenerateConstraint(gtC,">","<=","greater than")>
+            %endforeach
+        %endif
+        %if 0 < NumLessThanSymbolicDims
+            %foreach cstrIdx = NumLessThanSymbolicDims
+                %assign gtC = LessThanSymbolicDims[cstrIdx]
+                %<SLibGenerateConstraint(gtC,"<",">=","less than")>
+            %endforeach
+        %endif
+        %closefile symbolicDimsConstraintsBuff
+        %if !WHITE_SPACE(symbolicDimsConstraintsBuff)
+            %<SLibCacheCodeToFile("data_simulink_variant_define", symbolicDimsConstraintsBuff)>
+        %endif
+    %endwith
+%endfunction
+
+
+%function SLibHasSymDimConstraints() void
+    %with ::CompiledModel.SymbolicDimsConstraints
+        %assign hasConstraints =  (NumModuloSymbolicDims > 0 || ...
+            NumDivisionSymbolicDims > 0 || ...
+            NumEquivalentSymbolicDims > 0 || ...
+            NumGreaterThanSymbolicDims> 0 || ...
+            NumLessThanSymbolicDims > 0 )
+    %endwith
+    %return hasConstraints
+%endfunction
+
+%endif %% _COMMONHDRLIB_
+
+%% [EOF] commonhdrlib.tlc

@@ -1,0 +1,92 @@
+%% ============================================================================
+%% Abstract:
+%%    slcgentry.tlc is used to generate the TLC block function code before
+%%    the main code generation process is initiated, which includes the
+%%    creation of the RTW file.
+%%
+%% Copyright 2018-2023 The MathWorks, Inc.
+%%
+%selectfile NULL_FILE
+
+%if EXISTS(_SLCGENTRY_) == 0
+%assign _SLCGENTRY_ = 1
+
+%% ============================================================================
+%% Setup associations between block types and TLC files.
+%%
+%include "genmap.tlc"
+
+%% ============================================================================
+%% Include public TLC API
+%%
+%include "public_api.tlc"
+
+%% ============================================================================
+%% Include public TLC API specific to the TLC interface version 3
+%%
+%include "public_api_v3.tlc"
+
+%% ============================================================================
+%% Include private TLC API
+%%
+%include "private_api.tlc"
+
+%% ============================================================================
+%% Include private TLC API specific to the TLC interface version 3
+%%
+%include "private_api_v3.tlc"
+
+%%
+%% Set language
+%%
+%language "C"
+
+%%
+%% temporary roller implementation
+%%
+%generatefile Roller "simplified_roller.tlc"
+%assign ::RollThreshold = 5
+
+%%
+%% Setup global variables required to execute block functions
+%%
+%<SLibSetupGlobalVariablesV3()>
+%<SLibSetupSharedGlobalVariables()>
+
+%%
+%% Load default file packaging table
+%%
+%<SLibSynchronizeFileRepWithFileRecords()>
+
+%if !EXISTS(::IntegerSizes)
+    %assign ::IntegerSizes = FEVAL("rtwprivate", "rtwwordlengths", LibGetModelName())
+%endif
+
+%<SLibSetupDataTypeInfo()>
+
+%%
+%% execute block instance and type setup
+%%
+%<BlockSetupAndCompatibilityCheck()>
+
+%%
+%% execute block code generation functions such as Start, Output and Terminate
+%%
+%if CGMODEL_ACCESS("Block.ExecuteTLCBlockFcns") > 0
+    %<SLibExecBlockCodeGenFunctions()>
+%endif
+
+
+%% =============================================================================
+%% Pre code generation TLC block function execution complete
+%%
+%selectfile STDOUT
+%if ::RTWVerbose
+%%}
+### TLC front end (took %<LibFormatTime(ELAPSED_TIME)>).
+%%{
+%endif
+%selectfile NULL_FILE
+
+%endif %% _SLCGENTRY_
+%% [EOF] slcgentry.tlc

@@ -1,0 +1,200 @@
+%%
+%% $Revision $
+%%
+%% Abstract:
+%%      TLC file for generating noninlined S-Function helper functions
+%%      into their own file.
+%%
+%% Copyright 2004-2022 The MathWorks, Inc.
+
+%implements "gensfcnhelper" "C"
+
+%% Function: SLibSfcnHelperFcns ====================================================================
+%% Abstract:
+%%     Generate functions needed by S-Functions which call function-call subsystems.
+%%
+%function SLibSfcnHelperFcns(fctInfo,fileH,fileC) void
+    %assign intType = LibGetDataTypeNameFromId(::CompiledModel.tSS_INTEGER)
+    %% Create header file contents
+    %openfile buf
+    /*
+    * %<fctInfo.FileName>.h
+    *
+    %<SLibCommonUtilHeaderInfo()>\
+    */
+    %closefile buf
+    %<SLibCacheUtilCodeToFile("util_hdr_banner", fileH, buf)>
+
+    %openfile buf
+    %<SLibIncludeUsedCoderTypesFilenames()>
+    %closefile buf
+    %<SLibCacheUtilCodeToFile("util_hdr_incl", fileH, buf)>
+
+    %openfile buf
+    #include "simstruc.h"
+    %closefile buf
+    %<SLibCacheUtilCodeToFile("util_hdr_custom_incl", fileH, buf)>
+
+    %assign msFcn = SLibGetMemSecCategoryForUtilityFcn()
+    %openfile buf
+    %<FcnGenOpenExternCForCPP()>
+    %<SLibGetFcnMemSecPragmaOnDecl("rt_CallSys", msFcn, "Pre")>\
+    %<LibStaticOrExternInFcnDecls()>%<intType> rt_CallSys(SimStruct *S, %<intType> element, %<intType> %<::CompiledModel.GlobalScope.tTID>);
+    %<SLibGetFcnMemSecPragmaOnDecl("rt_CallSys", msFcn, "Post")>\
+    %<SLibGetFcnMemSecPragmaOnDecl("rt_EnableSys", msFcn, "Pre")>\
+    %<LibStaticOrExternInFcnDecls()>%<intType> rt_EnableSys(SimStruct *S, %<intType> element, %<intType> %<::CompiledModel.GlobalScope.tTID>);
+    %<SLibGetFcnMemSecPragmaOnDecl("rt_EnableSys", msFcn, "Post")>\
+    %<SLibGetFcnMemSecPragmaOnDecl("rt_DisableSys", msFcn, "Pre")>\
+    %<LibStaticOrExternInFcnDecls()>%<intType> rt_DisableSys(SimStruct *S, %<intType> element, %<intType> %<::CompiledModel.GlobalScope.tTID>);
+    %<SLibGetFcnMemSecPragmaOnDecl("rt_DisableSys", msFcn, "Post")>\
+    %<FcnGenCloseExternCForCPP()>
+    %closefile buf
+    %<SLibCacheUtilCodeToFile("util_hdr_decl", fileH, buf)>
+
+    %% Create source file contents
+    %openfile buf
+    /*
+    * %<fctInfo.FileName>.%<LangFileExt>
+    *
+    %<SLibCommonUtilHeaderInfo()>\
+    *
+    */
+    %closefile buf
+    %<SLibCacheUtilCodeToFile("util_src_banner", fileC, buf)>
+
+    %openfile buf
+    /*
+    * Abstract:
+    *      Helper functions for noninlined S-Functions. Used by noninlined
+    *      S-Functions configured for calling function-call subsystems.
+    */
+
+    #include "rt_sfcn_helper.h"
+
+    %closefile buf
+    %<SLibCacheUtilCodeToFile("util_src_incl", fileC, buf)>
+
+    %openfile buf
+    %assign fcnAbstract = "Helper function to make function calls from non-inlined S-functions."
+    %assign fcnName = "rt_CallSys"
+    %assign fcnReturns = intType
+    %assign functionSpecifier = LibStaticInFcnDecls()
+    %assign fcnParams = "SimStruct *S, %<intType> element, %<intType> %<::CompiledModel.GlobalScope.tTID>"
+    %createrecord fcnRec  {Name fcnName; Returns fcnReturns; Params fcnParams; Abstract fcnAbstract; ...
+        Category "utility"; GeneratedBy "gensfcnhelper.tlc"}
+    %<SLibDumpFunctionBanner(fcnRec)>
+    %undef fcnRec
+    %if GenCPP
+        extern "C"
+    %endif
+    %<SLibGetFcnMemSecPragma(fcnName, msFcn, "Pre")>\
+    %<functionSpecifier> %<fcnReturns> %<fcnName>(%<fcnParams>)
+    {
+        (*(S)->callSys.fcns[element])((S)->callSys.args1[element],
+        (S)->callSys.args2[element], tid);
+
+        if (ssGetErrorStatus(S) != %<SLibGetNullDefinitionFromTfl()>) {
+            return 0;
+        } else {
+            return 1;
+        }
+    }
+    %<SLibGetFcnMemSecPragma(fcnName, msFcn, "Post")>\
+
+    %assign fcnName = "rt_EnableSys"
+    %assign fcnReturns = intType
+    %assign functionSpecifier = LibStaticInFcnDecls()
+    %assign fcnParams = "SimStruct *S, %<intType> element, %<intType> %<::CompiledModel.GlobalScope.tTID>"
+    %assign fcnAbstract = "Helper function to make function enables from non-inlined S-functions."
+    %createrecord fcnRec  {Name fcnName; Returns fcnReturns; Params fcnParams; Abstract fcnAbstract; ...
+        Category "utility"; GeneratedBy "gensfcnhelper.tlc"}
+    %<SLibDumpFunctionBanner(fcnRec)>
+    %undef fcnRec
+    %if GenCPP
+        extern "C"
+    %endif
+    %<SLibGetFcnMemSecPragma(fcnName, msFcn, "Pre")>\
+    %<functionSpecifier> %<fcnReturns> %<fcnName>(%<fcnParams>)
+    {
+        %% To support 64-bit S-Functions, we either use a 32-bit or 64-bit
+        %% SimStruct macro.
+        SLSize outputPortWidth;
+        if(ssGetSFcnBitness(S) == SS_64BIT){
+            outputPortWidth = ssGetOutputPortWidth(S, 0);
+        } else {
+            outputPortWidth = ssGetOutputPortWidthAsInt(S, 0);
+        }
+        if ((S)->callSys.fcns[outputPortWidth+element] != %<SLibGetNullDefinitionFromTfl()>) {
+            (*(S)->callSys.fcns[outputPortWidth+element])
+            ((S)->callSys.args1[element],
+            (S)->callSys.args2[element], tid);
+
+            if (ssGetErrorStatus(S) != %<SLibGetNullDefinitionFromTfl()>) {
+                return 0;
+            }
+        }
+        if ((S)->callSys.fcns[2*outputPortWidth+element] != %<SLibGetNullDefinitionFromTfl()>) {
+            (*(S)->callSys.fcns[2*outputPortWidth+element])
+            ((S)->callSys.args1[element],
+            (S)->callSys.args2[element], tid);
+
+            if (ssGetErrorStatus(S) != %<SLibGetNullDefinitionFromTfl()>) {
+                return 0;
+            }
+        }
+        return 1;
+    }
+    %<SLibGetFcnMemSecPragma(fcnName, msFcn, "Post")>\
+
+    %assign fcnAbstract = "Helper function to make function disables from non-inlined S-functions."
+    %assign fcnName = "rt_DisableSys"
+    %assign fcnReturns = intType
+    %assign functionSpecifier = LibStaticInFcnDecls()
+    %assign fcnParams = "SimStruct *S, %<intType> element, %<intType> %<::CompiledModel.GlobalScope.tTID>"
+    %createrecord fcnRec  {Name fcnName; Returns fcnReturns; Params fcnParams; Abstract fcnAbstract; ...
+        Category "utility"; GeneratedBy "gensfcnhelper.tlc"}
+    %<SLibDumpFunctionBanner(fcnRec)>
+    %undef fcnRec
+    %if GenCPP
+        extern "C"
+    %endif
+    %<SLibGetFcnMemSecPragma(fcnName, msFcn, "Pre")>\
+    %<functionSpecifier> %<fcnReturns> %<fcnName>(%<fcnParams>)
+    %% To support 64-bit S-Functions in codegen, we will need to set either
+    %% the int or SLSize version output port width based on the bitness of the
+    %% S-Function. For now, all S-Functions are 32-bit, so we exclusively set the
+    %% int version of the field.
+    {
+        %% To support 64-bit S-Functions, we either use a 32-bit or 64-bit
+        %% SimStruct macro.
+        SLSize outputPortWidth;
+        if(ssGetSFcnBitness(S) == SS_64BIT){
+            outputPortWidth = ssGetOutputPortWidth(S, 0);
+        } else {
+            outputPortWidth = ssGetOutputPortWidthAsInt(S, 0);
+        }
+        (*(S)->callSys.fcns[3*outputPortWidth+element])
+        ((S)->callSys.args1[element],
+        (S)->callSys.args2[element], tid);
+
+        if (ssGetErrorStatus(S) != %<SLibGetNullDefinitionFromTfl()>) {
+            return 0;
+        } else {
+            return 1;
+        }
+    }
+    %<SLibGetFcnMemSecPragma(fcnName, msFcn, "Post")>\
+
+    /* end rt_sfcn_helper.c */
+
+    %closefile buf
+    %<SLibCacheUtilCodeToFile("util_src_fcn_defn", fileC, buf)>
+
+    %assign headerFile = SLibGetFullFileNameForUtilCode("util_hdr_decl", fileH)
+    %assign sourceFile = SLibGetFullFileNameForUtilCode("util_src_fcn_defn", fileC)
+    %assign declDeps = [ %<SLibVarGroupBasicTypesAll()> ]
+    %assign defnDeps = [ ]
+    %<SLibAddEntryToFunctionTable("rt_CallSys", headerFile, sourceFile, declDeps, defnDeps)>
+    %<SLibAddEntryToFunctionTable("rt_EnableSys", headerFile, sourceFile, declDeps, defnDeps)>
+    %<SLibAddEntryToFunctionTable("rt_DisableSys", headerFile, sourceFile, declDeps, defnDeps)>
+%endfunction

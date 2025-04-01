@@ -1,0 +1,128 @@
+%%
+%% Copyright 2021-2022 The MathWorks, Inc.
+%%
+%% Abstract:
+%%   This Thin TLC library file contains the general purpose utility functions.
+%%
+%if EXISTS(::_RECORDS_API_) == 0
+%assign ::_RECORDS_API_ = 1
+
+%% DocFunction{Other Useful Functions}: LibGetRecordWidth ======================
+%% Abstract:
+%%   Return the width for a given data record.
+%%
+%function LibGetRecordWidth(rec) void
+    %if ISFIELD(rec, "RecordType") && ISFIELD(rec, "RecordIdx")
+        %return CGMODEL_ACCESS("Record.Width", rec.RecordType, rec.RecordIdx)
+    %endif
+
+    %if ISFIELD(rec, "Width")
+        %return rec.Width
+    %elseif ISFIELD(rec, "CGTypeIdx")
+        %return LibCGTypeWidth(LibGetRecordCGTypeIdx(rec))
+    %else
+        %assign errTxt = "Width is not contained within the specified record"
+        %<LibReportFatalError(errTxt)>
+    %endif
+    %return 1
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibGetRecordIsComplex ==================
+%% Abstract:
+%%   Return 1 if the specified data record is complex.  Otherwise, return 0
+%% TopTester: test/toolbox/simulink/variants/var-vss-sigobj/tVSSSigObj.m
+%%
+%function LibGetRecordIsComplex(rec)
+
+    %if ISFIELD(rec, "RecordType") && ISFIELD(rec, "RecordIdx")
+        %return CGMODEL_ACCESS("Record.IsComplex", rec.RecordType, rec.RecordIdx)
+    %endif
+
+    %if ISFIELD(rec, "RecordType") && rec.RecordType == "ZcSignalInfo"
+        %return 0
+    %endif
+
+    %if ISFIELD(rec, "ComplexSignal")
+        %if TYPE(rec.ComplexSignal) == "Number"
+            %return rec.ComplexSignal
+        %else
+            %return (rec.ComplexSignal == "yes")
+        %endif
+    %elseif ISFIELD(rec, "IsComplex")
+        %return rec.IsComplex
+    %elseif ISFIELD(rec, "CGTypeIdx")
+        %return LibCGTypeIsComplex(LibGetRecordCGTypeIdx(rec))
+    %else
+        %assign errTxt = "ComplexSignal is not contained within specified record."
+        %<LibReportFatalError(errTxt)>
+    %endif
+
+    %return 0
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibGetRecordDimensions =================
+%% Abstract:
+%%   Return the dimensions for a given data record.
+%%
+%function LibGetRecordDimensions(rec) void
+
+    %if ISFIELD(rec, "RecordType") &&  ISFIELD(rec, "RecordIdx")
+        %return CGMODEL_ACCESS("Record.Dimensions", rec.RecordType, rec.RecordIdx)
+    %endif
+    %if ISFIELD(rec, "Dimensions")
+        %assign dimensions = rec.Dimensions
+    %elseif ISFIELD(rec, "CGTypeIdx")
+        %assign dimensions = LibCGTypeDimensions(LibGetRecordCGTypeIdx(rec))
+    %else
+        %assign errTxt = "Dimensions is not contained within the specified record"
+        %<LibReportFatalError(errTxt)>
+    %endif
+    %return dimensions
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibGetRecordDataTypeId =================
+%% Abstract:
+%%   Return the data type ID for a given data record.
+%%
+%function LibGetRecordDataTypeId(rec) void
+    %if ISFIELD(rec, "OriginalDataTypeIdx") && LibDataTypeIsBus(rec.OriginalDataTypeIdx)
+        %return rec.OriginalDataTypeIdx
+    %elseif ISFIELD(rec, "RecordType") && ISFIELD(rec, "RecordIdx")
+        %return CGMODEL_ACCESS("Record.DataTypeId", rec.RecordType, rec.RecordIdx)
+    %elseif ISFIELD(rec, "DataTypeIdx")
+        %assign idx = rec.DataTypeIdx
+    %elseif ISFIELD(rec, "DataTypeId")
+        %assign idx = rec.DataTypeId
+    %else
+        %assign idx = LibGetRecordCGTypeIdx(rec)
+        %assign idx = LibCGTypeToSLType(idx)
+    %endif
+    %return ::CompiledModel.DataTypes.DataType[idx].Id
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibGetRecordContainerDataTypeId ========
+%% Abstract:
+%%   Return the container data type ID for a given data record.
+%%
+%function LibGetRecordContainerDataTypeId(rec) void
+    %if ISFIELD(rec, "RecordType") && ISFIELD(rec, "RecordIdx")
+        %return CGMODEL_ACCESS("Record.ContainerDatatypeId", rec.RecordType, rec.RecordIdx)
+    %endif
+
+    %if ISFIELD(rec, "DataTypeIdx")
+        %return rec.DataTypeIdx
+    %endif
+
+    %if ISFIELD(rec, "DataTypeId")
+        %return rec.DataTypeId %% some write out the DataTypeIdx as DataTypeId
+    %endif
+
+    %assign idx = SLibGetRecordContainerCGTypeIdx(rec)
+    %if idx >= ::CompiledModel.DataTypes.NumSLBuiltInDataTypes
+        %return LibCGTypeToSLType(idx)
+    %endif
+
+    %return idx
+%endfunction
+
+%endif %% _RECORDS_API_

@@ -1,0 +1,262 @@
+%%
+%%
+%% Copyright 2020-2023 The MathWorks, Inc.
+%%
+%% Abstract:
+%%   This TLC library file contains the general purpose utility functions for
+%%   language standards
+%%   Currently C++03 and C++11 standards are implemented here
+
+%if EXISTS(_LANGSTDLIB_) == 0
+%assign _LANGSTDLIB_ = 1
+
+%include "utillib.tlc"
+
+%function SLibInsertMutexLockExprCpp11(aMutexVar) Output
+    %if ::GenCPP11
+        const std::lock_guard<std::mutex> lock(%<aMutexVar>);
+        %% Need to include system header <mutex> for std::lock_guard
+        %assign header = "<mutex>"
+        %assign toModuleHeader = TLC_FALSE
+        %<SLibAppendHeaderToModuleFcnHeaders(header, toModuleHeader)>
+    %endif
+%endfunction
+
+%% Function: SLibGetModelRefInstanceAllocExpr ======================================================
+%%
+%%  Abstract: Determines the correct expression to use when dynamically
+%%            allocating child models
+%%
+%%            For C++03 operator new is used
+%%            For C++11 unique_ptr or shared_ptr is used
+%%
+%%  outputs the allocation string
+%function SLibGetModelRefInstanceAllocExpr(instVar, FPC, ctorExpr) Output
+    %assign modelName = FPC.ModelClassName
+    %if !ISEMPTY(FPC.ClassNamespace)
+        %assign modelName = FPC.ClassNamespace + "::" + modelName
+        %if !ISEMPTY(ctorExpr)
+            %assign ctorExpr = FPC.ClassNamespace + "::" + ctorExpr
+        %endif
+    %endif
+    %if ISEMPTY(ctorExpr)
+        %assign ctorExpr = modelName + "()"
+    %endif
+
+    %if ::GenCPP11
+        %% Keep the scoping to protect the 'temp' symbol name
+        {
+            %if ::CPPDWorkSet == "on"
+                std::shared_ptr<%<modelName>> temp(new %<ctorExpr>);
+            %else
+                std::unique_ptr<%<modelName>> temp(new %<ctorExpr>);
+            %endif
+            %<instVar> = std::move(temp);
+        }
+        %% Need to include system header <utility> for std::move
+        %assign header = "<utility>"
+        %assign toModuleHeader = TLC_FALSE
+        %<SLibAppendHeaderToModuleFcnHeaders(header, toModuleHeader)>
+    %else
+        %<instVar> = new %<ctorExpr>;
+    %endif
+%endfunction
+
+%% Function: SLibGetModelRefInstanceDeallocExpr ====================================================
+%%
+%%  Abstract: Determines the correct expression to use when deallocating
+%%            child models
+%%
+%%            For C++03 delete is used
+%%            For C++11 nothing is output
+%%
+%%  returns the deallocation string
+%function SLibGetModelRefInstanceDeallocExpr(instVar, name) void
+    %openfile deleteBuf
+    %if !::GenCPP11
+        /* delete instance for '%<name>'  */
+        delete %<instVar>;
+    %endif
+    %closefile deleteBuf
+    %return deleteBuf
+%endfunction
+
+
+%function SLibGetModelRefClassTypeAliasExists(useOpNew, blkInterface)
+    %return (useOpNew && !blkInterface.IsScalableBuild)
+%endfunction
+
+
+%% Function: SLibGetModelRefInstanceType ===========================================================
+%%
+%%  Abstract: Determines the correct data type to use when allocating
+%%            child models
+%%
+%%            If op new is used and the build is not scalable
+%%            a model class name ptr alias will be used
+%%
+%%  returns the model instance type
+%function SLibGetModelRefInstanceType(FPC, useOpNew, blkInterface) void
+    %assign instanceType = SLibGetModelRefClassTypeAliasExists(useOpNew, blkInterface) ?...
+        "%<FPC.ModelClassName>_ptr" : "%<FPC.ModelClassName>"
+    %return instanceType
+%endfunction
+
+%% Function: SLibGetModelRefDeclarationType ========================================================
+%%
+%%  Abstract: Determines the correct declaration expr to use when allocating
+%%            child models
+%%
+%%            For C++03 the instance type is directly used (namespace added if needed)
+%%            For C++11 unique_ptr<class name> or
+%%                      shared_ptr<class name> will be used
+%%
+%%  returns the declaration type
+%function SLibGetModelRefDeclarationType(instanceType, FPC, useOpNew, blkInterface) void
+    %if !ISEMPTY(FPC.ClassNamespace)
+        %assign declType = "::%<FPC.ClassNamespace>::%<instanceType> "
+    %else
+        %assign declType = "%<instanceType> "
+    %endif
+    %if ::GenCPP11 && useOpNew && !SLibGetModelRefClassTypeAliasExists(useOpNew, blkInterface)
+        %if ::CPPDWorkSet == "on"
+            %assign declType = "std::shared_ptr<%<declType>> "
+        %else
+            %assign declType = "std::unique_ptr<%<declType>> "
+        %endif
+        %assign header = "<memory>"
+        %assign toModuleHeader = TLC_TRUE
+        %<SLibAppendHeaderToModuleFcnHeaders(header, toModuleHeader)>
+    %endif
+    %return declType
+%endfunction
+
+%% Function: SLibOutputCopyConstructorDecl =========================================================
+%%
+%%  Abstract: Outputs the correct expr to use when declaring the model's
+%%            copy constructor
+%%
+%%            For C++03 the copy constructor is placed in class private section
+%%                      and left unimplemented
+%%            For C++11 the copy constructor is deleted using "=delete"
+%%
+%%  outputs the copy constructor declaration
+%function SLibOutputCopyConstructorDecl(className, visibility) Output
+    %if ::GenCPP11
+        %if visibility == "public"
+            /* Copy Constructor */
+            %<className>(%<className> const&) = delete;
+        %endif
+    %else
+        %if CGMODEL_ACCESS("CGModel.getNeedCopyConstructorAndAssignmentOperator") && ...
+            visibility == "private"
+            /* Copy Constructor */
+            %<className>(const %<className> &rhs);
+        %endif
+    %endif
+%endfunction
+
+%% Function: SLibOutputMoveFunctions ===============================================================
+%%
+%%  Abstract: Outputs the move constructor and move assignment operator if the model supports C++11
+%%
+%function SLibOutputMoveFunctions(className) Output
+    %if !::GenCPP11
+        %return
+    %endif
+
+    /* Move Constructor */
+    %<className>(%<className> &&) = delete;
+
+    /* Move Assignment Operator */
+    %<className>& operator=(%<className> &&) = delete;
+%endfunction
+
+%% Function: SLibOutputCopyAssignmentDecl ==========================================================
+%%
+%%  Abstract: Outputs the correct expr to use when declaring the model's
+%%            copy assignment operator
+%%
+%%            For C++03 the copy constructor is placed in class private section
+%%                      and left unimplemented
+%%            For C++11 the copy constructor is deleted using "=delete"
+%%
+%%  outputs the copy constructor declaration
+%function SLibOutputCopyAssignmentDecl(className, visibility) Output
+    %if ::GenCPP11
+        %if visibility == "public"
+            /* Assignment Operator */
+            %<className>& operator=(%<className> const&) & = delete;
+        %endif
+    %else
+        %if CGMODEL_ACCESS("CGModel.getNeedCopyConstructorAndAssignmentOperator") && ...
+            visibility == "private"
+            /* Assignment Operator */
+            %<className>& operator=(const %<className> &rhs);
+        %endif
+    %endif
+%endfunction
+
+%% Function: SLibOutputModelRefTypedef =============================================================
+%%
+%%  Abstract: Outputs the correct typdef for a given child model
+%%
+%%            For C++03 the instance type is directly used (namespace added if needed)
+%%            For C++11 unique_ptr<class name> or
+%%                      shared_ptr<class name> will be used
+%%
+%%  outputs the correct typedef
+%function SLibOutputModelRefTypedef(FPC) Output
+    %if !::GenCPP11
+        typedef %<FPC.ModelClassName>* %<FPC.ModelClassName>_ptr;
+    %else
+        %if ::CPPDWorkSet == "on"
+            typedef std::shared_ptr<%<FPC.ModelClassName>> %<FPC.ModelClassName>_ptr;
+        %else
+            typedef std::unique_ptr<%<FPC.ModelClassName>> %<FPC.ModelClassName>_ptr;
+        %endif
+        %% Need <memory> for std__unique_ptr and std::shared_ptr
+        %assign header = "<memory>"
+        %assign toModuleHeader = TLC_TRUE
+        %<SLibAppendHeaderToModuleFcnHeaders(header, toModuleHeader)>
+    %endif
+%endfunction
+
+%% Function: SLibOutputRequiredLangStdSystemHeaders ================================================
+%%
+%%  Abstract: Outputs the system headers that are required to be in module header file
+%%
+%%            For C++03 nothing is required
+%%            For C++11 <memory> may be required (if dynamic memmory allocation is used)
+%%
+%%  outputs the required headers
+%function SLibOutputRequiredLangStdSystemHeaders(hasMdlRefIsClass) Output
+    %if hasMdlRefIsClass && ...
+        CGMODEL_ACCESS("CGModel.getUseOperatorNewForModelRefRegistration") && ...
+        ::GenCPP11
+        #include <memory>
+    %endif
+%endfunction
+
+%% Function: SLibUseClassMemberInitialization ======================================================
+%%
+%%  Abstract: Do we support non-static class member initialization?
+%%
+%%            For C++03 no
+%%            For C++11 yes
+%%
+%function SLibUseClassMemberInitialization() void
+    %return CGMODEL_ACCESS("CGModel.getCpp11Extensions") > 0 && ...
+        CGMODEL_ACCESS("CGModel.getLangStd") == "ISO_C++11"
+%endfunction
+
+
+%function SLibGenerateScopedEnumClass()
+    %return CGMODEL_ACCESS("CGModel.getScopedEnumClassFeature") && ::GenCPP11
+%endfunction
+
+
+
+
+%endif %% _LANGSTDLIB_
+%% [EOF] langstdlib.tlc

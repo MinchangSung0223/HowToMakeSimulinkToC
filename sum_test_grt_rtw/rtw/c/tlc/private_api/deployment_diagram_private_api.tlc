@@ -1,0 +1,17 @@
+%if EXISTS(_DEPLOYMENT_DIAGRAM_PRIVATE_API_) == 0
+%assign _DEPLOYMENT_DIAGRAM_PRIVATE_API_ = 1
+%%
+%% Copyright 2021 The MathWorks, Inc.
+%%
+
+%% Function: SLibDeploymentDiagramIsMapped =========================================================
+%% Description: Returns true if the system was synthesized for a component in a
+%%              deployment diagram
+%%
+%function SLibDeploymentDiagramIsMapped(systemIdx) void
+    %return CGMODEL_ACCESS("CGModel.DeploymentDiagramIsMapped", systemIdx)
+%endfunction
+
+
+
+%endif %% _DEPLOYMENT_DIAGRAM_PRIVATE_API_

@@ -1,0 +1,124 @@
+%% Copyright 2020-2021 The MathWorks, Inc.
+
+%if EXISTS(_SAMPLE_TIME_API_) == 0
+%assign ::_SAMPLE_TIME_API_ = 1
+
+%% DocFunction{Sample Time Functions}: LibIsSingleRateModel =====================
+%% Abstract:
+%%   Return true if model is single rate and false otherwise.
+
+%function LibIsSingleRateModel() void
+    %if !EXISTS(::IsSingleRate)
+        %assign ::IsSingleRate = CGMODEL_ACCESS("CGModel.IsSingleRate")
+    %endif
+    %return ::IsSingleRate
+%endfunction
+
+
+%% DocFunction{Sample Time Functions}: LibGetGlobalTIDFromLocalSFcnTID =========
+%% Abstract:
+%%   Returns the model task identifier (sample time index) corresponding to the
+%%   specified local S-function task identifier or port sample time.
+%%   This function allows you to use one function to determine a global
+%%   TID, independent of port- or block-based sample times.
+%%
+%%   Calling this function with an integer argument is equivalent to the
+%%   statement SampleTimesToSet[sfcnTID][1]. SampleTimesToSet is a matrix
+%%   that maps local S-function TIDs to global TIDs.
+%%
+%%   The input argument to this function should be either:
+%%
+%%      sfcnTID: integer (e.g. 2)
+%%               For block-based sample times (e.g. in S-function
+%%               mdlInitializeSizes, ssSetNumSampleTimes(S,N) with N > 1 was
+%%               specified), sfcnTID is an integer corresponding local
+%%               S-function sample time.
+%%         or
+%%
+%%      sfcnTID: string of the form "InputPortIdxI", "OutputPortIdxI" where I
+%%               is a number ranging from 0 to the number of ports (e.g.,
+%%               "InputPortIdx0", "OutputPortIdx7").  For port-based sample
+%%               times (e.g. in S-function mdlInitializeSizes,
+%%               ssSetNumSampleTimes(S,PORT_BASED_SAMPLE_TIMES) was specified),
+%%               sfcnTID is a string giving the input (or output) port index.
+%%
+%%   Examples:
+%%   1) Multirate block:
+%%      %assign globalTID = LibGetGlobalTIDFromLocalSFcnTID(2)
+%%        or
+%%      %assign globalTID = LibGetGlobalTIDFromLocalSFcnTID("InputPortIdx4")
+%%
+%%      %assign period  = ::CompiledModel.SampleTime[globalTID].PeriodAndOffset[0]
+%%      %assign offset  = ::CompiledModel.SampleTime[globalTID].PeriodAndOffset[1]
+%%
+%%   2) Inherited sample time block:
+%%      %switch (LibGetSFcnTIDType(0))
+%%        %case "discrete"
+%%        %case "continuous"
+%%           %assign globalTID = LibGetGlobalTIDFromLocalSFcnTID(2)
+%%           %assign period  = ...
+%%             ::CompiledModel.SampleTime[globalTID].PeriodAndOffset[0]
+%%           %assign offset  = ...
+%%             ::CompiledModel.SampleTime[globalTID].PeriodAndOffset[1]
+%%           %breaksw
+%%        %case "triggered"
+%%           %assign period = -1
+%%           %assign offset = -1
+%%           %breaksw
+%%        %case "constant"
+%%           %assign period = rtInf
+%%           %assign offset = 0
+%%           %breaksw
+%%        %default
+%%           %<LibBlockReportFatalError([],"Unknown tid type")>
+%%      %endswitch
+%% TopTester: test/toolbox/simulink/variants/var-inline-vsrc/tmMultiRateAsyncTask_VC1.m
+%%
+%function LibGetGlobalTIDFromLocalSFcnTID(sfcnTID) void
+
+    %% See also:
+    %%   LibGetNumSFcnSampleTimes
+    %%   LibIsSFcnSingleRate
+    %%   LibIsSFcnSampleHit
+    %%   LibIsSFcnSpecialSampleHit
+    %%   LibGetSFcnTIDType
+    %%
+    %if TYPE(TID) == "String"
+        %<LibReportFatalError("Invalid sample time (%<TID>)")>
+    %endif
+
+    %with ParamSettings
+
+        %if TYPE(sfcnTID) == "String"
+            %if !CGMODEL_ACCESS("Block.IsPortBasedSampleTimes", BlockIdx[0], BlockIdx[2])
+                %<LibReportFatalError("Incorrect sfcnTID argument")>
+            %endif
+            %return LibBlockPortSampleTime(sfcnTID)
+        %elseif TYPE(sfcnTID) == "Number"
+            %%
+            %% SampleTimesToSet:
+            %%   First column  = local TID (always the vector [0,1,...])
+            %%   Second column = global TID
+            %%
+            %if CGMODEL_ACCESS("Block.IsPortBasedSampleTimes", BlockIdx[0], BlockIdx[2])
+                %<LibReportFatalError("Incorrect sfcnTID argument")>
+            %endif
+
+            %if !EXISTS(SampleTimesToSet)
+                %<LibReportFatalError("S-function sample time translation table " ...
+                    "not found")>
+            %endif
+
+            %if sfcnTID < 0 || sfcnTID >= SIZE(SampleTimesToSet,0)
+                %<LibReportFatalError("Invalid sample time index")>
+            %endif
+            %return SampleTimesToSet[sfcnTID][1]
+        %endif
+
+    %endwith
+
+    %<LibReportFatalError("Invalid argument")>
+
+%endfunction %% LibGetGlobalTIDFromLocalSFcnTID
+
+%endif

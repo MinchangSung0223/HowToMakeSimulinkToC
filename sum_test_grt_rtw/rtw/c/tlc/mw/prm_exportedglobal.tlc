@@ -1,0 +1,112 @@
+%% ============================================================================
+%% File: prm_exportedglobal.tlc
+%%
+%% Abstract:
+%%
+%%
+%%
+%%
+%%
+%% Copyright 1994-2021 The MathWorks, Inc.
+%%
+%% ============================================================================
+%selectfile NULL_FILE
+
+%if EXISTS(_PRM_EXPORTEDGLOBAL_) == 0
+%assign _PRM_EXPORTEDGLOBAL_ = 1
+
+%include "prm_cacheutils.tlc"
+
+
+%% Function: SLibCacheExportedGlobalPrmBuffers =====================================================
+%% Abstract:
+%%   Generate the declaration & instantiation buffers for ExportedGlobal parameters
+%%
+%function SLibCacheExportedGlobalPrmBuffers(startIdx) void
+
+    %% Create parameter buffers
+    %<SLibCreatePrmBuffer("ExportedGlobal", "Decl")>
+    %<SLibCreatePrmBuffer("ExportedGlobal", "Instance")>
+
+    %% Generate the parameter declaration buffer
+    %assign declBuffer = FcnGenExportedGlobalPrmDecl(startIdx)
+    %<SLibSetPrmBufferPart("ExportedGlobal", "Decl", "Code", declBuffer)>
+
+    %% Check whether or not to write out defns for this model
+    %% (for model reference, we only write out defns for the top model)
+    %assign rootSystem = ::CompiledModel.System[NumSystems-1]
+    %assign reqInsts   = LibGetSystemField(rootSystem,"ReqRootPrmHdrDataInsts")
+
+    %% Generate the parameter instantiation buffer
+    %assign instanceBuffer = ""
+    %assign instanceBuffer = FcnGenExportedGlobalPrmInstance(startIdx)
+    %<SLibSetPrmBufferPart("ExportedGlobal", "Instance", "Code", instanceBuffer)>
+
+%endfunction %% SLibCacheExportedGlobalPrmBuffers
+
+
+%% Function: FcnGenExportedGlobalPrmDecl ===========================================================
+%% Abstract:
+%%   Generate the ExportedGlobal parameters declaration buffer
+%%
+%function FcnGenExportedGlobalPrmDecl(startIdx) void
+
+    %assign cacheBuffer = ""
+    %assign headerFile = SLibGetFileNameForCode("data_exportGlobal_decl") + ".h"
+    %assign exportedPrmsWithSymbDimsFeat = CGMODEL_ACCESS("CGModel.ExportedPrmsWithSymbolicDims")
+    %foreach prmIdx = NumExportedGlobal
+        %assign mdlParam = Parameter[startIdx + prmIdx]
+        %if !exportedPrmsWithSymbDimsFeat
+            %assert !LibRecordHasSymbolicWidth(mdlParam)
+        %endif
+        %assign buffer = SLibGenModelParamDecl(mdlParam, TLC_FALSE)
+        %assign cacheBuffer = cacheBuffer + buffer
+        %if !WHITE_SPACE(buffer)
+            %<FcnUpdateModelParamDeclFilePackaging(mdlParam, headerFile)>
+        %endif
+    %endforeach
+
+    %return cacheBuffer
+
+%endfunction %% FcnGenExportedGlobalPrmDecl
+
+
+%% Function: FcnGenExportedGlobalPrmInstance =======================================================
+%% Abstract:
+%%   Generate the constant parameters instantiation buffer
+%%
+%function FcnGenExportedGlobalPrmInstance(startIdx) void
+    %assign cacheBuffer = ""
+    %assign skippedIdxs = FEVAL("zeros", 1 , NumExportedGlobal+1)
+    %assign hasVParam = SLibModelHasVarParam()
+    %assign sourceFile = SLibGetFileNameForCode("mdl_data_defn") + "." + ::LangFileExt
+    %foreach prmIdx = NumExportedGlobal
+        %assign mdlParam = Parameter[startIdx + prmIdx]
+        %if SLibShouldGenUnstrDefn(mdlParam)
+            %if (hasVParam && SLibIsVariantParameter(mdlParam))
+                %% Skip only if feature is on, else don't skip
+                %assign skippedIdxs[prmIdx] = 1
+                %continue
+            %endif
+            %assign buffer = SLibGenUnstrModelParamInstance(mdlParam, TLC_FALSE, startIdx + prmIdx, -1)
+            %assign cacheBuffer = cacheBuffer + buffer
+            %<SLibUpdateLocalSymbolTableAndSymbolicValue(sourceFile, mdlParam, buffer)>
+        %endif
+    %endforeach
+
+    %assign vBuffer = ""
+    %% If the model has variant parameters
+    %if hasVParam
+        %if !(CGMODEL_ACCESS("CGModel.GetIsEmptytSC2GroupedPrm", "ExportedGlobal"))
+            %assign vBuffer = SLibGenGroupedVPrmsBuffer("ExportedGlobal", TLC_FALSE, skippedIdxs, startIdx)
+            %assign cacheBuffer = cacheBuffer + vBuffer
+        %endif
+    %endif
+    %return cacheBuffer
+
+%endfunction %% FcnGenExportedGlobalPrmInstance
+
+
+%endif %% EXISTS(_PRM_EXPORTEDGLOBAL_)
+
+%% [EOF] prm_exportedglobal.tlc

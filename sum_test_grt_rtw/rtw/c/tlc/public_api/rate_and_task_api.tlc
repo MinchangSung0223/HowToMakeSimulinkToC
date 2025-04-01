@@ -1,0 +1,34 @@
+%if EXISTS(_RATE_AND_TASK_API_) == 0
+%assign _RATE_AND_TASK_API_ = 1
+%%
+%% Copyright 2021-2022 The MathWorks, Inc.
+%%
+
+%% DocFunction{Sample Time Functions}: LibGetNumSyncPeriodicTasks ===============
+%% Abstract:
+%%    Return the number of periodic tasks in
+%%  generated code.
+%%
+%function LibGetNumSyncPeriodicTasks()
+    %return CGMODEL_ACCESS("CGModel.NumSyncPeriodicTasks")
+%endfunction
+
+%% DocFunction{Sample Time Functions}: LibGetNumTasks ===============
+%% Abstract:
+%%    Return the number of tasks in
+%%  generated code.
+%%
+%function LibGetNumTasks()
+    %return CGMODEL_ACCESS("CGModel.NumTasks")
+%endfunction
+
+%% DocFunction{Sample Time Functions}: LibGetNumRuntimeExportedTasks ===============
+%% Abstract:
+%%    Return the number of periodic and unconstrained tasks in
+%%  generated code.
+%%
+%function LibGetNumRuntimeExportedTasks()
+    %return CGMODEL_ACCESS("CGModel.NumRuntimeExportedTasks")
+%endfunction
+
+%endif %% _RATE_AND_TASK_API_

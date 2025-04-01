@@ -1,0 +1,253 @@
+%%
+%%
+%%
+%%
+%% Copyright 1994-2021 The MathWorks, Inc.
+%%
+%% Abstract:
+%%      Library to support the notion of an rtModel object.
+%%      Currently also contains routines for root SimStruct
+%%
+
+%if EXISTS(_RTMDLSUPLIB_) == 0
+%assign _RTMDLSUPLIB_ = 1
+
+%% Function: SLibSkipMallocForCoderDataGroup =======================================================
+%% Abstract:
+%%   return true if need to allocate memory for a coder data group
+%%
+%function SLibSkipMallocForCoderDataGroup(group) void
+    %if LibCoderDataGroupStructIsEmpty(group) || ...
+        !SLibAccessViaPointerInSelf(group) || ...
+        (group.IsSelf && group.AsStructure != "None")
+        %return TLC_TRUE
+    %else
+        %return TLC_FALSE
+    %endif
+%endfunction
+
+%function SLibFreeMemory(useDelete, memoryPtrStr) Output
+    %if useDelete
+        delete %<memoryPtrStr>;
+    %else
+        rt_FREE(%<memoryPtrStr>);
+    %endif
+%endfunction
+
+%% Function: SLibFreeCoderDataGroups ===============================================================
+%% Abstract:
+%%   Free memory for coder data groups
+%%
+%function SLibFreeCoderDataGroups() Output
+    %foreach idx = ::CompiledModel.NumCoderDataGroups
+        %assign group = ::CompiledModel.CoderDataGroup[idx]
+
+        %if !SLibSkipMallocForCoderDataGroup(group)
+            /* Free %<group.Identification> */
+            %if SLibIsSelfStructured() && group.AsStructure == "InParent"
+                %<SLibFreeMemory(::GenCPP, SLibGetCoderDataGroupPointerFromRTM(group, 0))>
+            %else
+                %if ::CompiledModel.HasSimStructVars == 0
+                    %assign rtmField = SLibCoderDataGroupRTMFieldName(group)
+                    %<SLibFreeMemory(::GenCPP, RTMGet(rtmField))>
+                %endif
+            %endif
+        %endif
+    %endforeach
+%endfunction
+
+%% Function: SLibGenRootTermMemFreeCode ============================================================
+%% Abstract:
+%%   Dump memory free code in MdlTerminate when we are using UsingMalloc
+%%
+%function SLibGenRootTermMemFreeCode() Output
+    %assign isSfcnCF = (CodeFormat == "S-Function")
+    %assign s        = ::tChildSimStruct
+    %assign scalarTokens = LibGetScalarDataInitTokens()
+
+    %% Free the rest of the model.  Note these dependencies.
+    %%   o free everything in mdlInfo
+    %%   o free mdlInfo
+    %%   o free SimStruct
+    %%
+    %openfile retBuffer
+    %if isSfcnCF
+        #if defined(RT_MALLOC) || defined(MATLAB_MEX_FILE)
+    %endif
+    %if NumChildSFunctions > 0 && !SLibIsERTCodeFormat()
+
+        /* child S-function code */
+        if( %<RTMuGet("SFunctions")> ) {
+            %foreach childIdx = NumChildSFunctions
+                %assign thisBlock = ChildSFunctionList[childIdx]
+                %with thisBlock
+                    /* %<TypeLevel> Block: '%<Name>' (%<ParamSettings.FunctionName>) */
+                    {
+                        SimStruct *%<s>%<scalarTokens[0]>%<RTMGetIdxed("SFunction", childIdx)>%<scalarTokens[1]>;
+                        %<SLibGenChildSfcnTermMemFreeCode(s)>
+                    }
+                %endwith
+            %endforeach
+            %%
+            %% Free all the child SimStructs in one shot. All children
+            %% were allocated in a single malloc.
+            %%
+            rt_FREE(%<RTMGetIdxed("SFunction", 0)>)
+
+            %% Free the array of child SimStruct pointers
+            rt_FREE(%<RTMuGet("SFunctions")>);
+        }
+    %endif  %% NumChildSFunctions > 0
+
+    %if isSfcnCF
+        %% Free memory allocated in model_malloc()
+        if ( %<RTMGet("UserData")> != %<SLibGetNullDefinitionFromTfl()> ) {
+            %if NumBlockSignals > 0
+                rt_FREE(%<RTMGet("LocalBlockIO")>);
+            %endif
+            %if NumZCEvents > 0
+                rt_FREE(%<RTMuGet("PrevZCSigState")>);
+            %endif
+            %if SolverType == "VariableStep" && ...
+                SolverResetInfo.NumNonContDerivSignals > 0
+                rt_FREE(%<RTMGet("LocalNonContDerivSig")>);
+            %endif
+        }
+        rt_FREE(%<RTMGet("UserData")>);
+    %else
+        %if !IsModelReferenceTarget() && !LibIsDeploymentDiagram() && !PurelyIntegerCode  && ...
+            (LibIsContinuous(0) || NumChildSFunctions) || GenerateGRTWrapper
+            %% If the above checks are changed, please also update the checks for
+            %% solver data creation code (ertlib.tlc)
+            rt_FREE(%<RTMGet("RTWSolverInfo")>);
+        %endif
+        %% Conversion of grt malloc to ert core means that the
+        %% solverInfo member of the RT model struct is now an
+        %% inlined structure rather than a pointer to dynamically
+        %% allocated memory.
+        %if !SLibIsERTCodeFormat()
+            rt_FREE(%<RTMGet("RTWSfcnInfo")>);
+        %endif
+
+        /* model code */
+        %if !LibBlockIOStructIsEmpty() && !SLibIsSelfStructured()
+            rt_FREE(%<RTMGet("BlockIO")>);
+        %endif
+        %if !LibContStatesStructIsEmpty()
+            rt_FREE(%<RTMGet("ContStates")>);
+        %endif
+        %if !LibPeriodicCStatesStructIsEmpty()
+            rt_FREE(%<RTMGet("PeriodicContStateIndices")>);
+            rt_FREE(%<RTMGet("PeriodicContStateRanges")>);
+        %endif
+        %if !LibExternalInputsStructIsEmpty() && ::CompiledModel.RootIOFormat == "Part of model data structure"
+            rt_FREE(%<RTMGet("U")>);
+        %endif
+        %if !LibExternalOutputsStructIsEmpty() && ::CompiledModel.RootIOFormat == "Part of model data structure"
+            rt_FREE(%<RTMGet("Y")>);
+        %endif
+        %if !LibParametersStructIsEmpty() && !FcnParamsAreGlobalStruct()
+            if (%<RTMGet("ParamIsMalloced")>) {
+                rt_FREE(%<RTMGet("DefaultParam")>);
+            }
+        %endif
+        %if !LibDWorkStructIsEmpty() && !SLibIsSelfStructured()
+            rt_FREE(%<RTMGet("RootDWork")>);
+        %endif
+        %if !LibPrevZCStatesStructIsEmpty() && !SLibIsSelfStructured()
+            rt_FREE(%<RTMGet("PrevZCSigState")>);
+        %endif
+        %if ExtMode == 1
+            {
+                DataTypeTransInfo *dtInfo%<scalarTokens[0]>(DataTypeTransInfo *) ...
+                    %<RTMGet("ModelMappingInfo")>%<scalarTokens[1]>;
+                %if !LibBlockIOStructIsEmpty()
+                    DataTypeTransitionTable *BTransTable%<scalarTokens[0]>...
+                        dtGetBIODataTypeTrans(dtInfo)%<scalarTokens[1]>;
+                %endif
+
+                %if !LibBlockIOStructIsEmpty()
+                    rt_FREE(dtGetTransitions(BTransTable));
+                    rt_FREE(BTransTable);
+                %endif
+                %if LibGetNumDataTypesInModel() > 0
+                    rt_FREE(dtGetDataTypeSizes(dtInfo));
+                    {
+                        void *ptr%<scalarTokens[0]>(void *) dtGetDataTypeNames(dtInfo)%<scalarTokens[1]>;
+                        rt_FREE(ptr);
+                    }
+                %endif
+                rt_FREE(dtInfo);
+            }
+        %endif
+
+        %if !SLibIsERTCodeFormat()
+            rt_FREE(%<RTMGet("SampleTimePtr")>);
+            rt_FREE(%<RTMGet("OffsetTimePtr")>);
+            rt_FREE(%<RTMGet("SampleTimeTaskIDPtr")>);
+            rt_FREE(%<RTMGet("TPtr")>);
+            rt_FREE(%<RTMGet("SampleHitPtr")>);
+            %if ::CompiledModel.SolverType == "FixedStep"
+                %if ::CompiledModel.FixedStepOpts.SolverMode == "MultiTasking"
+                    rt_FREE(%<RTMGet("PerTaskSampleHitsPtr")>);
+                %endif
+            %endif
+        %endif
+        %if MatFileLogging
+            %assign allVariantCondition = ""
+            %if ISFIELD(ExternalOutputs, "NetExternalOutputsCondition")
+                %assign allVariantCondition = ExternalOutputs.NetExternalOutputsCondition
+            %endif
+
+            {
+                %% as per C90 standard declaration block must appear before usage block
+                %% hence the order below has to be maintained
+                void *xptr%<scalarTokens[0]>(void *) %<RTMLoggingGet("LogXSignalPtrs")>%<scalarTokens[1]>;
+                %if !ISEMPTY(allVariantCondition)
+                    %<SLibIfVariantConditionForm(allVariantCondition)>
+                %endif
+                void *yptr%<scalarTokens[0]>(void *) %<RTMLoggingGet("LogYSignalPtrs")>%<scalarTokens[1]>;
+                %if !ISEMPTY(allVariantCondition)
+                    %<SLibEndIfVariantConditionForm(allVariantCondition)>
+                %endif
+                rt_FREE(xptr);
+                %if !ISEMPTY(allVariantCondition)
+                    %<SLibIfVariantConditionForm(allVariantCondition)>
+                %endif
+                rt_FREE(yptr);
+                %if !ISEMPTY(allVariantCondition)
+                    %<SLibEndIfVariantConditionForm(allVariantCondition)>
+                %endif
+            }
+            rt_FREE(%<RTMGet("RTWLogInfo")>);
+        %endif
+        %if !GenRTModel
+            rt_FREE(%<RTMGet("MdlInfoPtr")>);
+        %endif
+        %if (RTWCAPI && (::CompiledModel.NumDataAddrInMap > 0) && !SLibIsERTCodeFormat())
+            rt_FREE(%<RTMGet("DataMapInfo")>.mmi.InstanceMap.dataAddrMap);
+        %endif
+
+        %if UsingMalloc
+            %<SLibFreeCoderDataGroups()>
+        %endif
+
+        %<SLibFreeMemory(::GenCPP == 1 && !SLibIsRTMZeroInitCppEnabled(), RTMGetModelSS())>
+    %endif
+    %if isSfcnCF
+        #endif
+    %endif
+    %closefile retBuffer
+
+    %assign p = CGMODEL_ACCESS("String.find", retBuffer, "rt_FREE")
+    %if p >= 0
+        %<SLibUpdateLocalSymbolTableForFile(SLibGetFullFileNameForCode("baseMdl_fcn_defn"), "rt_FREE")>\
+    %endif
+
+    %return retBuffer
+%endfunction %% SLibGenRootTermMemFreeCode
+
+
+%endif %% _RTMDLSUPLIB_
+
+%% [EOF] rtmdlsuplib.tlc

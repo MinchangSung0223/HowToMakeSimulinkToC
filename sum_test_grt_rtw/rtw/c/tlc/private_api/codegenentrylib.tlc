@@ -1,0 +1,45 @@
+%% ============================================================================
+%% Abstract:
+%%    Library functions supporting the code generation entry file.
+%%
+%% Copyright 2018 The MathWorks, Inc.
+%%
+%selectfile NULL_FILE
+
+%if EXISTS(::_CODEGENENTRYLIB_) == 0
+%assign ::_CODEGENENTRYLIB_ = 1
+
+%% ============================================================================
+%% Abstract:
+%%    Returns the code generation entry file name for the current target.
+%%
+%function SLibGetCodegenentryFileName() void
+    %return CGMODEL_ACCESS("CodeGenEntryLib.getCodeGenEntryFileName")
+%endfunction
+
+%% ============================================================================
+%% Abstract:
+%%    Returns true if we execute the main code generation phase
+%%
+%function SLibIsMainCodeGenPhase() void
+    %return 0 == ::CompiledModel.IsPreCodeGenPhase
+%endfunction
+
+%% ============================================================================
+%% Abstract:
+%%    Returns true if we execute the pre code generation phase
+%%
+%function SLibIsPreCodeGenPhase() void
+    %return 1 == ::CompiledModel.IsPreCodeGenPhase
+%endfunction
+
+%% ============================================================================
+%% Abstract:
+%%   This function is executed when the code generation process succeded.
+%%
+%function SLibSetCodeGenSucceeded() void
+    %<CGMODEL_ACCESS("CodeGenEntryLib.setCodeGenSucceeded", 1)>
+%endfunction
+
+%endif  %% _CODEGENENTRYLIB_
+%% [EOF] codegenentrylib.tlc

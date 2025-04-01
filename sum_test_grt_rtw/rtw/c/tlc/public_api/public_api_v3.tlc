@@ -1,0 +1,19 @@
+%if EXISTS(::_PUBLIC_API_V3_) == 0
+%assign ::_PUBLIC_API_V3_ = 1
+%%
+%% Copyright 2019-2022 The MathWorks, Inc.
+%%
+
+%% ============================================================================
+%% Public block IO related library functions
+%%
+%include "blkio_api_v3.tlc"
+%include "block_api_v3.tlc"
+%include "parameter_api_v3.tlc"
+%include "rate_and_task_api_v3.tlc"
+%include "code_template_api_v3.tlc"
+%include "sys_api_v3.tlc"
+%include "utils_api_v3.tlc"
+%include "rtmdl_api_v3.tlc"
+
+%endif %% ::_PUBLIC_API_V3_

@@ -1,0 +1,35 @@
+%%
+%% Copyright 2022-2023 The MathWorks, Inc.
+%%
+
+%if EXISTS(::_UTILS_API_V3_) == 0
+%assign ::_UTILS_API_V3_ = 1
+
+%function LibGetTaskTimeFromTID(block)
+    %<SLibV3CallsiteValid("LibGetTaskTimeFromTID")>
+    %return CGMODEL_ACCESS("Block.LibGetTaskTimeFromTID", ...
+        block.BlockIdx[0], block.BlockIdx[2], ...
+        ::CurrentBlockFcn, ::CurrentBlockTid)
+%endfunction
+
+%% Function: LibBlockLocalVar ======================================================================
+%% Abstract:
+%%   Returns a identifier for a local variable, given a suggested variable name
+%%   and data type. This library function interacts with Simulink's code
+%%   generation infrastructure to request a local variable that can be reused
+%%   with other parts of the generated code and will be mangled according to the
+%%   models naming rules for local variables. This API is a exclusive feature of
+%%   the next generation TLC block interface.
+%%   Arguments:
+%%     block - current block record
+%%     varName - requested variable name
+%%     dtypeId - Simulink data type id of the local variable
+%%
+%function LibBlockLocalVar(block, varName, dtypeId) void
+    %<SLibV3CallsiteValid("LibBlockLocalVar")>
+    %return CGMODEL_ACCESS("Block.LocalVar", ...
+        block.BlockIdx[0], block.BlockIdx[2], ...
+        ::CurrentBlockFcn, ::CurrentBlockTid, varName, dtypeId)
+%endfunction
+
+%endif %% ::_UTILS_API_V3_

@@ -1,0 +1,271 @@
+%%
+%% Copyright 2019-2020 The MathWorks, Inc.
+%%
+%% Abstract:
+%%   This system TLC library file contains functions that are related to
+%%   timer services
+%%
+
+%if EXISTS(_TIMERSERVICELIB_) == 0
+%assign _TIMERSERVICELIB_ = 1
+
+%function SLibWriteRTEHeader() void
+
+    %realformat "CONCISE"
+
+    %assert (SLibGetUsingTimerServiceLevel() > 0 || SLibIsDataTransferServiceOn())
+
+    %% If the model does not need timer services, data transfer services, nor root io services,
+    %% don't emit the header file includes.
+    %assign needTimerServices = ISFIELD(::CompiledModel, "NeedTimerServices") && ::CompiledModel.NeedTimerServices == "yes"
+    %assign needDataTransferServices = ISFIELD(::CompiledModel, "NeedDataTransferServices") && ::CompiledModel.NeedDataTransferServices == "yes"
+    %if !needTimerServices && !needDataTransferServices
+        %return
+    %endif
+
+    %% Add the header files to the appropriate files.
+    %if !IsModelReferenceTarget()
+        %assign HeaderFile = LibGetRTEHeaderFileName()
+
+        %% Generate the header file string
+        %openfile includesBufInModelCode
+        #include "%<HeaderFile>"
+        %closefile includesBufInModelCode
+
+        %% Put necessary includes in model.c(pp) file
+        %<SLibCacheCodeToFile("baseMdl_src_custom_incl", includesBufInModelCode)>
+
+        %if SLibGetUsingTimerServiceLevel() > 0 && ...
+            SLibNeedGenerateSampleERTMain()
+            %% Put necessary includes in ert_main file
+            %openfile includesBufInErtMain
+            #include "%<HeaderFile>"
+            #include "rte_private_timer.h"
+            %closefile includesBufInErtMain
+            %<SLibCacheCodeToFile("mainSrc_incl", includesBufInErtMain)>
+        %endif
+    %else
+
+        %assign HeaderFile = ::CompiledModel.Name + "_timer_proxy.h"
+        %openfile includesBufInModelCode
+        #include "%<HeaderFile>"
+        %closefile includesBufInModelCode
+
+        %% Put necessary includes in model_private.hpp file
+        %if needTimerServices
+            %if !ISFIELD(::CompiledModel.ConfigSet, "ERTFilePackagingFormat") || ...
+                ::CompiledModel.ConfigSet.ERTFilePackagingFormat == "Modular"
+                %<SLibCacheCodeToFile("mdl_priv_hdr_custom_incl", includesBufInModelCode)>
+            %else
+                %<SLibCacheCodeToFile("mdl_src_custom_incl", includesBufInModelCode)>
+            %endif
+        %endif
+    %endif
+%endfunction
+
+%function FcnTimerService_BaseResolution() Output
+    %foreach tid = NumSampleTimes
+        %if SLibNeedResolutionService(tid) || ...
+            SLibNeedAbsoluteTimeService(tid) || ...
+            SLibNeedFunctionStepSizeService(tid)
+
+            %openfile tmpBaseResolution
+            %assign baseTimeResolution = ::CompiledModel.FundamentalStepSize
+            #ifndef baseTimeResolution
+            #define baseTimeResolution %<baseTimeResolution>
+            #endif
+            %closefile tmpBaseResolution
+            %return tmpBaseResolution
+        %endif
+    %endforeach
+    %return
+%endfunction
+
+%function FcnTimerService_PreStep(tid) Output
+    %if SLibGetUsingTimerServiceLevel() == 0
+        %return
+    %endif
+
+    %if ISEQUAL(tid, "")
+        %assign tid = 0
+    %endif
+
+    %openfile tmpPreStep
+    %if SLibSynchronousTID(tid)
+        %% Update absolute time for periodic tasks in pre step function.
+        %% time_k = tick_k * resolution
+        %if ISFIELD(TimerService[tid], "GetAbsoluteTimeFcnName")
+            %assign getTick = SLibGetTickFcnName(tid)
+            %assign setTime = ""
+            /* Update the absolute time */
+            set_%<TimerService[tid].GetAbsoluteTimeFcnName>(%< SLibGetTickFcnName(tid)>()*baseTimeResolution);
+        %endif
+    %else
+        %% Update absolute tick with tick0 for aperiodic tasks in pre step function.
+        %% tick_k = tick_0
+        %if ISFIELD(TimerService[tid], "GetFunctionClockTickFcnName")
+            /* Update the absolute time tick */
+            set_%<TimerService[tid].GetFunctionClockTickFcnName>(%<SLibGetTickFcnName(0)>());
+        %endif
+
+        %% Update absolute time with time0/tick0 for aperiodic tasks in pre step function.
+        %% time_k = time_0 or tick_0 * resolution
+        %if ISFIELD(TimerService[tid], "GetAbsoluteTimeFcnName")
+            %if ISFIELD(TimerService[0], "GetAbsoluteTimeFcnName")
+                %assign getT0 = "%<TimerService[0].GetAbsoluteTimeFcnName>"
+            %else
+                %assign getTick0 = SLibGetTickFcnName(0)
+                %assign getT0 = "%<getTick0>*baseTimeResolution"
+            %endif
+
+            /* Update the absolute time */
+            set_%<TimerService[tid].GetAbsoluteTimeFcnName>(%<getT0>())
+        %endif
+    %endif
+    %closefile tmpPreStep
+
+    %return tmpPreStep
+%endfunction
+
+%function FcnTimerService_PostStep(tid) Output
+    %if SLibGetUsingTimerServiceLevel() == 0
+        %return
+    %endif
+
+    %if ISEQUAL(tid, "")
+        %assign tid = 0
+    %endif
+
+    %openfile tmpPostStep
+    %if SLibSynchronousTID(tid)
+        %% Update the tick_k as tick_k = tick_k + ratio, so tick_k is always equal to tick_0.
+        %assign BaseRateTickAdded = TLC_FALSE
+        %if ISFIELD(TimerService[tid], "GetFunctionClockTickFcnName") || ...
+            ISFIELD(TimerService[tid], "GetAbsoluteTimeFcnName")
+            %assign getTick = SLibGetTickFcnName(tid)
+            /* Update the absolute time tick */
+            set_%<getTick>(%<getTick>()+%<computeRatio(tid)>);
+            %if tid == 0
+                %assign BaseRateTickAdded = TLC_TRUE
+            %endif
+        %endif
+
+        %% If the model has apeiroic tasks that require base task tick
+        %if tid == 0
+            %assign tids = SLibGetAperiodicTasksNeedBaseRateTickCounter()
+            %if !ISEMPTY(tids)
+                %if !BaseRateTickAdded
+                    %assign getTick0 = SLibGetTickFcnName(0)
+                    /* Update the absolute time tick */
+                    set_%<getTick0>(%<getTick0>()+1);
+                %endif
+
+                /* Update aperiodic tasks' absolute ticks */
+                %foreach idx = SIZE(tids, 1)
+                    %assign tid = tids[idx]
+                    set_%<SLibGetTickFcnName(tid)>(%<SLibGetTickFcnName(0)>());
+                %endforeach
+            %endif
+        %endif
+    %endif
+    %closefile tmpPostStep
+
+    %return tmpPostStep
+%endfunction
+
+%function FcnTimerService_Initialize() Output
+    %if SLibGetUsingTimerServiceLevel() == 0
+        %return
+    %endif
+
+    %openfile tmpInitialize
+
+    %% Initialize resolutions
+    %assign resolutionSet = SLibCollectResolutionFunctionSet()
+    %foreach fcnIdx = SIZE(resolutionSet, 1)
+        set_%<resolutionSet[fcnIdx]>(baseTimeResolution);
+    %endforeach
+
+    %foreach tid = NumSampleTimes
+        %if SLibSynchronousTID(tid)
+            %if ISFIELD(TimerService[tid], "GetFunctionStepSizeFcnName")
+                %assign ratio = computeRatio(tid)
+                %assign setDeltaTime = "set_%<TimerService[tid].GetFunctionStepSizeFcnName>"
+                %if ratio == 1
+                    %<setDeltaTime>(baseTimeResolution);
+                %else
+                    %<setDeltaTime>(baseTimeResolution*%<ratio>);
+                %endif
+            %endif
+
+            %if ISFIELD(TimerService[tid], "GetFunctionStepTickFcnName")
+                %assign setDeltaTick = "set_%<TimerService[tid].GetFunctionStepTickFcnName>"
+                %<setDeltaTick>(1);
+            %endif
+        %endif
+    %endforeach
+
+    %closefile tmpInitialize
+
+    %if !ISEMPTY(tmpInitialize)
+        %openfile tmpInitializeWithComments
+        /* Initialize timer information */
+        %<tmpInitialize>
+        %closefile tmpInitializeWithComments
+        %return tmpInitializeWithComments
+    %else
+        %return
+    %endif
+%endfunction
+
+%function computeRatio(tid) void
+    %assign stepSize = SLibGetFundamentalStepSize()
+    %assign period = SampleTime[tid].PeriodAndOffset[0]
+    %return SLibComputeNumTaskTicks(period, stepSize)
+%endfunction
+
+%function SLibGetAperiodicTasksNeedBaseRateTickCounter() void
+    %assign tids = []
+    %foreach tid = NumSampleTimes
+        %if LibAsynchronousTriggeredTID(tid) && ...
+            !SLibModelWideEventTID(tid) && ...
+            (ISFIELD(TimerService[tid], "GetFunctionClockTickFcnName") || ...
+            ISFIELD(TimerService[tid], "GetAbsoluteTimeFcnName"))
+            %assign tids = tids + tid
+        %endif
+    %endforeach
+    %return tids
+%endfunction
+
+%function SLibCollectResolutionFunctionSet() void
+    %assign resSet = []
+    %foreach tid = NumSampleTimes
+        %% Iterate all the resolution functions, and collect the unique set of function names
+        %if ISFIELD(TimerService[tid], "GetResolutionFcnName")
+            %assign resFcnName = "%<TimerService[tid].GetResolutionFcnName>"
+            %assign needInsert = TLC_TRUE
+            %foreach resIdx = SIZE(resSet, 1)
+                %if ISEQUAL(resFcnName, resSet[resIdx])
+                    %assign needInsert = TLC_FALSE
+                    %break
+                %endif
+            %endforeach
+            %if needInsert
+                %assign resSet = resSet + resFcnName
+            %endif
+        %endif
+    %endforeach
+    %return resSet
+%endfunction
+
+%function SLibGetTickFcnName(tid) void
+    %if ISFIELD(TimerService[tid], "GetFunctionClockTickFcnName")
+        %assign getTick = "%<TimerService[tid].GetFunctionClockTickFcnName>"
+    %else
+        %assign getTick = "__tick_%<tid>"
+    %endif
+    %return getTick
+%endfunction
+
+
+%endif%%  _TIMERSERVICELIB__

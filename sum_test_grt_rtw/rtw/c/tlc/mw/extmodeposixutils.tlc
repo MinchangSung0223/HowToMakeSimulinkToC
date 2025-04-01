@@ -1,0 +1,58 @@
+%% ==============================================================================
+%% Abstract:
+%%    Utilities to help with generation of external mode main.c file for
+%%    POSIX NativeThreads example
+%%
+%% Copyright 2020 The MathWorks, Inc.
+%%
+
+%% Include guard
+%if EXISTS(_EXTMODEPOSIXUTILSLIB_) == 0
+%assign _EXTMODEPOSIXUTILSLIB_ = 1
+%selectfile NULL_FILE
+
+
+%% Function: FcnDefineBackgroundThread =============================================================
+%%
+%% Abstract:
+%%  Define variables used to track details of external mode background
+%%  thread.
+%%
+%function FcnDefineBackgroundThread() Output
+    pthread_t backgroundThread = pthread_self();
+    int backgroundThreadInitPriority;
+%endfunction
+
+
+%% Function: FcnRunBackgroundTask ==================================================================
+%%
+%% Abstract:
+%%  Generate code to run the external mode background task in the main
+%%  thread, after lowering priority.  Restore priority when background task
+%%  loop terminates.
+%%
+%function FcnRunBackgroundTask() Output
+    /* Main thread becomes background task */
+    if (policy == SCHED_FIFO || policy == SCHED_RR) {
+        /* Cache existing priority */
+        ret = pthread_getschedparam(backgroundThread, &policy, &sp);
+        CHECK_STATUS(ret, "pthread_getschedparam");
+        backgroundThreadInitPriority = sp.sched_priority;
+
+        sp.sched_priority = sched_get_priority_min(policy);
+        ret = pthread_setschedparam(backgroundThread, policy, &sp);
+        CHECK_STATUS(ret, "pthread_setschedparam");
+    }
+
+    /* Run background task */
+    backgroundTask();
+
+    /* Restore priority of main thread when background task loop termintes. */
+    if (policy == SCHED_FIFO || policy == SCHED_RR) {
+        sp.sched_priority = backgroundThreadInitPriority;
+        ret = pthread_setschedparam(backgroundThread, policy, &sp);
+        CHECK_STATUS(ret, "pthread_setschedparam");
+    }
+%endfunction
+
+%endif %%if EXISTS(_EXTMODEPOSIXUTILSLIB_) == 0

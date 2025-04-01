@@ -1,0 +1,483 @@
+%% ============================================================================
+%%
+%%
+%%
+%%
+%% Abstract:
+%%   This system file creates model_reg.h for the RealTime code format.
+%%
+%% Copyright 1994-2022 The MathWorks, Inc.
+%%
+%selectfile NULL_FILE
+
+%% ============================================================================
+%% The static real-time file model_reg.h is created as follows:
+%%
+%% /* File banner */
+%%
+%% User code ..................... LibRegFileCustomCode(buffer, "header")
+%%
+%% MdlInitializeSizes()
+%% MdlInitializeSampleTimes()
+%%
+%% SimStruct *model()
+%% {
+%%   Initialize SimStruct
+%%   {
+%%   User preinitilization ..... LibMdlRegCustomCode(buffer, "preinitialization")
+%%     Declarations
+%%     Model registration
+%%     Non-finite assignments .... LibCacheNonFiniteAssignment(buffer)
+%%     {
+%%       Block instance data ..... BlockInstanceData(block, system)
+%%     }
+%%     Non-inlined S-Function
+%%     registration
+%%     {
+%%       User declarations ....... LibMdlRegCustomCode(buffer, "declaration")
+%%       User entry code ......... LibMdlRegCustomCode(buffer, "execution")
+%%       User exit code .......... LibMdlRegCustomCode(buffer, "trailer")
+%%     }
+%%   }
+%%   return rtS
+%% }
+%%
+%% User code ..................... LibRegFileCustomCode(buffer, "trailer")
+%%
+%% /* [EOF] model_reg.h */
+
+%assign charType = LibGetDataTypeNameFromId(::CompiledModel.tSS_CHAR)
+%assign intType = LibGetDataTypeNameFromId(::CompiledModel.tSS_INTEGER)
+%assign realType = LibGetDataTypeNameFromId(::CompiledModel.tSS_DOUBLE)
+
+%if EXISTS(_SRTREG_) == 0
+%assign _SRTREG_ = 1
+
+%realformat "CONCISE"
+
+%assign rtModelObj     = RTMGetModelSS()
+%assign rtModelObjType = ::tSimStructType
+
+%% ==========================================================================
+%% Dump buffers to output
+%%
+
+%openfile includesBuf
+%% ============================================================================
+%% Data type transition map for external mode
+%%
+%if CreateTransitionTable == 1
+
+    #include "%<Name>_dt.h"
+%endif
+%closefile includesBuf
+
+%<SLibCacheCodeToFile("mdl_src_custom_incl", includesBuf)>
+
+%%
+%% ============================================================================
+%% Top of registration file custom code
+%%
+%openfile tmpBuf
+%<LibDumpTopOfRegFileUserCode()>\
+%closefile tmpBuf
+%<SLibCacheCodeToFile("mdl_src_incl", tmpBuf)>
+
+%openfile fcnsBuf
+%% ============================================================================
+%% Initialize function
+%%
+
+%% MdlInitializeSizes
+%%
+%assign fcnAbstract = "Function to initialize sizes"
+%assign fcnName = "MdlInitializeSizes"
+%assign fcnReturns = "%<::ExternCPrefix> void"
+%assign fcnParams = "void"
+%createrecord fcnRec { Name fcnName; Returns fcnReturns; Params fcnParams; Abstract fcnAbstract; ...
+    Category "model"; GeneratedBy "srtreg.tlc"; Type "Initialize"}
+%<SLibDumpFunctionBanner(fcnRec)>
+%undef fcnRec
+%<fcnReturns> %<fcnName>(%<fcnParams>)
+{
+    %<LibDumpModelInitializeSizes()>\
+}
+
+%% ============================================================================
+%% MdlInitializeSampleTimes
+%%
+%assign fcnAbstract = "Function to initialize sample times."
+%assign fcnName = "MdlInitializeSampleTimes"
+%assign fcnReturns = "%<::ExternCPrefix> void"
+%assign fcnParams = "void"
+%createrecord fcnRec { Name fcnName; Returns fcnReturns; Params fcnParams; Abstract fcnAbstract; ...
+    Category "model"; GeneratedBy "srtreg.tlc"; Type "Initialize"}
+%<SLibDumpFunctionBanner(fcnRec)>
+%undef fcnRec
+%<fcnReturns> %<fcnName>(%<fcnParams>)
+{
+    %<LibDumpModelInitializeSampleTimes()>\
+}
+
+
+%% ============================================================================
+%% RAccel target needs to access the checksum, provide a function to return in
+%% in the SimStruct
+%%
+%if isRAccel
+    %assign fcnName = "raccel_set_checksum"
+    %assign fcnReturns = "%<::ExternCPrefix> void"
+
+    %% See g1494978; the declaration of rtS as an argument to raccel_set_checksum shadows
+    %% the global simstruct variable of the same name in model.c. raccel_set_checksum will no
+    %% no longer take an argument and will operate on the global simstruct rtS (this is consistent
+    %% with the model methods mdlInitialize, mdlOutputs etc.)
+    %assign fcnParams = ""
+
+    %createrecord fcnRec { Name fcnName; Returns fcnReturns; Params fcnParams; Abstract ""; ...
+        Category "model"; GeneratedBy "srtreg.tlc"; Type "Utility"}
+    %<SLibDumpFunctionBanner(fcnRec)>
+    %undef fcnRec
+    %<fcnReturns> %<fcnName>(%<fcnParams>)
+    {
+        %<SLibDumpModelChecksumReg()>
+    }
+
+    %addtorecord ::CompiledModel OkToMultiInstanceModelref {}
+    %assign ::CompiledModel.OkToMultiInstanceModelref = 0
+    %assign tsysMdlrefDWorkType = "DW"
+    %assign rtdwMxName = "rtDW"
+
+    %<SLibWriteMdlRefCacheDataAsMxArrayFcn()>
+    %<SLibWriteMdlRefRestoreDataFromMxArrayFcn()>
+    %<SLibWriteMdlRefCacheBitFieldToMxArrayFcn()>
+    %<SLibWriteMdlRefExtractBitFieldFromMxArrayFcn()>
+
+    %<SLibWriteMdlRefCacheDataToMxArrayWithOffsetFcn()>
+    %<SLibWriteMdlRefRestoreDataFromMxArrayWithOffsetFcn()>
+    %<SLibWriteMdlRefCacheBitFieldToCellArrayWithOffsetFcn()>
+    %<SLibWriteMdlRefExtractBitFieldFromCellArrayWithOffsetFcn()>
+
+    %<SLibWriteMdlRefGetSetDWorkFcns()>
+%endif
+
+%% ============================================================================
+%% Output registration function
+%% Note that the registration function should have constant name in case of
+%% raccel target because the main (from where this is called is precompiled)
+%%
+%assign fcnAbstract = "Function to register the model"
+%if isRAccel
+    %assign fcnName = "raccel_register_model"
+    %assign fcnParams = "ssExecutionInfo* executionInfo"
+%else
+    %assign fcnName = "%<::CompiledModel.Name>"
+    %assign fcnParams = "void"
+%endif
+%assign fcnReturns ="%<::ExternCPrefix> %<rtModelObjType> *"
+%createrecord fcnRec { Name fcnName; Returns fcnReturns; Params fcnParams; Abstract fcnAbstract; ...
+    Category "model"; GeneratedBy "srtreg.tlc"; Type "Registration"}
+%<SLibDumpFunctionBanner(fcnRec)>
+%undef fcnRec
+/* Turns off all optimizations on Windows because of issues with VC 2015 compiler.
+This function is not performance-critical, hence this is not a problem.
+*/
+
+%assign numFrFiles = 0
+%assign numToFiles = 0
+%assign numFrFBlocks = 0
+%assign numToFBlocks = 0
+%assign numFromWksBlocks = 0
+%assign numRootInportBlks = ExternalInputs.NumExternalInputs
+%assign numModelInputs    = NumModelInputs
+%assign numAperiodicPartitions = ExternalInputs.NumAperiodicPartitions
+
+%foreach idx = ::CompiledModel.NumBlockTypeCounts
+    %if ::CompiledModel.BlockTypeCount[idx].Type == "FromFile"
+        %assign numFrFBlocks = %<::CompiledModel.BlockTypeCount[idx].Count>
+    %endif
+    %if ::CompiledModel.BlockTypeCount[idx].Type == "ToFile"
+        %assign numToFBlocks = %<::CompiledModel.BlockTypeCount[idx].Count>
+    %endif
+    %if ::CompiledModel.BlockTypeCount[idx].Type == "FromWorkspace"
+        %assign numFromWksBlocks = %<::CompiledModel.BlockTypeCount[idx].Count>
+    %endif
+%endforeach
+
+
+%if ISFIELD(::CompiledModel, "UniqueFromFiles")
+    %assign numFrFiles = SIZE(::CompiledModel.UniqueFromFiles,1)
+%endif
+
+%if ISFIELD(::CompiledModel, "UniqueToFiles")
+    %assign numToFiles= SIZE(::CompiledModel.UniqueToFiles,1)
+%endif
+
+%if NumModelInputs > 0
+    %assign temp =""
+%else
+    %assign temp ="-1"
+%endif
+
+%assign dimsStr        = temp
+%assign dataTypeIdxStr = temp
+%assign isComplexStr   = temp
+%assign isInterpolStr  = temp
+%assign inportContinuousStr = temp
+%assign comma = ""
+
+%foreach idx = numRootInportBlks
+    %assign extInp         = ExternalInputs.ExternalInput[idx]
+    %assign cgTypeIdx      = LibGetRecordCGTypeIdx(extInp)
+    %assign numDims        = LibCGTypeNumDimensions(cgTypeIdx)
+    %assign dims           = LibCGTypeDimensions(cgTypeIdx)
+
+    %assign dimsStr        = dimsStr        + comma + "%<dims[0]>"
+
+    %assign dataTypeIdxStr = dataTypeIdxStr + comma \
+    + "%<LibCGTypeToSLType(cgTypeIdx)>"
+
+    %assign isComplexStr   = isComplexStr   + comma \
+    + "%<LibCGTypeIsComplex(cgTypeIdx)>"
+
+    %assign isInterpolStr   = isInterpolStr + comma \
+    + "%<extInp.Interpolation>"
+
+    %assign inportContinuousStr   = inportContinuousStr + comma \
+    + "%<LibIsContinuous(extInp.TID)>"
+
+    %if numDims > 1
+        %assign dimsStr     = dimsStr + ", " + "%<dims[1]>"
+    %else
+        %assign dimsStr     = dimsStr + ", " + "1"
+    %endif
+
+    %assign comma    = ", "
+%endforeach
+#if defined(_MSC_VER)
+#pragma optimize( "", off )
+#endif
+%<fcnReturns> %<fcnName>(%<fcnParams>)
+{
+    %<LibDumpRegFcnUserPreinitializationCode()>\
+    %% These variables are always declared
+    %%
+    %if !GenRTModel
+        static struct _ssMdlInfo mdlInfo;
+        static struct _ssBlkInfo2 blkInfo2;
+        static struct _ssBlkInfoSLSize blkInfoSLSize;
+        %if isRAccel
+            %if  %<dataTypeIdxStr> != -1
+                const int_T inportDataTypeIdx[]   = {%<dataTypeIdxStr>};
+            %endif
+
+            %if %<dimsStr> != -1
+                const int_T inportDims[]          = {%<dimsStr>} ;
+            %endif
+
+            %if %<isComplexStr> != -1
+                const int_T inportComplex[]       = {%<isComplexStr>};
+            %endif
+
+            %if %<isInterpolStr> != -1
+                const int_T inportInterpoFlag[]   = {%<isInterpolStr>};
+            %endif
+
+            %if %<inportContinuousStr> != -1
+                const int_T inportContinuous[]    = {%<inportContinuousStr>};
+            %endif
+
+            %assign ::RSimRTWCAPIMMIVarPtr = "rt_modelMapInfoPtr"
+            %assign ::RSimRTWCAPIVar  = "rt_dataMapInfo"
+            %<RSimRTWCAPIMMIVarPtr> =  &(%<RSimRTWCAPIVar>.mmi);
+
+            executionInfo->gblObjects_.numToFiles = %<numToFiles>;
+            executionInfo->gblObjects_.numFrFiles = %<numFrFiles>;
+            executionInfo->gblObjects_.numFrWksBlocks = %<numFromWksBlocks>;
+            executionInfo->gblObjects_.numModelInputs = %<numModelInputs>;
+            executionInfo->gblObjects_.numRootInportBlks = %<numRootInportBlks>;
+
+            %if %<numRootInportBlks> > 0
+                executionInfo->gblObjects_.inportDataTypeIdx = (int_T*)calloc(%<numRootInportBlks>, sizeof(int_T));
+                memcpy(executionInfo->gblObjects_.inportDataTypeIdx, inportDataTypeIdx,sizeof(inportDataTypeIdx));
+                executionInfo->gblObjects_.inportDims = (int_T*)calloc( 2 * %<numRootInportBlks>, sizeof(int_T));
+                memcpy(executionInfo->gblObjects_.inportDims, inportDims,sizeof(inportDims));
+                executionInfo->gblObjects_.inportComplex = (int_T*)calloc(%<numRootInportBlks>, sizeof(int_T));
+                memcpy(executionInfo->gblObjects_.inportComplex,inportComplex,sizeof(inportComplex));
+                executionInfo->gblObjects_.inportInterpoFlag = (int_T*)calloc(%<numRootInportBlks>, sizeof(int_T));
+                memcpy(executionInfo->gblObjects_.inportInterpoFlag, inportInterpoFlag, sizeof(inportInterpoFlag));
+                executionInfo->gblObjects_.inportContinuous = (int_T*)calloc(%<numRootInportBlks>, sizeof(int_T));
+                memcpy(executionInfo->gblObjects_.inportContinuous, inportContinuous,sizeof(inportContinuous));
+            %else
+                executionInfo->gblObjects_.inportDataTypeIdx = NULL;
+                executionInfo->gblObjects_.inportDims = NULL;
+                executionInfo->gblObjects_.inportComplex = NULL;
+                executionInfo->gblObjects_.inportInterpoFlag = NULL;
+                executionInfo->gblObjects_.inportContinuous = NULL;
+            %endif
+        %endif
+    %endif
+
+    %if HasModelReferenceBlocks() && isRSim
+        %<FcnInitializeNoncontSignals()>
+    %endif
+
+    %% Initialize child global timer indices arrays
+    %% i.e., (mdlRef<...>_globalTimerIndices)
+    %<FcnInitializeGlobalTimerIndices()>
+
+    %% Initialize child global runtime event indices arrays
+    %% i.e., (mdlRef<...>_globalRuntimeEventIndices)
+    %<FcnInitializeGlobalRuntimeEventIndices()>
+
+    %% No variable declarations can come after this point
+
+    %if ::GenCPP == 0
+        (void) %<LibGenMemFcnCall("memset", "(%<charType> *)%<rtModelObj>", "0", ...
+            "sizeof(%<rtModelObjType>)")>;
+    %elseif SLibIsRTMZeroInitCppEnabled()
+        (void) %<LibGenMemFcnCall("memset", "(void *)%<rtModelObj>", "0", ...
+            "sizeof(%<rtModelObjType>)")>;
+    %endif
+
+    %if !GenRTModel
+        %if ::GenCPP == 0
+            (void) %<LibGenMemFcnCall("memset", "(%<charType> *)&mdlInfo", "0", ...
+                "sizeof(struct _ssMdlInfo)")>;
+            (void) %<LibGenMemFcnCall("memset", "(%<charType> *)&blkInfo2", "0", ...
+                "sizeof(struct _ssBlkInfo2)")>;
+            (void) %<LibGenMemFcnCall("memset", "(%<charType> *)&blkInfoSLSize", "0", ...
+                "sizeof(struct _ssBlkInfoSLSize)")>;
+        %elseif SLibIsRTMZeroInitCppEnabled()
+            (void) %<LibGenMemFcnCall("memset", "(void *)&mdlInfo", "0", ...
+                "sizeof(struct _ssMdlInfo)")>;
+            (void) %<LibGenMemFcnCall("memset", "(void *)&blkInfo2", "0", ...
+                "sizeof(struct _ssBlkInfo2)")>;
+            (void) %<LibGenMemFcnCall("memset", "(void *)&blkInfoSLSize", "0", ...
+                "sizeof(struct _ssBlkInfoSLSize)")>;
+        %endif
+        %<RTMSet("BlkInfo2Ptr", "&blkInfo2")>;
+        %% blkInfo2 must be set before blkInfoSLSize can be set
+        %<RTMSet("BlkInfoSLSizePtr", "&blkInfoSLSize")>;
+        %<RTMSet("MdlInfoPtr", "&mdlInfo")>;
+        %if isRAccel
+            %<RTMSet("ExecutionInfo", "executionInfo")>;
+            slsaAllocOPModelData(%<::tSimStruct>);
+        %endif
+    %endif
+
+    %<LibDumpModelRegistration(1)>\
+    %<LibDumpNonFiniteAssignmentCache()>\
+    %<LibDumpBlockInstanceData()>\
+    %% g2165261 : [MinGW] model fails to simulate in rapid mode
+    %% Moved the reinitialization of rtp structure from raccel_main.c to generated code.
+    %% This change is needed for a model containing s functions.
+    %if isRAccel
+        %<LibDumpReadParamMatFileAndUpdate()>\
+    %endif
+    %<LibDumpSFunctionRegistration()>\
+    %% user code
+    %if !LibRegFcnUserDeclarationIsEmpty()
+        %<"{">
+        %<LibDumpRegFcnUserDeclarationCode()>
+    %endif
+    %<LibDumpRegFcnUserEntryCode()>\
+    %<LibDumpRegFcnUserExitCode()>\
+    %if !LibRegFcnUserDeclarationIsEmpty()
+        %<"}">
+    %endif
+
+    %if isRSim
+        %<::CompiledModel.ChildCoderDataGroupDynamicInitializer>
+        %<::CompiledModel.ChildCoderDataGroupMemcpy>
+    %endif
+
+    %% Set FTZ on the process if the users ask for it.
+    %% Also add the function declaration to the model header file.
+    %% For now, both the feature keyword AND the ConfigSet param should be ON for this to work.
+    %if (::CompiledModel.ConfigSet.DenormalBehavior == "FlushToZero") && (CGMODEL_ACCESS("CGModel.SetDenormalBehavior") == 1)
+        vm_ssSetDenormalBehavior(1);
+        %<SLibCacheCodeToFile("mdl_fcn_decl", "extern void vm_ssSetDenormalBehavior(%<intType>);")>
+    %endif
+
+    %if CGMODEL_ACCESS("CGModel.getScopedDSM") != 0
+        %assign assignmentForResolvedScopedDSM = ...
+            ::CompiledModel.AssignmentForResolvedScopedDSM
+        %assign haveAssignmentForResolvedScopedDSM = ...
+            !WHITE_SPACE(assignmentForResolvedScopedDSM)
+
+        %if haveAssignmentForResolvedScopedDSM
+            /* Assign pointers for addresses of resolved scoped data stores */
+            %<assignmentForResolvedScopedDSM>
+        %endif
+    %endif
+
+    return %<rtModelObj>;
+}
+/* When you use the on parameter, it resets the optimizations to those that you
+specified with the /O compiler option. */
+#if defined(_MSC_VER)
+#pragma optimize( "", on )
+#endif
+
+%closefile fcnsBuf
+
+%<SLibCacheCodeToFile("mdl_fcn_defn", fcnsBuf)>
+%% Access TFL for nonfinites, the init call is done by static main.c
+%assign dummy = LibGenMathFcnCall("initnonfinite",...
+    ::CompiledModel.tSS_DOUBLE, "sizeof(%<realType>)", "")
+
+%%
+%% ============================================================================
+%% Top of registration file custom code for raccel
+%%
+%% Global variable "GenCPP" not computed yet.  Duplicate code here.
+%assign rsimGenCPP = ISFIELD(::CompiledModel.ConfigSet, "TargetLang") && ...
+    (::CompiledModel.ConfigSet.TargetLang == "C++")
+
+%if isRAccel
+    %with ::CompiledModel
+        %openfile tmpBuf
+        %assign tid = ::CompiledModel.GlobalScope.tTID
+        %assign rootSystem = System[NumSystems-1]
+        %assign paramTuningTid = SLibTidOfParameterChangeEvent()
+        %if ::rsimGenCPP
+            %<::ExternCPrefix> {
+        %endif
+        %%const %<intType> gblParameterTuningTid = %<paramTuningTid>;
+        %if ::rsimGenCPP
+        }
+        %endif
+        void MdlOutputsParameterSampleTime(%<::tTIDType> %<tid>) {
+            %<::CompiledModel.ChildCoderDataGroupAssignmentForParamTs>
+            %<::CompiledModel.ChildCoderDataGroupMemcpy>
+            %if paramTuningTid >= 0 && !LibSystemFcnIsEmptyHelper(rootSystem,"Output",paramTuningTid)
+                MdlOutputsTID%<paramTuningTid>(%<tid>);
+            %else
+                UNUSED_PARAMETER(%<tid>);
+            %endif
+        }
+        %closefile tmpBuf
+        %<SLibCacheCodeToFile("mdl_src_userBottom", tmpBuf)>
+    %endwith
+%endif
+
+%%
+%% ============================================================================
+%% Custom trailer code
+%%
+%openfile tmpBuf
+%<LibDumpBottomOfRegFileUserCode()>\
+%closefile tmpBuf
+%<SLibCacheCodeToFile("mdl_src_userBottom", tmpBuf)>
+
+%selectfile NULL_FILE
+
+%% ============================================================================
+%% Undef aliases for consistency checking
+%%
+%undef S
+
+%endif %% _SRTREG_
+
+%% [EOF] srtreg.tlc

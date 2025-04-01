@@ -1,0 +1,87 @@
+%if EXISTS(::_BLOCK_FUNCTIONS_LIB_) == 0
+%assign ::_BLOCK_FUNCTIONS_LIB_ = 1
+%%
+%% Copyright 2019-2023 The MathWorks, Inc.
+%%
+%assign ::_TLC_BLOCK_FUNCTIONS_ =  ["SetupRuntimeResources", "InitializeConditions", ...
+    "SystemInitialize", "SystemReset", "Enable", "Start", "CleanupRuntimeResources", ...
+    "Derivatives", "Projection", "MassMatrix", "ZeroCrossings", "Disable", "Update", ...
+    "Outputs", "Terminate"]
+%assign ::_NUM_TLC_BLOCK_FUNCTIONS_ = SIZE(::_TLC_BLOCK_FUNCTIONS_, 1)
+
+%% Some of the block functions should only be executed under certain conditions or they are liable to error out
+%function SLibCanExecuteBlockFcn(block, blockFcn) void
+
+    %switch blockFcn
+      %case "ZeroCrossings"
+        %return (block.NumNonsampledZCs > 0)
+      %case "Derivatives"
+      %case "Projection"
+        %return (ISFIELD(block, "NumContStates") && (block.NumContStates > 0))
+      %case "MassMatrix"
+        %return (SLibModelIsLinearlyImplicit() && (ISFIELD(block, "NumContStates") && (block.NumContStates > 0)))
+      %default
+        %return TLC_TRUE
+    %endswitch
+%endfunction
+
+%function SLibSetGeneratingOutputsCode(val) void
+    %assign ::CompiledModel.GeneratingOutputsCode = val
+%endfunction
+
+%function SLibExecSystemBlockCodeGenFunctions(system) void
+    %foreach blkIdx = system.NumBlocks
+        %assign block = system.Block[blkIdx]
+        %if 0 == block.ExecuteBlockFcns || !SLibIsNextGenTLCInterfaceEnabled(block)
+            %continue
+        %endif
+        %with block
+            %foreach blkFcnIdx = ::_NUM_TLC_BLOCK_FUNCTIONS_
+                %assign blockFcn = ::_TLC_BLOCK_FUNCTIONS_[blkFcnIdx]
+                %if !SLibCanExecuteBlockFcn(block, blockFcn)
+                    %continue
+                %endif
+                %<SLibSetGeneratingOutputsCode(CAST("Number", "Outputs" == blockFcn))>
+                %assign ::CurrentBlockFcn = blockFcn
+                %assign ::CurrentBlockTid = -1
+                %assign prevRollThreshold = ::RollThreshold
+                %if block.HasSymbolicDims
+                    %assign ::RollThreshold = 0
+                %endif
+                %openfile buff
+                %<GENERATE(block, blockFcn, system)> \
+                %closefile buff
+                %assign ::CurrentBlockFcn = "invalid"
+                %assign ::CurrentBlockTid = -1
+                %assign ::RollThreshold = prevRollThreshold
+                %if !WHITE_SPACE(buff)
+                    %assign retVal = CGMODEL_ACCESS("Block.SetBlockFunctionCode", ...
+                        block.BlockIdx[0], block.BlockIdx[2], blockFcn, -1, buff)
+                    %assert TLC_TRUE == retVal
+                %endif
+                %<SLibSetGeneratingOutputsCode(0)>
+            %endforeach
+        %endwith %% block
+        %if TLC_ERROR_COUNT > 0
+            %return
+        %endif
+        %<SLibBlockCodeGenSucceeded(block)>
+    %endforeach %% NumBlocks
+%endfunction
+
+%function SLibExecBlockCodeGenFunctions() void
+    %with ::CompiledModel
+        %foreach sysIdx = ::CompiledModel.NumSystems
+            %assign ::CurrentSystemIdx = sysIdx
+            %assign system = ::CompiledModel.System[sysIdx]
+            %with system
+                %<SLibExecSystemBlockCodeGenFunctions(system)>
+            %endwith %% system
+            %if TLC_ERROR_COUNT > 0
+                %return
+            %endif
+        %endforeach
+    %endwith
+%endfunction
+
+%endif %% _BLOCK_FUNCTIONS_LIB_

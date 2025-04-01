@@ -1,0 +1,663 @@
+%%
+%% Copyright 2020-2023 The MathWorks, Inc.
+%%
+%% Abstract:
+%%   This Thin TLC library file contains the general purpose utility functions
+%%   for accessing data type information.
+%%
+%if EXISTS(::_DTYPE_API_) == 0
+%assign ::_DTYPE_API_ = 1
+
+%include "dtype_private_api.tlc"
+
+%% DocFunction{Other Useful Functions}: LibGetDataTypeComplexNameFromId ========
+%% Abstract:
+%%   Return the name of the complex data type corresponding to a data type ID.
+%%   For example, if id == tSS_DOUBLE then this function returns "creal_T"
+%%
+%function LibGetDataTypeComplexNameFromId(id) void
+    %return CGMODEL_ACCESS("DataTypes.GetDataTypeComplexName", id)
+%endfunction
+
+%% Function: LibCGTypeIsComplex ====================================================================
+%% Abstract:
+%%   Return whether or not this is a complex type. Also returns true for complex
+%%   matrices, aliases to complex types, and pointers to complex types
+%%
+%function LibCGTypeIsComplex(cgTypeIdx) void
+    %return CGMODEL_ACCESS("CGType.GetIsComplex", cgTypeIdx)
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibGetDataTypeNameFromId ===============
+%% Abstract:
+%%   Return the data type name corresponding to a data type ID.
+%%
+%function LibGetDataTypeNameFromId(id) void
+    %return CGMODEL_ACCESS("DataTypes.GetNameFromId", id)
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibGetDataTypeIdAliasedThruToFromId ====
+%% Abstract:
+%%   Return the data type IdAliasedThruTo corresponding to a data type ID.
+%%   For example, if "yourfloat" was an alias to "myfloat", and "myfloat"
+%%   was an alias to "double", then the IdAliasedThruTo for both "yourfloat"
+%%   and "myfloat" would be 0 (since the ID for "double" is 0)
+%function LibGetDataTypeIdAliasedThruToFromId(id) void
+    %return CGMODEL_ACCESS("SLType.GetSLTypeAliasedThroughToIdx", id)
+%endfunction
+
+%% Check to see if we are at emxArray cg type
+%% Definitely a candidate to put in CGModel Bridge
+%function LibHandleEmxArray(cgTypeIdx) Output
+    %return CGMODEL_ACCESS("CGModel.handleEmxArray", cgTypeIdx)
+%endfunction
+
+%% Will see pointer type on variables marked as Simulink Locals
+%function LibGetEmxArrayName(cgTypeIdx, useStdContainerName) Output
+    %return CGMODEL_ACCESS("CGModel.getEmxArrayName", cgTypeIdx, useStdContainerName)
+%endfunction
+
+%% Function: LibOptStdCGTypeName
+%% Abstract:
+%%   Returns the CGType name
+%%
+%%   Specify the useStdContainerName argument as whether to return std container name
+%%   if the type is a pre-lowering std container type
+%%
+%function LibOptStdCGTypeName(cgTypeIdx, useStdContainerName) void
+    %return CGMODEL_ACCESS("CGModel.getOptStdCGTypeName", cgTypeIdx, useStdContainerName)
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibIsEnumDataType =====================
+%% Abstract:
+%%   Return TLC_TRUE if the input data type ID corresponds to an enumerated
+%%   type. Otherwise, return TLC_FALSE.
+%function LibIsEnumDataType(id) void
+    %return CGMODEL_ACCESS("DataTypes.IsEnumDataType", id)
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibBlockInputSignalAliasedThruDataTypeId
+%% Abstract:
+%%   Return the data type ID the input signal is aliased thru to.
+%%
+%function LibBlockInputSignalAliasedThruDataTypeId(idx)
+    %% See Also:
+    %%   LibGetDataTypeIdAliasedThruToFromId
+    %return LibGetDataTypeIdAliasedThruToFromId(...
+        LibBlockInputSignalDataTypeId(idx))
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibBlockOutputSignalAliasedThruDataTypeId
+%% Abstract:
+%%   Return the data type ID the output signal is aliased thru to
+%%
+%function LibBlockOutputSignalAliasedThruDataTypeId(idx)
+    %% See Also:
+    %%   LibGetDataTypeIdAliasedThruToFromId
+    %return LibGetDataTypeIdAliasedThruToFromId(...
+        LibBlockOutputSignalDataTypeId(idx))
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibDataTypeIsDynamicMatrix
+%% Abstract:
+%%    Return true is the SL type is a dynamic matrix type
+%%
+%function LibDataTypeIsDynamicMatrix(idx)
+    %return CGMODEL_ACCESS("DataTypes.IsDynamicMatrix", idx)
+%endfunction
+
+%% Function: LibIsBuiltInDataType ==================================================================
+%% Abstract:
+%%   Does the input data type ID correspond to a builtin type after
+%%   resolving thru aliases?
+%%
+%function LibIsBuiltInDataType(id) void
+    %return  LibGetDataTypeIdAliasedThruToFromId(id) < LibGetNumBuiltInDataTypesInModel()
+%endfunction
+
+%% Function: LibIsFundamentalBuiltInDataType =======================================================
+%% Abstract:
+%%   Does the input data type ID correspond to a builtin type, without
+%%   resolving thru aliases?
+%%
+%function LibIsFundamentalBuiltInDataType(id) void
+    %return id >= 0 && id < LibGetNumBuiltInDataTypesInModel()
+%endfunction
+
+%% Function: LibDataTypeIsBus ======================================================================
+%% Abstract:
+%%   Is the data type a nonvirtual bus?
+%%
+%function LibDataTypeIsBus(id) void
+    %return CGMODEL_ACCESS("DataTypes.IsBus", id)
+%endfunction
+
+%% Function: LibDataTypeIsBoolean ==================================================================
+%% Abstract:
+%%   Is the data type a boolean?
+%%
+%function LibDataTypeIsBoolean(id) void
+    %return CGMODEL_ACCESS("DataTypes.IsBoolean", id)
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibIsStringDataType =====================
+%% Abstract:
+%%   Return TLC_TRUE if the input data type ID corresponds to a string
+%%   type. Otherwise, return TLC_FALSE.
+%function LibIsStringDataType(id) void
+    %return CGMODEL_ACCESS("DataTypes.IsStringDataType", id)
+%endfunction
+
+%% Function: LibDataTypeNumElements ================================================================
+%% Abstract:
+%%   How many elements does the data type have?
+%%
+%function LibDataTypeNumElements(id) void
+    %return CGMODEL_ACCESS("DataTypes.GetNumElements", id)
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibIsStructDataType ====================
+%% Abstract:
+%%   Return TLC_TRUE if the input data type ID corresponds to a structure
+%%   type. Otherwise, return TLC_FALSE.
+%function LibIsStructDataType(id) void
+    %return CGMODEL_ACCESS("DataTypes.IsStructDataType", id)
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibIsHalfDataType =====================
+%% Abstract:
+%%   Return TLC_TRUE if the input data type ID corresponds to a half precision
+%%   type. Otherwise, return TLC_FALSE.
+%function LibIsHalfDataType(id) void
+    %return (CGMODEL_ACCESS("DataTypes.GetNativeType", id) == "real16_T")
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibIsDataTypeCGClassType ====================
+%% Abstract:
+%%   Return TLC_TRUE when one of the following is true:
+%%     (1) The input data type ID corresponds to a CG class type
+%%     (2) The input data type ID corresponds to a Container type that is ClassType
+%%   Otherwise, return TLC_FALSE.
+%function LibIsDataTypeCGClassType(id) void
+    %return CGMODEL_ACCESS("DataTypes.IsDataTypeCGClassType", id)
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibIsSimulinkPointerDataType =====================
+%% Abstract:
+%%   Return TLC_TRUE if the input data type ID corresponds to a SL pointer
+%%   type. Otherwise, return TLC_FALSE.
+%function LibIsSimulinkPointerDataType(id) void
+    %return CGMODEL_ACCESS("DataTypes.IsSimulinkPointerDataType", id)
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibIsImageDataType =====================
+%% Abstract:
+%%   Return TLC_TRUE if the input data type ID corresponds to an image
+%%   type. Otherwise, return TLC_FALSE.
+%function LibIsImageDataType(id) void
+    %return CGMODEL_ACCESS("DataTypes.IsImageDataType", id)
+%endfunction
+
+%% Functions: LibIsStdStringDataType ===============================================================
+%% Abstract:
+%%   Return TLC_TRUE if the input data type ID corresponds to a C++ std::string
+%%   type. Otherwise, return TLC_FALSE.
+%function LibIsStdStringDataType(id) void
+    %return CGMODEL_ACCESS("DataTypes.IsStdStringDataType", id)
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibGetDataTypeIdAliasedToFromId ========
+%% Abstract:
+%%   Return the data type IdAliasedTo corresponding to a data type ID.
+%%   For example, if "yourfloat" was an alias to "myfloat", and "myfloat"
+%%   was an alias to "double", then the IdAliasedTo for "yourfloat"
+%%   would be the ID for "myfloat" and the IdAliasedTo for "myfloat" would
+%%   be 0 (since the ID for "double" is 0)
+%function LibGetDataTypeIdAliasedToFromId(id) void
+    %return CGMODEL_ACCESS("DataTypes.IdAliasedTo", id)
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibGetDataTypeSLSizeFromId ===============
+%% Abstract:
+%%   Return the size (as SL knows it) corresponding to a data type ID.
+%%
+%function LibGetDataTypeSLSizeFromId(id) void
+    %return CGMODEL_ACCESS("DataTypes.GetDataTypeSize", id)
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibDoesDataTypeNeedConstructor ===========
+%% Abstract:
+%%   Returns whether if a constructor is needed. This can also be default
+%%           constructor that can be essentially omitted.
+%%   Return TLC_TRUE when one of the following is true:
+%%     (1) The input data type ID corresponds to a CG class type
+%%     (2) The input data type corresponds to an opaque type that has explicit constructor
+%%   Otherwise, return TLC_FALSE.
+%function LibDoesDataTypeNeedConstructor(id) void
+    %return CGMODEL_ACCESS("DataTypes.DoesDataTypeNeedConstructor", id)
+%endfunction
+
+%% Function: LibDataTypeElementDataTypeId ==========================================================
+%% Abstract:
+%%   Return the data type id of the idx'th element of datatype
+%%
+%function LibDataTypeElementDataTypeId(id, idx) void
+    %return CGMODEL_ACCESS("DataTypes.DataTypeElementDataTypeId", id, idx)
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibIsRowMajor ===============================================
+%% Abstract:
+%%   Return true when the current model uses the Row Major array layout.
+%%
+%function LibIsRowMajor()
+    %return CGMODEL_ACCESS("CGModel.IsRowMajor")
+%endfunction
+
+
+%% Function: LibPackageForDataType =================================================================
+%% Abstract:
+%%   Return the package for a data type
+%%
+%function LibPackageForDataType(dt) void
+    %if !(ISFIELD(dt, "RecordType")) || dt.RecordType != "DataType"
+        %if dt.HasObject == 0
+            %return ""
+        %endif
+
+        %return dt.Object.Package
+    %endif
+
+    %return CGMODEL_ACCESS("DataTypes.Object.StringAttribute",  dt.Id, "Package")
+%endfunction
+
+%% Function: LibClassForDataType ===================================================================
+%% Abstract:
+%%   Return the class for a data type
+%%
+%function LibClassForDataType(dt) void
+    %if !(ISFIELD(dt, "RecordType")) || dt.RecordType != "DataType"
+        %if dt.HasObject == 0
+            %return ""
+        %endif
+
+        %return dt.Object.Class
+    %endif
+
+    %return CGMODEL_ACCESS("DataTypes.Object.StringAttribute",  dt.Id, "Class")
+%endfunction
+
+%% Function: DeclareImageTypeUsage =================================================================
+%% Abstract:
+%%   Determines if image type header is required. Used by
+%%   front-ends which generate TLC code.
+%%   For example:
+%%   image tye header will be generated when needImageHeader is TLC_TRUE
+%%
+%function DeclareImageTypeUsage(needImageHeader) void
+    %<CGMODEL_ACCESS("CGModel.SetDeclaredImageTypeUsage", needImageHeader)>
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibGetDataTypeStorageIdFromId ========
+%% Abstract:
+%%   Return the data type StorageId corresponding to a data type ID.
+%%   For example, if the input id is the id for a 16bit, signed fixed point
+%%   data type, then the storage id would correspond to int16
+%function LibGetDataTypeStorageIdFromId(id) void
+    %return CGMODEL_ACCESS("DataTypes.GetDataTypeStorageId", id)
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibCGTypeIsStdContainer
+%% Abstract:
+%%   If a cgTypeIdx corresponds to a static matrix that is to be lowered to std container,
+%%   this will return true.
+%function LibCGTypeIsStdContainer(cgTypeIdx) void
+    %return CGMODEL_ACCESS("CGType.GetIsStdContainer", cgTypeIdx)
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibCGTypeContainsStdContainer
+%% Abstract:
+%%   If a cgTypeIdx corresponds to a type that is or contains std container type,
+%%   this will return true.
+%function LibCGTypeContainsStdContainer(cgTypeIdx) void
+    %return CGMODEL_ACCESS("CGType.GetContainsStdContainer", cgTypeIdx)
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibCGTypeIsStdContainerClass
+%% Abstract:
+%%   If a cgTypeIdx corresponds to a std container class type,
+%%   this will return true.
+%function LibCGTypeIsStdContainerClass(cgTypeIdx) void
+    %return CGMODEL_ACCESS("CGType.GetIsStdContainerClass", cgTypeIdx)
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibCGTypeStdContainerName
+%% Abstract:
+%%   If a cgTypeIdx correspondes to a std container type, return std container name.
+%function LibCGTypeStdContainerName(cgTypeIdx) void
+    %return CGMODEL_ACCESS("CGType.GetStdContainerName", cgTypeIdx)
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibCGTypeStdContainerReferenceIndex
+%% Abstract:
+%%   If a cgTypeIdx correspondes to a std container type, return the referenced matrix type index.
+%function LibCGTypeStdContainerReferenceIndex(cgTypeIdx) void
+    %return CGMODEL_ACCESS("CGType.GetStdContainerReferenceIndex", cgTypeIdx)
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibIsEmulatedHalfDataType =====================
+%% Abstract:
+%%   Return TLC_TRUE if the input data type ID corresponds to a half precision
+%%   type and the target does not have a half type.
+%function LibIsEmulatedHalfDataType(id) void
+    %return (LibIsHalfDataType(id) && !CGMODEL_ACCESS("CGType.GetIsNativeHalfPrecision"))
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibIsBuiltInOrCustomFloatDatatype =====
+%% Abstract:
+%%   Return TLC_TRUE if the input data type ID corresponds to a
+%%   Built-in Float: tSS_SINGLE or tSS_DOUBLE
+%%   Custom Float: tSS_HALF (Bfloat16 in the future)
+%%   Otherwise, return TLC_FALSE.
+%function LibIsBuiltInOrCustomFloatDatatype(id) void
+    %assign dTypeId = LibGetDataTypeIdAliasedThruToFromId(id)
+    %return (dTypeId == ::CompiledModel.tSS_DOUBLE || ...
+        dTypeId == ::CompiledModel.tSS_SINGLE || ...
+        LibIsHalfDataType(dTypeId))
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibIsOrientedVector
+%% Abstract:
+%%   Returns true if the given Dimension vector represents an oriented vector
+%%           otherwise returns false
+%%   Arguments:
+%%     nDims  - Number of Dimensions
+%%     Dims   - Dimensions vector
+%% TopTester: test/toolbox/rtw/targets/ert/ndindexing/bus/orientedVectors/tTLCGroundInitialization.m
+%%
+%function LibIsOrientedVector(nDims, Dims) void
+    %if nDims <= 1
+        %return TLC_FALSE
+    %endif
+
+    %assign nonSingletonDims = 0
+    %foreach idx = nDims
+        %if Dims[idx] > 1
+            %assign nonSingletonDims = nonSingletonDims + 1
+        %endif
+    %endforeach
+    %if nonSingletonDims == 1
+        %return TLC_TRUE
+    %endif
+
+    %return TLC_FALSE
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibMinIntValue =========================
+%% Abstract:
+%%   For a built-in integer data type, this function returns the formatted
+%%   minimum value of that data type
+%%
+%function LibMinIntValue(dtype) void
+    %assign dtypeAliasedThruTo = LibGetDataTypeIdAliasedThruToFromId(dtype)
+    %assign dtypeName = LibGetDataTypeNameFromId(dtypeAliasedThruTo)
+
+    %switch dtypeAliasedThruTo
+      %case ::CompiledModel.tSS_UINT8
+      %case ::CompiledModel.tSS_UINT16
+      %case ::CompiledModel.tSS_UINT32
+        %return "((%<dtypeName>)(0U))"
+      %case ::CompiledModel.tSS_INT8
+        %return "%<SLibGetTypeIdReplacement("MIN_int8_T")>"
+      %case ::CompiledModel.tSS_INT16
+        %return "%<SLibGetTypeIdReplacement("MIN_int16_T")>"
+      %case ::CompiledModel.tSS_INT32
+        %return "%<SLibGetTypeIdReplacement("MIN_int32_T")>"
+        %%break
+      %default
+        %assign errTxt = "Invalid data type %<dtypeName>."
+        %<LibBlockReportFatalError([], errTxt)>
+        %break
+    %endswitch
+%endfunction %% LibMinIntValue
+
+%% DocFunction{Other Useful Functions}: LibMaxIntValue =========================
+%% Abstract:
+%%   For a built-in integer data type, this function returns the formatted
+%%   maximum value of that data type
+%%
+%function LibMaxIntValue(dtype) Output
+    %assign dtypeAliasedThruTo = LibGetDataTypeIdAliasedThruToFromId(dtype)
+    %switch dtypeAliasedThruTo
+      %case ::CompiledModel.tSS_UINT8
+        %return "%<SLibGetTypeIdReplacement("MAX_uint8_T")>"
+      %case ::CompiledModel.tSS_UINT16
+        %return "%<SLibGetTypeIdReplacement("MAX_uint16_T")>"
+      %case ::CompiledModel.tSS_UINT32
+        %return "%<SLibGetTypeIdReplacement("MAX_uint32_T")>"
+      %case ::CompiledModel.tSS_INT8
+        %return "%<SLibGetTypeIdReplacement("MAX_int8_T")>"
+      %case ::CompiledModel.tSS_INT16
+        %return "%<SLibGetTypeIdReplacement("MAX_int16_T")>"
+      %case ::CompiledModel.tSS_INT32
+        %return "%<SLibGetTypeIdReplacement("MAX_int32_T")>"
+      %default
+        %assign dtypeName = LibGetDataTypeNameFromId(dtypeAliasedThruTo)
+        %assign errTxt = "Invalid data type %<dtypeName>."
+        %<LibBlockReportFatalError([], errTxt)>
+        %break
+    %endswitch
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibGetUnitExprFromId ===============
+%% Abstract:
+%%   Return the unit name corresponding to a unit ID.
+%%
+%function LibGetUnitExprFromId(id) void
+    %return CGMODEL_ACCESS("CGModel.UnitExprFromIdx", id)
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibGetASCIIEscapedUnitExprFromId ========
+%% Abstract:
+%%   Return the unit name corresponding to a unit ID.
+%%   Note that these units have been escaped to support unicode strings
+%%   in generated code.  They must be unescaped when passed back to c++ code.
+%%
+%function LibGetASCIIEscapedUnitExprFromId(id) void
+    %return CGMODEL_ACCESS("CGModel.ASCIIEscapedUnitExprFromIdx", id)
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibIsStructWithSimulinkPointerDataType =====================
+%% Abstract:
+%%   Return TLC_TRUE if the input data type ID corresponds to a struct with
+%%   atleast 1 SL pointer type. Otherwise, return TLC_FALSE.
+%function LibIsStructWithSimulinkPointerDataType(id) void
+    %return CGMODEL_ACCESS("DataTypes.IsStructWithSimulinkPointerDataType", id)
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibGetDataTypeEnumFromId ===============
+%% Abstract:
+%%   Return the data type enum corresponding to a data type ID. For example
+%%   id == tSS_DOUBLE => enum = "SS_DOUBLE". If id does not correspond to a
+%%   built in data type, this function returns ""
+%%
+%function LibGetDataTypeEnumFromId(dtId) void
+    %return CGMODEL_ACCESS("DataTypes.GetDataTypeEnum", dtId)
+%endfunction
+
+
+%% DocFunction{Other Useful Functions}: LibGetDataTypeSLNameFromId ===============
+%% Abstract:
+%%   Return the Simulink data type name corresponding to a data type ID.
+%%
+%function LibGetDataTypeSLNameFromId(id) void
+    %return CGMODEL_ACCESS("CGModel.GetDataTypeSLNameFromId", id)
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibGetDataTypeIdAliasedThruToForNonBusDtype ==
+%% Abstract:
+%%   Return aliased thru to data type id if the signal is not a bus.  Otherwise
+%%   do not alias thru.
+%function LibGetDataTypeIdAliasedThruToForNonBusDtype(id) void
+    %assert(id >= 0)
+    %return CGMODEL_ACCESS("DataTypes.GetDataTypeIdAliasedThruToForNonBusDtype", id)
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibIsDataTypeMessage ====================
+%% Abstract:
+%%   Return TLC_TRUE if the data type corresponds to message
+%%   Otherwise, return TLC_FALSE.
+%%   This is by checking if the name (or element's name of struct) is corresponding
+%%   to a specific identifier
+%function LibIsDataTypeMessage(id) void
+    %return CGMODEL_ACCESS("DataTypes.LibIsDataTypeMessage", id)
+%endfunction
+
+%% Function: LibGetGroundValueFromId ===============================================================
+%% Abstract:
+%%   Returns the value used for ground for the data type id passed in.
+%%   Specifically, return:
+%%
+%%   value - ground value of data type id passed in
+%%   ERROR - ground value requested for a data type that has not set it's ground
+%%           value
+%%
+%%   Note the value may be a string or an actual numeric value.  For example,
+%%   ground is 0.0 for tSS_DOUBLE, but it may be "0x08" for a fixed-point
+%%   8-bit integer with a bias.
+%%
+%%   Arguments:
+%%     dTypeId  - data type Id whose ground value is desired
+%%
+%function LibGetGroundValueFromId(dTypeId) void
+    %return SLibGetIRorTLCGround(dTypeId,TLC_TRUE,TLC_FALSE,TLC_TRUE)
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibGetBias ====================
+%% Abstract:
+%%  Get the Bias value for the data type
+%% Argument - id: data type id
+%function LibGetBias(id) void
+    %return CGMODEL_ACCESS("DataTypes.GetBias", id)
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibGetFracSlope ====================
+%% Abstract:
+%%  Get the FracSlope value for the data type
+%% Argument - id: data type id
+%function LibGetFracSlope(id) void
+    %return CGMODEL_ACCESS("DataTypes.GetFracSlope", id)
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibGetFixedExp ====================
+%% Abstract:
+%%  Get the GetFixedExp value for the data type
+%% Argument - id: data type id
+%function LibGetFixedExp(id) void
+    %return CGMODEL_ACCESS("DataTypes.GetFixedExp", id)
+%endfunction
+
+
+%% Function: LibIsNonBuiltInTypeNeededForFixpt===================================
+%% Abstract:
+%%   Return true if the passed in fixpt need to be represented as a multiword
+%%   or hardware implementation has a none-built-in longs, and the fixpt type's
+%%   word size is the same as the new hardware long/long long
+%%
+%function LibIsNonBuiltInTypeNeededForFixpt(dTypeId)
+    %return LibIsDataTypeMultiWordFixpt(dTypeId) || ...
+        LibIsDataTypeNewLongestFixpt(dTypeId)
+%endfunction
+
+%% Function: LibDataTypeIsBusND ====================================================================
+%% Abstract:
+%%   Is the data type a bus which preserves dimensions?
+%%
+%function LibDataTypeIsBusND(id) void
+    %return CGMODEL_ACCESS("DataTypes.DataTypeIsBusND", id)
+%endfunction
+
+%% Function: LibDataTypeElementNumDimensions =======================================================
+%% Abstract:
+%%   Return the number of Dimensions of the idx'th element of datatype
+%%
+%function LibDataTypeElementNumDimensions(id, idx) void
+    %return CGMODEL_ACCESS("DataTypes.DataTypeElementNumDimensions", id, idx)
+%endfunction
+
+%% Function: LibSignTLCFcnName =====================================================================
+%% Abstract:
+%%   Return the name of Sign TLC function
+%%
+%function LibSignTLCFcnName(id) void
+    %return CGMODEL_ACCESS("DataTypes.GetDataTypeSignTLCFcnName", id)
+%endfunction
+
+%% Function: LibSetHalfPrecisionUsage ==============================================================
+%% Abstract:
+%%   Returns TLC_TRUE if half datatype is registered, else
+%%   returns TLC_FALSE
+%%
+%function LibSetHalfPrecisionUsage(isHalf) void
+    %return CGMODEL_ACCESS("CGType.SetIsHalfUsed", isHalf)
+%endfunction
+
+%% Function: LibIsHalfPrecisionUsed ================================================================
+%% Abstract:
+%%   Determines if half precision header is used in the model. Used by
+%%   front-ends which generate TLC code.
+%%   For example:
+%%   half header will be generated when GetIsHalfUsed returns TLC_TRUE
+
+
+%function LibIsHalfPrecisionUsed()
+    %return CGMODEL_ACCESS("CGType.GetIsHalfUsed")
+%endfunction
+
+%% Function: LibDataTypeElementWidth ===============================================================
+%% Abstract:
+%%   Return the width of the idx'th element of datatype
+%%
+%function LibDataTypeElementWidth(id, idx) void
+    %assign element = ::CompiledModel.DataTypes.DataType[id].Elements[idx]
+    %return LibGetRecordWidth(element)
+%endfunction
+
+%% Function: LibDataTypeElementIsStdContainer ======================================================
+%% Abstract:
+%%   Return whether the idx'th element of datatype is std container type
+%%
+%function LibDataTypeElementIsStdContainer(id, idx) void
+    %return CGMODEL_ACCESS("DataTypes.IsDataTypeElementIsStdContainer", id, idx)
+%endfunction
+
+
+%% DocFunction{Other Useful Functions}: LibStructElementIsDynamicArray
+%% Abstract:
+%%   Find if a bus element is dynamic matrix type
+%function LibStructElementIsDynamicArray(aDtIdx, aEIdx) void
+    %if aEIdx >= LibDataTypeNumElements(aDtIdx)
+        %return TLC_FALSE
+    %endif
+    %return CGMODEL_ACCESS("DataTypes.IsStructElementDynamicArray", aDtIdx, aEIdx)
+%endfunction
+
+
+%% Function: LibDataTypeElementDimensions ==========================================================
+%% Abstract:
+%%   Return the number of Dimensions of the idx'th element of datatype
+%%
+%function LibDataTypeElementDimensions(id, idx) void
+    %assign element = ::CompiledModel.DataTypes.DataType[id].Elements[idx]
+    %return LibGetRecordDimensions(element)
+%endfunction
+
+
+%% Function: LibDataTypeElementName ================================================================
+%% Abstract:
+%%   Return the name of the idx'th element of datatype
+%%
+%function LibDataTypeElementName(id, idx) void
+    %return CGMODEL_ACCESS("DataTypes.GetDatatypeElementName", id, idx)
+%endfunction
+
+%endif %% _DTYPE_API_

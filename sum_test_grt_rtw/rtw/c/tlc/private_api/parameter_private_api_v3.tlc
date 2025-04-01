@@ -1,0 +1,81 @@
+%%
+%% Copyright 2022-2023 The MathWorks, Inc.
+%%
+%% Abstract:
+%%   This thin TLC library file contains the general purpose functions for accessing block
+%%   parameters. This library contains the block parameter function implementations that are
+%%   compatible with the TLC interfave version 3.
+%%
+%if EXISTS(::_PARAMETER_PRIVATE_API_V3_) == 0
+%assign ::_PARAMETER_PRIVATE_API_V3_ = 1
+
+%include "parameter_private_api.tlc"
+
+%function FcnAccessBlockParameter(param, sigIndexer) void
+    %<SLibV3CallsiteValid("FcnAccessBlockParameter")>
+    %assert ISFIELD(param, "BlockParamIdx")
+    %assert ISFIELD(param, "RecordIdx")
+    %assert param.BlockParamIdx == param.RecordIdx[2]
+    %return CGMODEL_ACCESS("Block.Parameter", param.RecordIdx[0], param.RecordIdx[1], ...
+        param.RecordIdx[2], ::CurrentBlockFcn, ::CurrentBlockTid, ...
+        "", "", "%<sigIndexer>")
+%endfunction %% FcnAccessBlockParameter
+
+%function SLibGetValueForNonBuiltInTypeForStructure(blockParam, prmValue, pIdx, dTypeId, value, sigIndexer) void
+    %<SLibV3CallsiteValid("SLibGetValueForNonBuiltInTypeForStructure")>
+    %assert ISFIELD(param, "BlockParamIdx")
+    %if LibDataTypeIsBus(dTypeId)
+        %% For back compatibility we use data type ground value for
+        %% zero initialization of bus data.
+        %% For non-zero initialization we use fully defined struct parameter
+
+        %assign zeroValForBusInit = [0.0]
+        %if ((TYPE(value)    == TYPE(zeroValForBusInit)) && ...
+            (TYPE(value[pIdx]) == TYPE(zeroValForBusInit[0])))
+
+            %% Zero-initialization of bus data
+            %assert(param.Tunable == "no")
+            %assert(SIZE(prmValue, 1) == 1)
+            %assert(value == [0.0])
+
+            %% track using param.OwnerSysIdx
+            %assign rtZ = LibGetGroundValueFromId(SLibGetBlockParameterContainerCGTypeId(blockParam))
+            %<FcnTrackGroundSymbolForBlockParam(rtZ)>
+            %return rtZ
+        %else
+            %% Fully-defined structure parameter
+            %return FcnAccessBlockParameter(blockParam, "0")
+        %endif
+    %elseif LibIsStringDataType(dTypeId)
+        %%String type constants should have value set in the model
+        %return FcnAccessBlockParameter(blockParam, "0")
+    %endif
+    %return LibGetGroundValueFromId(SLibGetBlockParameterContainerCGTypeId(blockParam))
+%endfunction %% SLibGetValueForNonBuiltInTypeForStructure
+
+%function SLibIsGenerateInlinedParameter(blockParam, lcv, sigIdx) void
+    %assign tmpVect = SLibGetReimAndIdx(sigIdx)
+    %assign reim    = tmpVect[0]
+    %assign dTypeId =  LibBlockParameterDataTypeId(blockParam)
+    %assign prmSize      = SLibGetSizeOfValueFromParamRec(blockParam)
+    %assign nCols        = prmSize[1]
+    %% Below conditions are derived from TLC function FcnGenerateInlinedParameter
+    %% Conditions are as follows
+    %% 1) InlineParameters ON
+    %% 2) Parameter is not Multiword fixpt
+    %% 3) Parameter is not a vector and it's not being rolled
+    %% 4) The parameter is not complex and it's not being accessed as a structure
+    %% 5) Parameter is not tunable
+    %if InlineParameters != 0 && !LibIsDataTypeMultiWordFixpt(dTypeId) && !((lcv != "" && nCols > 1) ...
+        || (reim == "" && LibGetRecordIsComplex(blockParam)) || SLibBlockParameterIsTunable(blockParam))
+        %return TLC_TRUE
+    %endif
+    %return TLC_FALSE
+%endfunction
+
+%function SLibBlockParameterIsTunable(blockParam)
+    %return CGMODEL_ACCESS("Block.GetParamIsTunable", blockParam.RecordIdx[0], blockParam.RecordIdx[1], ...
+        blockParam.RecordIdx[2])
+%endfunction
+
+%endif %% _PARAMETER_PRIVATE_API_V3_

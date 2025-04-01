@@ -1,0 +1,47 @@
+%%
+%%
+%%
+%%
+%% Copyright 2020-2021 The MathWorks, Inc.
+%%
+%% Abstract:
+%%      Support for image type
+%%
+
+%implements "imagelib" "C"
+
+%if EXISTS(_IMAGELIB_) == 0
+%assign _IMAGELIB_ = 1
+
+%% Function: constructImage ========================================================================
+%% Abstract:
+%%  construct an empty image
+%%
+%function constructImage(props, mem) void
+    %openfile buffer
+    %assign channels = props.Channels + "U"
+    %assign rows = props.Rows + "U"
+    %assign cols = props.Cols + "U"
+    %assign format = props.ColorFormat
+    %assign layout = props.Layout
+    %assign class = props.ClassUnderlying
+    constructImage(%<mem>, %<channels>, %<rows>, %<cols>, %<format>, %<layout>, %<class>)\
+    %closefile buffer
+    %return buffer
+%endfunction %% LibReportDiagnosticForAccel
+
+%% Function: destructImage =========================================================================
+%% Abstract:
+%%  construct an empty image
+%%
+%function destructImage(props, mem) void
+    %openfile buffer
+    destructImage(%<mem>)\
+    %closefile buffer
+    %return buffer
+%endfunction %% LibReportDiagnosticForAccel
+
+
+%endif %% _IMAGELIB_
+
+%% [EOF] imagelib.tlc

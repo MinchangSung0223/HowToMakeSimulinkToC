@@ -1,0 +1,699 @@
+%%
+%% Copyright 2020-2023 The MathWorks, Inc.
+%%
+
+%if EXISTS(::_UTILS_API_) == 0
+%assign ::_UTILS_API_ = 1
+
+%include "utility_private_api.tlc"
+%include "diagnostics_private_api.tlc"
+%include "dtype_api.tlc"
+
+%% DocFunction{Code Configuration Functions}: LibGetModelName ==================
+%% Abstract:
+%%   Return name of the model (no extension)
+%%
+%function LibGetModelName() void
+    %return CGMODEL_ACCESS("CGModel.ModelName")
+%endfunction %%LibGetModelName
+
+
+%% DocFunction{Sample Time Functions}: LibTriggeredTID =========================
+%% Abstract:
+%%   Returns whether this TID corresponds to a triggered rate
+%%
+%function LibTriggeredTID(tid) void
+
+    %return ISEQUAL(tid, "triggered") || ...
+        ISEQUAL(tid, -1) || ...
+        LibAsynchronousTriggeredTID(tid)
+%endfunction %% LibTriggeredTID
+
+%% DocFunction{Sample Time Functions}: LibConstantTID =========================
+%% Abstract:
+%%   Returns whether this TID corresponds to a constant rate
+%%
+%function LibConstantTID(tid) void
+
+    %return ISEQUAL(tid, "constant") || ISEQUAL(tid, -2)
+%endfunction %% LibConstantTID
+
+%% DocFunction{Sample Time Functions}: LibAsynchronousTriggeredTID ===================
+%% Abstract:
+%%   Returns whether this TID corresponds to a asynchronous triggered rate
+%%
+%function LibAsynchronousTriggeredTID(tid) void
+    %return TYPE(tid) == "Number" && tid >= 0 && ...
+        CGMODEL_ACCESS("CGModel.SampleTime.IsAsynchronous", tid)
+%endfunction %% LibAsynchronousTriggeredTID
+
+
+%% DocFunction{Sample Time Functions}: LibIsContinuous =========================
+%% Abstract:
+%%   Returns 1 if the specified task identifier (TID) is continuous, 0 otherwise.
+%%   Note, TIDs equal to "triggered" or "constant" are not continuous.
+%% TopTester: test/toolbox/simulink/variants/var-vss-codevariants/tcodevariants1.m
+%% TopTester: test/toolbox/simulink/variants/var-vss-codevariants/tcodevariants9.m
+%function LibIsContinuous(TID) void
+    %if LibTriggeredTID(TID) || ...
+        LibConstantTID(TID) || ...
+        (TYPE(TID) == "Number" && TID < 0) || ...
+        TYPE(TID) == "Vector"
+        %return 0
+    %elseif TYPE(TID) == "Number"
+        %if TID < 0
+            %return 0
+        %else
+            %assign period = CGMODEL_ACCESS("CGModel.SampleTime.Period", TID)
+            %assign offset = CGMODEL_ACCESS("CGModel.SampleTime.Offset", TID)
+            %if period == 0.0 && offset == 0.0
+                %return 1
+            %else
+                %return 0
+            %endif
+        %endif
+    %else
+        %<LibReportFatalError("Invalid TID (%<TID>)")>
+    %endif
+%endfunction %% LibIsContinuous
+
+%% DocFunction{Advanced Functions}: LibIsModelReferenceTarget ==================
+%% Abstract:
+%%    Return true if we are generating code for model reference target
+%%
+%function LibIsModelReferenceTarget()
+    %return IsModelReferenceTarget()
+%endfunction
+
+%% DocFunction{Advanced Functions}: LibIsModelReferenceSimTarget ===============
+%% Abstract:
+%%    Return true if we are generating code for model reference sim target
+%%
+%function LibIsModelReferenceSimTarget()
+    %return IsModelReferenceSimTarget()
+%endfunction
+
+%% DocFunction{Advanced Functions}: LibIsModelReferenceRTWTarget ===============
+%% Abstract:
+%%    Return true if we are generating code for model reference codegen target
+%%
+%function LibIsModelReferenceRTWTarget()
+    %return IsModelReferenceRTWTarget()
+%endfunction
+
+%% DocFunction{BlkPathAndErrFcns}: LibGetBlockPath =============================
+%% Abstract:
+%%   LibGetBlockPath returns the full block path name string for a block record
+%%   including carriage returns and other special characters which may be
+%%   present in the name.  Currently, the only other special string sequences
+%%   defined are '/*' and '*/'.
+%%
+%%   The full block path name string is useful when accessing blocks from
+%%   MATLAB.  For example, the full block name can be used with hilite_system()
+%%   via FEVAL to match the Simulink path name exactly.
+%%
+%%   Use LibGetFormattedBlockPath to get a block path suitable for placing
+%%   in a comment or error message.
+%%
+%function LibGetBlockPath(block) void
+    %% this is to handle customer models that are using this method by passing a system
+    %if ISFIELD(block, "NumBlocks")
+        %return LibUnmangledPathName(block.Name)
+    %endif
+
+    %if LibGrSrcExists(block)
+        %return LibGrBlockPath(block)
+    %else
+        %assign blkName = LibBlockName(block)
+        %return LibUnmangledPathName(blkName)
+    %endif
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibExternInFcnDecls ====================
+%% Abstract:
+%%   Returns "extern " if the Code style "Preserve extern in function
+%%   declarations is on, "" otherwise
+%%
+%function LibExternInFcnDecls() void
+    %return CGMODEL_ACCESS("CGModel.AddExternInFcnDecls")
+%endfunction %%LibExternInFcnDecls
+
+%% DocFunction{Sample Time Functions}: LibIsZOHContinuous ======================
+%% Abstract:
+%%   Returns 1 if the specified task identifier (TID) is ZOH continuous,
+%%   0 otherwise.
+%%   Note, TIDs equal to "triggered" or "constant" are not ZOH continuous.
+%% TopTester: test/toolbox/simulink/variants/var-vss-general/tMdlrefToVSS.m
+%% TopTester: test/toolbox/simulink/variants/var-general/tsvarDDG.m
+%function LibIsZOHContinuous(TID) void
+    %if TYPE(TID) == "Number" && TID >= 0
+        %assign period = CGMODEL_ACCESS("CGModel.SampleTime.Period", TID)
+        %assign offset = CGMODEL_ACCESS("CGModel.SampleTime.Offset", TID)
+        %if period == 0.0 && offset == 1.0
+            %return 1
+        %else
+            %return 0
+        %endif
+    %elseif LibTriggeredTID(TID) || LibConstantTID(TID)
+        %return 0
+    %else
+        %<LibReportFatalError("Invalid TID (%<TID>)")>
+    %endif
+%endfunction %% LibIsZOHContinuous
+
+%% DocFunction{Other Useful Functions}: LibPreserveExternInFcnDecls ===========
+%% Abstract:
+%%   Returns 1 if the Code style "Preserve extern in function declarations is
+%%   on, 0 otherwise
+%%
+%function LibPreserveExternInFcnDecls() void
+    %return CGMODEL_ACCESS("CGModel.PreserveExternInFcnDecls")
+%endfunction %%LibPreserveExternInFcnDecls
+
+%% Function: LibIsGlobalServer =====================================================================
+%% Abstract:
+%%    Return true if system is a global server
+%%
+%function LibIsGlobalServer(system) void
+    %return CGMODEL_ACCESS("CGModel.System.IsGlobalServer", system.SystemIdx)
+%endfunction
+
+%% Function: LibIsServer ===========================================================================
+%% Abstract:
+%%    Return true if system is a server
+%%
+%function LibIsServer(system) void
+    %return CGMODEL_ACCESS("CGModel.System.IsService", system.SystemIdx)
+%endfunction
+
+%% Function: SLibIsMultiInstanceServer =============================================================
+%% Abstract:
+%%    Return true if system is a multi-instance server
+%%
+%function SLibIsMultiInstanceServer(system) void
+    %return CGMODEL_ACCESS("CGModel.System.IsMultiInstanceServer", system.SystemIdx)
+%endfunction
+
+%% Function: SLibIsModelScopedServer ===============================================================
+%% Abstract:
+%%    Return true if system is a model scoped server
+%%
+%function SLibIsModelScopedServer(system) void
+    %return CGMODEL_ACCESS("CGModel.System.IsModelScopedServer", system.SystemIdx)
+%endfunction
+
+%% Function: SLibIsExportFcnDiagram ================================================================
+%% Abstract
+%%  Is this an export function diagram
+%function SLibIsExportFcnDiagram() void
+    %return CGMODEL_ACCESS("CGModel.IsExportFcnDiagram")
+%endfunction
+
+
+%% Function: LibAddToCompiledModel =================================================================
+%% Abstract:
+%%   Adds an identifier name/value pair to the global
+%%   ::CompiledModel record.  An error is reported if the identifier already
+%%   exists.
+%%
+%function LibAddToCompiledModel(name, value) void
+    %if ISFIELD(::CompiledModel, name)
+        %<LibReportFatalError("LibAddToCompiledModel, %<name> already exists")>
+    %endif
+    %addtorecord ::CompiledModel %<name> value
+%endfunction %% End of LibAddToCompiledModel
+
+%% DocFunction{Other Useful Functions}: LibGenConstVectWithInit ================
+%% Abstract:
+%%   Return an initialized static constant variable string of form:
+%%
+%%      static const typeName varId[] = { data };
+%%
+%%   The typeName is generated from typeId which can be one of:
+%%     tSS_DOUBLE, tSS_SINGLE, tSS_BOOLEAN, tSS_INT8, tSS_UINT8,
+%%     tSS_INT16, tSS_UINT16, tSS_INT32, tSS_UINT32,
+%%
+%%   The data input argument must be a numeric scalar or vector and must
+%%   be finite (no Inf, -Inf, or NaN values).
+%%
+%%   Note, this function is provided for C-code targets only.
+%%
+%function LibGenConstVectWithInit(data, typeId, varId)
+
+    %if (SIZE(data,0) > 1 && SIZE(data,1))
+        %<SLibReportErrorWithId("RTW:tlc:LibGenConstVectWithInitErr")>
+    %endif
+
+    %assign vals = SLibPrepValue(data, typeId)
+    %openfile initializer
+    %if SLibIsNdIndexingFeatureOn()
+        %assign nonFiniteIndices = GENERATE_FORMATTED_VALUE(vals, "", 0)
+    %else
+        %assign nonFiniteIndices = GENERATE_FORMATTED_VALUE(vals, "")
+    %endif
+    %closefile initializer
+
+    %if !SLibSupportNonfiniteLiterals() && (nonFiniteIndices[0][0] > 0)
+        %<SLibReportErrorWithId("RTW:tlc:LibGenConstVectWithInitErr2")>
+    %endif
+    %assign type = LibGetDataTypeNameFromId(typeId)
+
+    %openfile str
+    %if SIZE(data,0) == 1 && SIZE(data,1) == 1
+        %assign brackets = ""
+    %else
+        %assign brackets = "[]"
+    %endif
+    static const %<type> %<varId>%<brackets> = %<initializer>;
+    %closefile str
+    %assign str = LibGetCppBracedInitStr(str)
+
+    %return str
+
+%endfunction %% end LibGenConstVectWithInit
+
+%% DocFunction{Other Useful Functions}: LibGetUsesCppBracedInit ================
+%% Abstract:
+%%   Returns true if braced-initialization should be used for C++ code generation.
+%%
+%function LibGetUsesCppBracedInit()
+    %return CGMODEL_ACCESS("CGModel.getUsesCppBracedInit")
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibGetCppBracedInitStr =================
+%% Abstract:
+%%   Returns braced-initializaiton string without equals sign if applicable.
+%%
+%function LibGetCppBracedInitStr(origStr)
+    %if LibGetUsesCppBracedInit()
+        %return CGMODEL_ACCESS("CGModel.getCppBracedInitStr", origStr)
+    %else
+        %return origStr
+    %endif
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibIsComplex ===========================
+%% Abstract:
+%%   Returns 1 if the argument passed in is complex, 0 otherwise.
+%%
+%function LibIsComplex(arg) void
+    %% This function determines if the argument passed in is complex.
+
+    %%---------------------------------------
+    %% Argument         Real        Complex
+    %%---------------------------------------
+    %% Double:          Real        Complex
+    %% Single:          Real32      Complex32
+    %% Half:            Real16      Complex16
+    %% Signed ints:     Number      Gaussian
+    %% Unsigned ints:   Unsigned    UnsignedGaussian
+    %%---------------------------------------
+
+    %assign arg_type = TYPE(arg[0])
+    %return ( (arg_type == "Complex") || ...
+        (arg_type == "Complex32") || ...
+        (arg_type == "Complex16") || ...
+        (arg_type == "Gaussian") || ...
+        (arg_type == "UnsignedGaussian") )
+%endfunction %% LibIsComplex
+
+%% DocFunction{Sample Time Functions}: LibIsDiscrete ===========================
+%% Abstract:
+%%   Returns 1 if the specified task identifier (TID) is discrete, 0 otherwise.
+%%   Note, task identifiers equal to "triggered" or "constant" are not discrete.
+%%
+%function LibIsDiscrete(TID) void
+    %if TYPE(TID) == "Number" || TYPE(TID) == "Vector"
+        %return CGMODEL_ACCESS("CGModel.SampleTime.IsTIDDiscrete", TID[0])
+    %elseif LibTriggeredTID(TID) || LibConstantTID(TID)
+        %return 0
+    %else
+        %<LibReportFatalError("Invalid TID (%<TID>)")>
+    %endif
+%endfunction %% LibIsDiscrete
+
+%% Function: LibRequestID ==========================================================================
+%% Abstract:
+%%  This should be used to register an ID using the Identifier Service.
+%%  Throws an error if the ID cannot be registered.
+%%
+%function LibRequestID(requestedID,isGlobal, isFixed) void
+    %assign id = FEVAL("rtwprivate","requestIdentifier",LibGetModelName(),requestedID,isGlobal,isFixed)
+    %<LibRequestIDError(id,requestedID)>
+    %return id
+%endfunction %%LibRequestID
+
+%% Function: LibRequestIDWithLength ================================================================
+%% Abstract:
+%%  This should be used to register an ID using the Identifier Service.
+%%  Throws an error if the ID cannot be registered.
+%%
+%function LibRequestIDWithLength (requestedID,isGlobal, isFixed, len) void
+    %assign id = FEVAL("rtwprivate","requestIdentifier",LibGetModelName(),requestedID,isGlobal,isFixed,len)
+    %<LibRequestIDError(id,requestedID)>
+    %return id
+%endfunction %%LibRequestIDWithLength
+
+%% Function: LibRequestIDError =====================================================================
+%% Abstract:
+%%  This should be used to register an ID using the Identifier Service.
+%%  Throws an error if the ID cannot be registered.
+%%
+%function LibRequestIDError(id,requestedID) void
+    %if TYPE(id) == "Number"
+        %<SLibReportErrorWithIdAndArgs("RTW:tlc:IdentifierClash",requestedID)>
+    %endif
+%endfunction %%LibRequestIDError
+
+%% DocFunction{Sample Time Functions}: LibGetNumSFcnSampleTimes ================
+%% Abstract:
+%%   Returns the number of S-function sample times for a block.
+%%
+%function LibGetNumSFcnSampleTimes(block) void
+    %%   See also:
+    %%     LibIsSFcnSingleRate
+    %%     LibGetGlobalTIDFromLocalSFcnTID
+    %%     LibIsSFcnSampleHit
+    %%     LibIsSFcnSpecialSampleHit
+    %%     LibGetSFcnTIDType
+    %%
+    %return CGMODEL_ACCESS("Block.NumSFcnSampleTimes", block.BlockIdx[0], block.BlockIdx[2])
+%endfunction %% LibGetNumSFcnSampleTimes
+
+
+%% DocFunction{Sample Time Functions}: LibIsSFcnSingleRate  ====================
+%% Abstract:
+%%   LibIsSFcnSingleRate returns a boolean value (1 or 0) indicating
+%%   whether the S-function is single rate (one sample time) or multirate
+%%   (multiple sample times).
+%%
+%function LibIsSFcnSingleRate(block) void
+    %% See also:
+    %%     LibIsRateTransitionBlock   (must be single rate block)
+    %%     LibGetNumSFcnSampleTimes
+    %%     LibGetGlobalTIDFromLocalSFcnTID
+    %%     LibIsSFcnSampleHit
+    %%     LibIsSFcnSpecialSampleHit
+    %%     LibGetSFcnTIDType
+    %%
+    %return CGMODEL_ACCESS("Block.IsSFcnSingleRate", block.BlockIdx[0], block.BlockIdx[2])
+%endfunction %% LibIsSFcnSingleRate
+
+%% DocFunction{BlkPathAndErrFcns}: LibGetFormattedBlockPath ====================
+%% Abstract:
+%%   LibGetFormattedBlockPath returns the full path name string of a block
+%%   without any special characters. The string returned from this function
+%%   is suitable for placing the block name, in comments or generated code, on
+%%   a single line.
+%%
+%%   Currently, the special characters are carriage returns, '/*', and '*/'.
+%%   A carriage return is converted to a space, '/*' is converted to '/+',
+%%   and '*/' is converted to '+/'.  Note that a '/' in  the name is
+%%   automatically converted to a '//' to distinguish it from a path separator.
+%%
+%%   Use LibGetBlockPath to get the block path needed by Matlab functions
+%%   used in reference blocks in your model .
+%%
+%function LibGetFormattedBlockPath(block) void
+    %% CompiledBlocks work in the TLC Server
+    %if ISFIELD(block, "RecordType")
+        %if block.RecordType != "CompiledBlock"
+            %return SLibGetFormattedBlockPath(block)
+        %endif
+        %if LibGrSrcExists(block)
+            %return SLibMangledGrBlockPath(CGMODEL_ACCESS("BlockHierarchyMap.SubsystemBlockAndIndexFromCompiledBlock", ...
+                block.BlockIdx[0], block.BlockIdx[2]))
+        %endif
+    %else
+        %return LibMangledPathName(block.Name)
+    %endif
+%endfunction
+
+%% DocFunction{BlkPathAndErrFcns}: LibBlockReportWarning =======================
+%% Abstract:
+%%   This should be used when reporting warnings for a block. This function
+%%   is designed to be used from block target files (e.g. the TLC file for an
+%%   inlined S-function).
+%%
+%%   This function can be called with or without the block record scoped.
+%%   To call this function without a block record scoped, pass the block record.
+%%   To call this function when the block is scoped, pass block = [].
+%%   Specifically:
+%%
+%%     LibBlockReportWarning([],"warn string")          -- If block is scoped
+%%     LibBlockReportWarning(blockrecord,"warn string") -- If block record is
+%%                                                         available
+%%
+%% TopTester: test/toolbox/simulink/blocks/lib_Sources/Ground/rtw/tStringSupport.m
+%%
+%function LibBlockReportWarning(block,warnstring) void
+    %if ISEMPTY(block)
+        %<LibReportWarning(warnstring)>
+    %else
+        %assign blockType = CGMODEL_ACCESS("Block.Type", block.BlockIdx[0], block.BlockIdx[2])
+        %if blockType != "Vector"
+            %assign blockName = LibGetFormattedBlockPath(block)
+        %else
+            %assign blockName = LibMangledPathName(Name)
+        %endif
+
+        %assign warnMessage = ...
+            "Simulink Coder -- In block \"%<blockName>\", block type \"%<blockType>\": %<warnstring>"
+
+        %<SLibReportWarningWithIdAndArgs("RTW:tlc:GenericWarn", warnMessage)>
+    %endif
+%endfunction %% LibBlockReportWarning
+
+%% Function{BlkPathAndErrFcns}: SLibReportError ================================
+%% Abstract:
+%%   Report either a usage or fatal error for a block.
+%%
+%function SLibReportError(location,block,errorstring) void
+    %assign blockType = CGMODEL_ACCESS("Block.Type", block.BlockIdx[0], block.BlockIdx[2])
+    %if blockType != "Vector"
+        %assign blockName = LibGetFormattedBlockPath(block)
+    %else
+        %assign blockName = LibMangledPathName(Name)
+    %endif
+
+    %assign errorMessage = ...
+        "%<location> in block: \"%<blockName>\", block type \"%<blockType>\": %<errorstring>"
+
+    %exit %<errorMessage>
+%endfunction %% SLibReportError
+
+%% DocFunction{BlkPathAndErrFcns}: LibBlockReportFatalError ====================
+%% Abstract:
+%%   This should be used when reporting fatal (assert) errors for a block.
+%%   Use this function for defensive programming. TLC Error Message appendix in
+%%   the TLC reference manual.
+%%
+%function LibBlockReportFatalError(block,errorstring) void
+    %if ISEMPTY(block)
+        %<LibReportFatalError(errorstring)>
+    %else
+        %setcommandswitch "-v1"
+        %<SLibReportError("Simulink Coder Fatal",block,errorstring)>
+    %endif
+%endfunction %% LibBlockReportFatalError
+
+%% DocFunction{BlkPathAndErrFcns}: LibBlockReportError =========================
+%% Abstract:
+%%   This should be used when reporting errors for a block. This function
+%%   is designed to be used from block target files (e.g. the TLC file for
+%%   an inlined S-function).
+%%
+%%   This function can be called with or without the block record scoped.
+%%   To call this function without a block record scoped, pass the block
+%%   record. To call this function when the block is scoped, pass block = [].
+%%   Specifically:
+%%
+%%     LibBlockReportError([],"error string")          -- If block is scoped
+%%     LibBlockReportError(blockrecord,"error string") -- If block record is
+%%                                                        available
+%%
+%function LibBlockReportError(block,errorstring) void
+    %if ISEMPTY(block)
+        %<LibReportError(errorstring)>
+    %else
+        %<SLibReportError("Simulink Coder Error",block,errorstring)>
+    %endif
+%endfunction %% LibBlockReportError
+
+%% Function: LibIsAliasDataType ====================================================================
+%% Abstract:
+%%   Does the input data type ID correspond to an alias type?
+%%
+%function LibIsAliasDataType(id) void
+    %return CGMODEL_ACCESS("DataTypes.IsAliasDataType", id)
+%endfunction
+
+%% DocFunction{BlkPathAndErrFcns}: LibGetBlockName =============================
+%% Abstract:
+%%   LibGetBlockName returns the short block path name string for a block record
+%%   excluding carriage returns and other special characters which may be
+%%   present in the name.
+%%
+%function LibGetBlockName(block) void
+    %% If the current block is a compiledBlock
+    %if ISFIELD(block, "RecordType") && block.RecordType == "CompiledBlock"
+        %% If its a graphicalBlock
+        %if LibGrSrcExists(block)
+            %return SLibGrBlockName(CGMODEL_ACCESS("BlockHierarchyMap.SubsystemBlockAndIndexFromCompiledBlock",...
+                block.BlockIdx[0], block.BlockIdx[2]))
+        %else
+            %return LibBlockName(block)
+        %endif
+    %else
+        %% any other record being passed
+        %return block.Name
+    %endif
+%endfunction
+
+%% DocFunction{Code Configuration Functions}: LibAddToModelSources =============
+%% Abstract:
+%%   This function serves two purposes:
+%%     1) To notify the Simulink Coder build process that it must
+%%        build with the specified source file, and
+%%     2) To update the
+%%          'SOURCES: file1.c file2.c ...'
+%%        comment in the generated code.
+%%
+%%   For inlined S-functions, LibAddToModelSources is generally called from
+%%   BlockTypeSetup. This function adds a file name to the list of sources
+%%   needed to build this model. This functions returns 1 if the filename passed
+%%   in was a duplicate (i.e. it was already in the sources list) and 0 if it
+%%   was not a duplicate.
+%%
+%%   As an S-function author, we recommend using the SFunctionModules
+%%   block parameter instead of this function. See Writing S-functions.
+%%
+%%TopTester: test/toolbox/simulink/variants/var-inline-vsrc-systemtests/tmg1317695_VC1.m
+%%
+%function LibAddToModelSources(newFile) void
+    %if !SLibHasBufferAlreadyBeenAddedToCache()
+        %return CGMODEL_ACCESS("CGModel.AddToModelSources", newFile)
+    %endif
+    %return TLC_TRUE
+%endfunction %% LibAddToModelSources
+
+%% DocFunction{Sample Time Functions}: LibGetNumAsyncTasks ===============
+%% Abstract:
+%%    Return the number of asynchronous tasks in
+%%  generated code.
+%%
+%function LibGetNumAsyncTasks()
+    %return CGMODEL_ACCESS("CGModel.NumAsynchronousSampleTimes")
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibIsRowMajorLayout ==================
+%% Abstract:
+%% Is the model generating code in Row Major Layout
+%function LibIsRowMajorLayout() void
+    %return CGMODEL_ACCESS("CGModel.IsRowMajor")
+%endfunction
+
+%%DocFunction{Other Useful Functions}: LibIsNdIndex ==============================
+%% Abstract:
+%%   Returns true if the given index string is nD; e.g., [0][0], [x][y][z].
+%% Warning, this function can only be applied to a string that is known to
+%% contain indexing for variable access.
+%%
+%function LibIsNdIndex(aIndexStr) void
+
+    %% An nD index is always starts with bracket & ends with either a bracket or structure
+    %% element selection.
+    %assert SIZE(REGEXP_MATCH(aIndexStr, "^\\[.*(\\]$|\\]\\.(\\w+)$)"),0) > 0
+
+    %return CGMODEL_ACCESS("DataTypes.IsDataTypeNdIndex", aIndexStr)
+%endfunction
+
+
+%% DocFunction{Other Useful Functions}: LibGetDataInitEqualSign ================
+%% Abstract:
+%%   Returns equals sign or empty string for array or structure initialization.
+%%
+%function LibGetDataInitEqualSign() void
+    %if !EXISTS(::EQUALSIGN)
+        %assign ::EQUALSIGN = (LibGetUsesCppBracedInit() ? "" : " = ")
+    %endif
+
+    %return ::EQUALSIGN
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibGetScalarDataInitTokens =============
+%% Abstract:
+%%   Returns head and trail tokens for scalar initialization.
+%%
+%function LibGetScalarDataInitTokens() void
+    %if !EXISTS(::SCALARDATAINITTOKENS)
+        %assign ::SCALARDATAINITTOKENS = [" = ", ""]
+        %if LibGetUsesCppBracedInit()
+            %assign ::SCALARDATAINITTOKENS[0] = "{ "
+            %assign ::SCALARDATAINITTOKENS[1] = " }"
+        %endif
+    %endif
+    %return ::SCALARDATAINITTOKENS
+%endfunction
+
+%% DocFunction{Other Useful Functions}: LibIsHostBasedSimulationTarget =============
+%% Abstract:
+%%   Returns if TLC is running for a host based simulation target.
+%%
+%function LibIsHostBasedSimulationTarget() void
+    %return SLibIsHostBasedSimulationTarget()
+%endfunction
+
+%% Utility function. Convert the filesep in a path to double filesep
+%function LibChangeSlashToDoubleSlash(inputStr)
+    %assign filesep = FEVAL("filesep")
+    %assign result = ""
+    %assign len = SIZE(inputStr,1)
+    %foreach idx = len
+        %if inputStr[idx] == filesep
+            %assign result = result + filesep
+        %endif
+        %assign result = result + inputStr[idx]
+    %endforeach
+    %return result
+%endfunction
+
+%% DocFunction: LibParentMaskBlockName =============================================================
+%% Abstract:
+%%   Returns the name of the parent subsystem (mask) block.
+%% TopTester: test/toolbox/simulink/blocks/sb2sl/tsb2slmdlref.m
+%%
+%function LibParentMaskBlockName(block) void
+    %if ::Accelerator
+        %% Accelerator encodes names, return its name.
+        %return block.Name
+    %endif
+
+    %assign grSrc = CGMODEL_ACCESS("BlockHierarchyMap.SubsystemBlockAndIndexFromCompiledBlock",...
+        block.BlockIdx[0], block.BlockIdx[2])
+    %if grSrc[0] != -1
+        %with ::CompiledModel.BlockHierarchyMap
+            %return Subsystem[grSrc[0]].Name
+        %endwith
+    %endif
+
+    %if ISFIELD(block, "SLName")
+        %assign name = block.SLName
+    %else
+        %assign name = block.Name
+    %endif
+    %assign sysName = SYSNAME(name)
+    %assert sysName[0] == "Root"
+    %return name
+
+%endfunction
+
+%function LibGetModelSources() void
+    %return CGMODEL_ACCESS("CGModel.GetModelSources")
+%endfunction
+
+%function LibGetNumModelSources() void
+    %return CGMODEL_ACCESS("CGModel.GetNumModelSources")
+%endfunction
+
+%endif %% _UTILS_API_

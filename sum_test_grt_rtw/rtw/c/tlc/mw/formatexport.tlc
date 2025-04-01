@@ -1,0 +1,464 @@
+%% ==============================================================================
+%%
+%%
+%%
+%%
+%% Abstract:
+%%   This system file creates code for the model.h file.
+%%
+%% Copyright 1994-2023 The MathWorks, Inc.
+%%
+%selectfile NULL_FILE
+
+%include "formatrtm.tlc"
+
+%if EXISTS(_FORMATEXPORT_) == 0
+%assign _FORMATEXPORT_ = 1
+
+%realformat "CONCISE"
+
+%%*****************************************************************************
+%% NOTE: This file is not used for model reference. If you are updating
+%% this file, please update ModelrefHandleExportFileInfo in
+%% formatmodelref.tlc file.
+%%
+%assert (!IsModelReferenceTarget())
+
+%% Function: SLibFormatExport ======================================================================
+%% Abstract:
+%%   Function to create and cache exported symbols in the model.h file sections.
+%%
+%function SLibFormatExport() void
+    %assign booleanType = LibGetDataTypeNameFromId(::CompiledModel.tSS_BOOLEAN)
+    %assign intType = LibGetDataTypeNameFromId(::CompiledModel.tSS_INTEGER)
+
+    %assign isSfcnForm = (CodeFormat == "S-Function")
+
+    %if SLibIsERTCodeFormat() &&  ...
+        (!GenerateGRTWrapper || ExtMode || NumContStates)
+        %% Export model functions
+        %%
+        %%   Initialize function
+        %%
+        %assign rootSystem = System[NumSystems-1]
+        %openfile entryPointFcns
+
+        %<FcnAddExternCPrefixStart()>
+        %if !SLibAutosarActive()
+            /* Model entry point functions */
+        %endif
+        %%
+        %% Registration function (optional)
+        %%
+        %if ::SeparateRegistrationFcn && !GenerateGRTWrapper
+            %assign fcnParams = SLibModelFcnArgs("Registration",TLC_FALSE,"")
+            %<SLibGetFcnMemSecPragmaOnDecl(Name, "MemSecFuncInitTerm", "Pre")>\
+            %<LibExternInFcnDecls()>%<::tSimStructType> *%<Name>(%<fcnParams>);
+            %<SLibGetFcnMemSecPragmaOnDecl(Name, "MemSecFuncInitTerm", "Post")>\
+        %endif
+        %% Use the exact same condition as in ertreg.tlc:
+        %if !SLibAutosarActive()
+            %openfile initFcnBuffer
+            %assign initFcnName = GenerateModelInitFcnName()
+            %if CGMODEL_ACCESS("CGModel.isIndividualFunctionMappingEnabled")
+                %<SLibGetFcnMemSecPragmaForFunction(initFcnName, "Initialize", "", "Pre")>\
+            %else
+                %<SLibGetFcnMemSecPragmaOnDecl(initFcnName, "MemSecFuncInitTerm", "Pre")>\
+            %endif
+            %<LibExternInFcnDecls()>void %<initFcnName>(%<SLibModelFcnArgs("Initialize",TLC_FALSE,"")>);
+            %if CGMODEL_ACCESS("CGModel.isIndividualFunctionMappingEnabled")
+                %<SLibGetFcnMemSecPragmaForFunction(initFcnName, "Initialize", "", "Post")>\
+            %else
+                %<SLibGetFcnMemSecPragmaOnDecl(initFcnName, "MemSecFuncInitTerm", "Post")>\
+            %endif
+            %closefile initFcnBuffer
+            %<SLibPrintEntryPointFcnToFile("InitFcn", "Header", 0, initFcnName, initFcnBuffer, "Declaration")>\
+        %endif
+        %%
+        %%   step function(s)
+        %%
+        %if LibIsDeploymentDiagram()
+            %% Declare entry point functions for deploymentdiagram
+            %foreach tgIdx = ::CompiledModel.NumEventHandlers
+                %assign tg = ::CompiledModel.EventHandler[tgIdx]
+                %% Only periodic tasks are supported for now
+                %if !ISEQUAL(tg.Periodicity.Type, "PeriodicTrigger")
+                    %continue
+                %endif
+                %if ISEQUAL(tg.NumTasks, 0) && ISEQUAL(tg.NumEntryPointInfos, 0)
+                    %continue
+                %endif
+
+                %foreach tIdx     = tg.NumTasks
+                    %assign task    = tg.Task[tIdx]
+                    %% when CombineOutputUpdate, output wrapper fcn is step
+                    %assign decl = "%<LibExternInFcnDecls()> void %<task.OutputWrapperFcn>(void);\n"
+
+                    %if CombineOutputUpdateFcns
+                        %assign fcnType = "OutputUpdate"
+                    %else
+                        %assign fcnType = "Output"
+                    %endif
+                    %<MDSWrapInMemSecPragmas(task.OutputWrapperFcn, decl, fcnType, task)>
+
+                    %% if not CombineOutputUpdate declare update wrapper fcn
+                    %if !CombineOutputUpdateFcns
+                        %if  ISEQUAL(task.UpdateWrapperFcn, "")
+                            %% an API issue, task.UpdateWrapperFcn is empty when update fcn content is empty
+                            %assign updateFcnName = "%<task.FunctionName>_update"
+                        %else
+                            %assign updateFcnName = task.UpdateWrapperFcn
+                        %endif
+                        %assign decl = "%<LibExternInFcnDecls()> void %<updateFcnName>(void);\n"
+                        %<MDSWrapInMemSecPragmas(updateFcnName, decl, "Update", task)>
+                    %endif
+                %endforeach
+            %endforeach
+        %else
+            %% Declare ratebased entry point functions
+            %foreach tid = NumRuntimeExportedRates
+                %if  SLibSystemIsModelEntryPoint(rootSystem, tid) && ...
+                    (SLibIsExplicitPartitioningTID(tid) || !SLibExplicitTaskingTID(tid)) && ...
+                    !SLibIsExportFcnDiagram()
+                    %assign rootSystem.CurrentTID = tid
+                    %if CombineOutputUpdateFcns
+                        %openfile multirateStepFcnBuffer
+                        %if CGMODEL_ACCESS("CGModel.isIndividualFunctionMappingEnabled")
+                            %<SLibGetFcnMemSecPragmaForFunction(SLibModelStepFcnName(tid), "Step", tid,  "Pre")>\
+                        %else
+                            %<SLibGetFcnMemSecPragmaOnDecl(SLibModelStepFcnName(tid), "MemSecFuncExecute", "Pre")>\
+                        %endif
+                        %if (tid == 0) && (NumContStates > 0)
+                            %<LibExternInFcnDecls()>%<SLibModelStepFcnReturn("ReturnType")> %<SLibModelStepFcnName(tid)>(%<SLibModelFcnArgs("UpdateContStates" ,TLC_FALSE,tid)>);
+                        %else
+                            %<LibExternInFcnDecls()>%<SLibModelStepFcnReturn("ReturnType")> %<SLibModelStepFcnName(tid)>(%<SLibModelFcnArgs("OutputUpdate",TLC_FALSE,tid)>);
+                        %endif
+                        %if CGMODEL_ACCESS("CGModel.isIndividualFunctionMappingEnabled")
+                            %<SLibGetFcnMemSecPragmaForFunction(SLibModelStepFcnName(tid), "Step", tid,  "Post")>\
+                        %else
+                            %<SLibGetFcnMemSecPragmaOnDecl(SLibModelStepFcnName(tid), "MemSecFuncExecute", "Post")>\
+                        %endif
+                        %closefile multirateStepFcnBuffer
+                        %<SLibPrintEntryPointFcnToFile("OutputFcn", "Header", tid, SLibModelStepFcnName(tid), multirateStepFcnBuffer, "Declaration")>\
+                    %else
+                        %openfile multirateOutputFcnBuffer
+                        %assign outputFcnName = FcnGetModelOutputFcnNameFromCoderDictionary(tid)
+                        %if CGMODEL_ACCESS("CGModel.isIndividualFunctionMappingEnabled")
+                            %<SLibGetFcnMemSecPragmaForFunction(outputFcnName, "Output", tid,  "Pre")>\
+                        %else
+                            %<SLibGetFcnMemSecPragmaOnDecl(outputFcnName, "MemSecFuncExecute", "Pre")>\
+                        %endif
+                        %<LibExternInFcnDecls()>void %<outputFcnName>(%<SLibModelFcnArgs("Output",TLC_FALSE,tid)>);
+                        %if CGMODEL_ACCESS("CGModel.isIndividualFunctionMappingEnabled")
+                            %<SLibGetFcnMemSecPragmaForFunction(outputFcnName, "Output", tid,  "Post")>\
+                        %else
+                            %<SLibGetFcnMemSecPragmaOnDecl(outputFcnName, "MemSecFuncExecute", "Post")>\
+                        %endif
+                        %closefile multirateOutputFcnBuffer
+                        %<SLibPrintEntryPointFcnToFile("OutputFcn", "Header", tid, outputFcnName, multirateOutputFcnBuffer, "Declaration")>\
+
+                        %openfile multirateUpdateFcnBuffer
+                        %assign outputFcnName = FcnGetModelUpdateFcnNameFromCoderDictionary(tid)
+                        %if CGMODEL_ACCESS("CGModel.isIndividualFunctionMappingEnabled")
+                            %<SLibGetFcnMemSecPragmaForFunction(outputFcnName, "Update", tid,  "Pre")>\
+                        %else
+                            %<SLibGetFcnMemSecPragmaOnDecl(outputFcnName, "MemSecFuncExecute", "Pre")>\
+                        %endif
+                        %if (tid == 0) && (NumContStates > 0)
+                            %<LibExternInFcnDecls()>void %<outputFcnName>(%<SLibModelFcnArgs("UpdateContStates",TLC_FALSE,tid)>);
+                        %else
+                            %<LibExternInFcnDecls()>void %<outputFcnName>(%<SLibModelFcnArgs("RootUpdate",TLC_FALSE,tid)>);
+                        %endif
+                        %if CGMODEL_ACCESS("CGModel.isIndividualFunctionMappingEnabled")
+                            %<SLibGetFcnMemSecPragmaForFunction(outputFcnName, "Update", tid,  "Post")>\
+                        %else
+                            %<SLibGetFcnMemSecPragmaOnDecl(outputFcnName, "MemSecFuncExecute", "Post")>\
+                        %endif
+                        %closefile multirateUpdateFcnBuffer
+                        %<SLibPrintEntryPointFcnToFile("UpdateFcn", "Header", tid, outputFcnName, multirateUpdateFcnBuffer, "Declaration")>\
+                    %endif
+                %endif
+            %endforeach
+        %endif
+
+        %if !SLibAutosarActive()
+            %% Dump Reset/ResetWithInit function declarations
+            %foreach idx = LibGetNumAsyncTasks() + SLibGetNumUnionSampleTimes()
+                %assign tid = idx + NumRuntimeExportedRates
+
+                %% The Union sample time is virtual when it is used in the BIMO context
+                %% i.e. for branched inputs/outputs and multi-caller fcn-call subsystem in
+                %% non-export-function models. These union rates don't contain only legacy
+                %% async rates. We do not generate task code for these Union rates.
+                %if SLibUnionSampletimeTID(tid) && ...
+                    ::CompiledModel.SampleTime[tid].UnionRateHasTask == "no"
+                    %continue
+                %endif
+
+                %if SLibResetOrResetWithInitEventTID(tid)
+                    %openfile resetFcnDeclBuffer
+                    %assign fcnName = "%<SampleTime[tid].EntryFcnName>"
+                    %assign fcnReturns = "void"
+
+                    %% When the user chooses "Individual arguments" as RootIOFormat,
+                    %% rootSystem.CurrentTID is used in SLibModelFcnArgs() see g1461873
+                    %assign rootSystem = System[NumSystems-1]
+                    %assign cachedTID = rootSystem.CurrentTID
+                    %assign rootSystem.CurrentTID = tid
+                    %if CGMODEL_ACCESS("CGModel.isIndividualFunctionMappingEnabled")
+                        %<SLibGetFcnMemSecPragmaForFunction(fcnName, "Reset", "%<SampleTime[tid].EventSourceName>", "Pre")>\
+                    %else
+                        %<SLibGetFcnMemSecPragmaOnDecl(fcnName, "MemSecFuncExecute", "Pre")>\
+                    %endif
+                    %<LibExternInFcnDecls()>%<fcnReturns> %<fcnName>(%<SLibModelFcnArgs("Output",TLC_FALSE,tid)>);
+                    %if CGMODEL_ACCESS("CGModel.isIndividualFunctionMappingEnabled")
+                        %<SLibGetFcnMemSecPragmaForFunction(fcnName, "Reset", "%<SampleTime[tid].EventSourceName>", "Post")>\
+                    %else
+                        %<SLibGetFcnMemSecPragmaOnDecl(fcnName, "MemSecFuncExecute", "Post")>\
+                    %endif
+                    %assign rootSystem.CurrentTID = cachedTID
+                    %closefile resetFcnDeclBuffer
+                    %<SLibPrintEntryPointFcnToFileUsingFcnName(fcnName, resetFcnDeclBuffer, "Declaration")>
+                %endif
+            %endforeach
+        %endif
+
+        %if !GenerateSampleERTMain && GenerateClassInterface && !SLibAutosarCompliant()
+            %% Dump C++ classgen defines for static main
+            %<SLibCacheCodeToFile("rtmodel_hdr_defines", FcnCPPGetStaticMainMacros())>
+        %endif
+
+        %if SLibSystemIsModelEntryPoint(rootSystem, "") || (SLibNeedWrapperStepFcn()==2)
+            %if SLibNeedWrapperStepFcn()==2
+                %% Dump wrapper step function declaration in rtmodel.h instead of <model>.h
+                %openfile switchYardDeclBuffer
+                %selectfile switchYardDeclBuffer
+                /* Model wrapper function */
+                /* Use this function only if you need to maintain compatibility with an existing static main program. */
+            %endif
+            %assign rootSystem.CurrentTID = ""
+            %if CombineOutputUpdateFcns
+                %openfile singlerateStepFcnBuffer
+                %if !SLibIsExportFcnDiagram()
+                    %if CGMODEL_ACCESS("CGModel.isIndividualFunctionMappingEnabled")
+                        %<SLibGetFcnMemSecPragmaForFunction(SLibModelStepFcnName(""), "Step", "",  "Pre")>\
+                    %else
+                        %<SLibGetFcnMemSecPragmaOnDecl(SLibModelStepFcnName(""), "MemSecFuncExecute", "Pre")>\
+                    %endif
+                    %if (NumContStates > 0)
+                        %<LibExternInFcnDecls()>%<SLibModelStepFcnReturn("ReturnType")> %<SLibModelStepFcnName("")>(%<SLibModelFcnArgs("UpdateContStates",TLC_FALSE,"")>);
+                    %else
+                        %if GenerateClassInterface && !ISEMPTY(::NamespaceName)
+                            namespace %<::NamespaceName> {
+                        %endif
+                        %<LibExternInFcnDecls()>%<SLibModelStepFcnReturn("ReturnType")> %<SLibModelStepFcnName("")>(%<SLibModelFcnArgs("OutputUpdate",TLC_FALSE,"")>);
+                        %if GenerateClassInterface && !ISEMPTY(::NamespaceName)
+                            %% Close the namespace
+                        }
+                        %endif
+                    %endif
+                    %if CGMODEL_ACCESS("CGModel.isIndividualFunctionMappingEnabled")
+                        %<SLibGetFcnMemSecPragmaForFunction(SLibModelStepFcnName(""), "Step", "",  "Post")>\
+                    %else
+                        %<SLibGetFcnMemSecPragmaOnDecl(SLibModelStepFcnName(""), "MemSecFuncExecute", "Post")>\
+                    %endif
+                %endif
+                %closefile singlerateStepFcnBuffer
+                %<SLibPrintEntryPointFcnToFile("OutputFcn", "Header", 0, SLibModelStepFcnName(""), singlerateStepFcnBuffer, "Declaration")>\
+            %else
+                %openfile singlerateOutputFcnBuffer
+                %assign outputFcnName = FcnGetModelOutputFcnNameFromCoderDictionary("")
+                %if CGMODEL_ACCESS("CGModel.isIndividualFunctionMappingEnabled")
+                    %<SLibGetFcnMemSecPragmaForFunction(outputFcnName, "Output", "",  "Pre")>\
+                %else
+                    %<SLibGetFcnMemSecPragmaOnDecl(outputFcnName, "MemSecFuncExecute", "Pre")>\
+                %endif
+                %<LibExternInFcnDecls()>void %<outputFcnName>(%<SLibModelFcnArgs("Output",TLC_FALSE,"")>);
+                %if CGMODEL_ACCESS("CGModel.isIndividualFunctionMappingEnabled")
+                    %<SLibGetFcnMemSecPragmaForFunction(outputFcnName, "Output", "",  "Post")>\
+                %else
+                    %<SLibGetFcnMemSecPragmaOnDecl(outputFcnName, "MemSecFuncExecute", "Post")>\
+                %endif
+                %closefile singlerateOutputFcnBuffer
+                %<SLibPrintEntryPointFcnToFile("OutputFcn", "Header", 0, outputFcnName, singlerateOutputFcnBuffer, "Declaration")>\
+
+                %openfile singlerateUpdateFcnBuffer
+                %assign outputFcnName = FcnGetModelUpdateFcnNameFromCoderDictionary("")
+                %if CGMODEL_ACCESS("CGModel.isIndividualFunctionMappingEnabled")
+                    %<SLibGetFcnMemSecPragmaForFunction(outputFcnName, "Update", "",  "Pre")>\
+                %else
+                    %<SLibGetFcnMemSecPragmaOnDecl(outputFcnName, "MemSecFuncExecute", "Pre")>\
+                %endif
+                %if (NumContStates > 0)
+                    %<LibExternInFcnDecls()>void %<outputFcnName>(%<SLibModelFcnArgs("UpdateContStates",TLC_FALSE,"")>);
+                %else
+                    %<LibExternInFcnDecls()>void %<outputFcnName>(%<SLibModelFcnArgs("RootUpdate",TLC_FALSE,"")>);
+                %endif
+                %if CGMODEL_ACCESS("CGModel.isIndividualFunctionMappingEnabled")
+                    %<SLibGetFcnMemSecPragmaForFunction(outputFcnName, "Update", "",  "Post")>\
+                %else
+                    %<SLibGetFcnMemSecPragmaOnDecl(outputFcnName, "MemSecFuncExecute", "Post")>\
+                %endif
+                %closefile singlerateUpdateFcnBuffer
+                %<SLibPrintEntryPointFcnToFile("UpdateFcn", "Header", 0, outputFcnName, singlerateUpdateFcnBuffer, "Declaration")>\
+            %endif
+            %if SLibNeedWrapperStepFcn()==2
+                %closefile switchYardDeclBuffer
+                %<SLibCacheCodeToFile("rtmodel_hdr_fcn_decl", switchYardDeclBuffer)>
+                %selectfile entryPointFcns
+            %endif
+        %endif
+
+        %% derivative function
+        %if EXISTS(ExportMdlDerivativeFcn) && ExportMdlDerivativeFcn == TLC_TRUE
+            %assign modelDerivative = "%<Name>_derivatives"
+            %<SLibGetFcnMemSecPragmaOnDecl(modelDerivative, "MemSecFuncExecute", "Pre")>\
+            %<LibExternInFcnDecls()>void %<modelDerivative>(%<SLibModelFcnArgs("Derivative",TLC_FALSE,"")>);
+            %<SLibGetFcnMemSecPragmaOnDecl(modelDerivative, "MemSecFuncExecute", "Post")>\
+        %endif
+
+        %%
+        %%   terminate function
+        %%
+        %% Use the exact same condition as in ertreg.tlc:
+        %if !SLibAutosarActive() && IncludeMdlTerminateFcn == 1
+            %openfile termFcnBuffer
+            %assign termFcnName = GenerateNonClassicInterfaceModelTermFcnName()
+            %if CGMODEL_ACCESS("CGModel.isIndividualFunctionMappingEnabled")
+                %<SLibGetFcnMemSecPragmaForFunction(termFcnName, "Terminate", "", "Pre")>\
+            %else
+                %<SLibGetFcnMemSecPragmaOnDecl(termFcnName, "MemSecFuncInitTerm", "Pre")>\
+            %endif
+            %<LibExternInFcnDecls()>void %<termFcnName>(%<SLibModelFcnArgs("Terminate",TLC_FALSE,"")>);
+            %if CGMODEL_ACCESS("CGModel.isIndividualFunctionMappingEnabled")
+                %<SLibGetFcnMemSecPragmaForFunction(termFcnName, "Terminate", "", "Post")>\
+            %else
+                %<SLibGetFcnMemSecPragmaOnDecl(termFcnName, "MemSecFuncInitTerm", "Post")>\
+            %endif
+            %closefile termFcnBuffer
+            %<SLibPrintEntryPointFcnToFile("TermFcn", "Header", 0, termFcnName, termFcnBuffer, "Declaration")>\
+        %endif
+        %<FcnAddExternCPrefixEnd()>
+        %%
+        %% Enable and Disable functions
+        %%
+        %if EnableGenerated == 1
+            %assign modelEnable = "%<Name>_enable"
+            %<SLibGetFcnMemSecPragmaOnDecl(modelEnable, "MemSecFuncExecute", "Pre")>\
+            %<LibExternInFcnDecls()>void %<modelEnable>(%<SLibModelFcnArgs("Enable",TLC_FALSE,"")>);
+            %<SLibGetFcnMemSecPragmaOnDecl(modelEnable, "MemSecFuncExecute", "Post")>\
+        %endif
+        %if DisableGenerated == 1
+            %assign modelDisable = "%<Name>_disable"
+            %<SLibGetFcnMemSecPragmaOnDecl(modelDisable, "MemSecFuncExecute", "Pre")>\
+            %<LibExternInFcnDecls()>void %<modelDisable>(%<SLibModelFcnArgs("Disable",TLC_FALSE,"")>);
+            %<SLibGetFcnMemSecPragmaOnDecl(modelDisable, "MemSecFuncExecute", "Post")>\
+        %endif
+
+        %closefile entryPointFcns
+
+        %%
+        %% Suppress extern declarations of functions for wrapper C++ class generation
+        %%
+        %if !GenerateClassInterface
+            %<SLibCacheCodeToFile("mdl_entryPointFcn_decl", entryPointFcns)>
+        %endif
+        %undef entryPointFcns
+    %endif
+
+    %if GenerateGRTWrapper
+        %openfile entryPointFcns
+
+        /*====================*
+        * External functions *
+        *====================*/
+        %if ::GenCPP
+            #ifdef __cplusplus
+            %<::ExternCPrefix> {
+                #endif
+        %endif
+        %if !UsingMalloc
+            %<LibExternInFcnDecls()>%<Name>_rtModel *%<Name>(void);
+            %<LibExternInFcnDecls()>void MdlInitializeSizes(void);
+            %<LibExternInFcnDecls()>void MdlInitializeSampleTimes(void);
+            %<LibExternInFcnDecls()>void MdlInitialize(void);
+            %<LibExternInFcnDecls()>void MdlStart(void);
+            %<LibExternInFcnDecls()>void MdlOutputs(%<intType> %<::CompiledModel.GlobalScope.tTID>);
+            %<LibExternInFcnDecls()>void MdlUpdate(%<intType> %<::CompiledModel.GlobalScope.tTID>);
+            %<LibExternInFcnDecls()>void MdlTerminate(void);
+        %else
+            %<LibExternInFcnDecls()>%<Name>_rtModel *%<Name>(void);
+        %endif
+        %if ::GenCPP
+            #ifdef __cplusplus
+        }
+        #endif
+        %endif
+        %closefile entryPointFcns
+
+        %<SLibCacheCodeToFile("mdl_entryPointFcn_decl", entryPointFcns)>
+        %undef entryPointFcns
+    %endif %% GenerateGRTWrapper
+
+    %openfile externDataBuf
+    %% ===========================================================================
+    %% Add typedefs that support the profiler
+    %%
+    %% Code profiling support
+    %if SLibIsFunctionProfilingOn()
+        %% Support for CGIR profiling instrumentation
+        %include "prof_tlc.tlc"
+        %<SLibProfilerTypeDefs()>\
+    %endif
+    %%
+    %% Classic profiling
+    %<SLibGenProfTypeDef()>\
+    %%
+    %closefile externDataBuf
+    %<SLibCacheCodeToFile("mdl_profiler_typedef", externDataBuf)>
+    %undef externDataBuf
+
+    %% =========================================================================
+    %% Information related to the rtModel
+    %%
+    %assign rtmRet = SLibGenRTMTypedefAndMacros()
+    %if !WHITE_SPACE(rtmRet[0])
+        %% This is type decl, instead of "typedef".  Put into Typedefs symbol instead
+        %% of Declarations symbol.  Consistant with formatmodelref.tlc
+        %if SLibIsModelTypesModelClassNamespace()
+            %<SLibCacheCPPEncapModelData("Typedefs", rtmRet[0])>
+        %else
+            %<SLibCacheCodeToFile("data_rtmodel_typedef", rtmRet[0])>
+        %endif
+    %endif
+    %if !WHITE_SPACE(rtmRet[1])
+        %<SLibCacheCodeToFile("baseMdl_hdr_define", rtmRet[1])>
+    %endif
+    %if !WHITE_SPACE(rtmRet[2])
+        %<SLibCacheCodeToFile("baseMdl_data_decl", rtmRet[2])>
+        %% update the local symbol table of ::tSimStructType
+        %assign targetFile = SLibGetFullFileNameForCode("baseMdl_data_decl")
+        %<SLibUpdateLocalSymbolTableForFile(targetFile, SLibGetFcnDeclarationRTMSymbolName())>
+    %endif
+    %undef rtmRet
+
+    %if GenRTModel && !EmptyRealTimeObject
+        %openfile opaqTypedefBuf
+        %<RTMsGenOpaqueTypedef(::CompiledModel.System[NumSystems-1])>\
+        %closefile opaqTypedefBuf
+        %<SLibCacheCodeToFile("mdl_data_typedef", opaqTypedefBuf)>
+        %undef opaqTypedefBuf
+    %endif
+
+    %<SLibGenRTModelHFile()>
+
+    %<SLibGenRTModelSrcFile()>
+
+    %undef baseFile
+    %undef isSfcnForm
+
+%endfunction
+
+%endif %% _FORMATEXPORT_
+
+%% [EOF] formatexport.tlc

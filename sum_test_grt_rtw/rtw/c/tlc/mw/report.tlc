@@ -1,0 +1,74 @@
+%%
+%% Copyright 1994-2019 The MathWorks, Inc.
+%%
+%% Abstract:
+%%   This file create a HTML report of the generated code.
+%%
+
+%if EXISTS(::_RTW_REPORT_) == 0
+%assign ::_RTW_REPORT_ = 1
+
+%% Function: FcnTlcTraceInfo =======================================================================
+%% Abstract:
+%%     Create a record storing traceability information obtained during the
+%%     TLC phase
+%%
+%function FcnTlcTraceInfo() void
+    %assign TimeStamp = TLC_TIME
+    %createrecord TlcTraceInfo {   \
+        TimeStamp           "%<TimeStamp>"; \
+        Version             "%<Version>" \
+    }
+    %if EXISTS(ReducedBlocks)
+        %with ReducedBlocks
+            %if NumReducedBlocks > 0
+                %foreach bIdx = NumReducedBlocks
+                    %assign b = Block[bIdx]
+                    %addtorecord TlcTraceInfo ReducedBlock { \
+                        Name              "%<b.Name>"; \
+                        SID               "%<b.SID>"; \
+                        Type              "%<b.Type>"; \
+                        Comment           "%<b.OptimizationInfo>" \
+                    }
+                %endforeach
+            %endif
+        %endwith
+    %endif
+    %if EXISTS(InsertedHiddenBlocks)
+        %with InsertedHiddenBlocks
+            %if NumInsertedHiddenBlocks > 0
+                %foreach bIdx = NumInsertedHiddenBlocks
+                    %assign b = Block[bIdx]
+                    %if b.Type == "SignalSpecification"
+                        %continue
+                    %endif %% we don't want to show inserted SigSpec blocks, which are virtual
+                    %createrecord InsertedBlock { \
+                        Name              "%<b.Name>"; \
+                        Type              "%<b.Type>"; \
+                        Comment           "%<b.InsertInfo>" \
+                    }
+                    %if b.NumSrcBlks > 0
+                        %assign InsertedBlock = InsertedBlock + b.SrcBlock
+                    %endif
+                    %if b.NumDstBlks > 0
+                        %assign InsertedBlock = InsertedBlock + b.DstBlock
+                    %endif
+                    %assign TlcTraceInfo = TlcTraceInfo + InsertedBlock
+                %endforeach
+            %endif
+        %endwith
+    %endif
+    %return TlcTraceInfo
+%endfunction
+
+%assign modelName = LibGetModelName()
+%assign tlcTraceInfo = FcnTlcTraceInfo()
+%assign errTxt = FEVAL("coder.internal.slcoderReport", "setTlcTraceInfo", ...
+    modelName, tlcTraceInfo)
+
+%assign errTxt = FEVAL("coder.internal.slcoderReport", "setGenUtilsPath", ...
+    modelName, GenUtilsPath)
+
+%endif %% _RTW_REPORT_
+
+%% [EOF] report.tlc

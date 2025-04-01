@@ -1,0 +1,276 @@
+%% Copyright 2020-2023 The MathWorks, Inc.
+
+%if EXISTS(_CODETEMPLATE_PRIVATE_API_) == 0
+%assign ::_CODETEMPLATE_PRIVATE_API_ = 1
+
+%function LibGetModelFileFullName(fileType) void
+    %assign fileName = ""
+    %if fileType != "UndefinedFile"
+        %assign fileName = CGMODEL_ACCESS("FileRepository.getModelFileName", fileType, "BaseFileWithExt")
+    %endif
+    %return fileName
+%endfunction
+
+%% Function SLibAddGeneratedFileToList ===================================
+%% Abstract:
+%%   Adds specified file to TLC global variable GeneratedFileList
+%%
+%function SLibAddGeneratedFileToList(filename, category, type, dir) void
+    %assign tmpMdlHeaderFileName = LibGetMdlPubHdrBaseName()
+    %assign tmpMdlSourceFileName = LibGetMdlSrcBaseName()
+    %% Model source and header files may be tagged wrongly, such as "data" group. Correct them to "model".
+    %if (type == "header" && STRNCMP(filename, tmpMdlHeaderFileName + ".", SIZE(tmpMdlHeaderFileName,1)+1)) || ...
+        (type == "source" && STRNCMP(filename, tmpMdlSourceFileName + ".", SIZE(tmpMdlSourceFileName,1)+1))
+        %assign category = "model"
+    %endif
+    %assign errTxt = FEVAL("coder.internal.slcoderReport", "addFileInfo", ...
+        LibGetModelName(), filename, category, type, dir)
+%endfunction %%SLibAddGeneratedFileToList
+
+%% Function: LibGetFullFileName ====================================================================
+%% Abstract:
+%%   Lookup the file name with extension in the file packaging table for the given file name and type
+%%
+%function LibGetFullFileName(name, type) void
+    %return CGMODEL_ACCESS("FileRepository.getFullFileName", name, type)
+%endfunction
+
+%% =============================================================================
+%% Add ModelFiles to ::CompiledModel
+%% =============================================================================
+
+%with ::CompiledModel
+    %addtorecord ::CompiledModel \
+    ModelFiles {               \
+        NumModelFiles    0       \
+        NumSupportFiles  0       \
+        ComplianceLevel -1       \
+    }
+%endwith %% ::CompiledModel
+
+%% Function: SLibAddModelFile ======================================================================
+%% Abstract:
+%% Create a new model file, or return its existing reference.
+%%
+%% "type" is the type of file, e.g. "SystemBody" (.c file) or "SystemHeader" (.h file)
+%% "creator" is typically "Simulink".
+%% "name" is the base name of the file if writing to the build directory,
+%%        and is the full path if writing to some other directory (e.g. _sharedutils)
+%%
+%% For example: Building model "foo" to build directory ./foo_ert_rtw/ .
+%%              If creating source file "foo.h" to build directory, then:
+%%                type="SystemHeader", creator="Simulink",
+%%                name="foo", basename="foo".
+%%              If creating shared type "a.h" in the shared utilities dir:
+%%                type="SystemHeader", creator="Simulink",
+%%                name="<fullpathto>/_sharedutils/a", basename="a"
+%%
+%function SLibAddModelFile(type, creator, name) void
+    %return SLibAddModelFileWithBasename(type, creator, name, name)
+%endfunction
+
+%% Function: SLibSynchronizeFileRepWithFileRecords
+%% Abstract:
+%%
+%% This function synchronizes the model file records inside CompiledModel
+%% with the records inside the file repository. This needs to be called
+%% at the beginning of TLC and after any additional files are added to
+%% the file repository outside of TLC.
+%function SLibSynchronizeFileRepWithFileRecords() void
+
+    %assign numFileRecords = ::CompiledModel.ModelFiles.NumModelFiles
+
+    %% Iterate over each file in the repository. Add file records for
+    %% additional files
+    %foreach fileIdx = LibGetNumSourceFiles()
+        %if fileIdx >= numFileRecords
+            %addtorecord ::CompiledModel.ModelFiles   \
+            ModelFile {                             \
+                Index                  fileIdx          \
+            }
+            %assign ::CompiledModel.ModelFiles.NumModelFiles = ::CompiledModel.ModelFiles.NumModelFiles + 1
+
+            %assign type = GET_FILE_ATTRIBUTE(fileIdx, "Type")
+            %% Include the code template from "rtw_code.tlc" (or custom template)
+            %if ERTCustomFileBanners
+                %assign template = (type == "SystemBody") ? ...
+                    ERTSrcFileBannerTemplate : ERTHdrFileBannerTemplate
+            %else
+                %assign template = "rtw_code.tlc"
+            %endif
+
+            %assign success = SET_FILE_ATTRIBUTE(fileIdx, "CodeTemplate", template)
+        %endif
+    %endforeach
+%endfunction
+
+%function FcnReturnExistingFile(fileIndex, type, creator, name) void
+    %assign mf = ::CompiledModel.ModelFiles.ModelFile[fileIndex]
+    %assign existingCreator = SLibDirectAccessGetFileAttribute(mf, "Creator")
+    %assign existingGroup = SLibDirectAccessGetFileAttribute(mf, "Group")
+    %assign existingType = SLibDirectAccessGetFileAttribute(mf, "Type")
+
+    %if creator != existingCreator && FcnDontAllowSharedDataAndTypeInSameFile(mf)
+        %if type == "SystemHeader" && existingGroup == "utility" && existingType == "SystemHeader"
+            %<SLibReportErrorWithIdAndArgs("RTW:tlc:ErrWhenGenSharedDataConflictModelFile", "%<name>"+".h")>
+        %else
+            %assign errTxt = "%<creator> is attempting to create " ...
+                "file %<name>, however, this file was already created " ...
+                "by %<existingCreator>."
+            %<LibReportFatalError(errTxt)>
+        %endif
+    %else
+        %return mf
+    %endif
+%endfunction
+
+%% Function: SLibAddModelFileWithBasename ==========================================================
+%% Abstract:
+%% Create a new model file, or return its existing reference.
+%%
+%% "type" is the type of file, e.g. "SystemBody" (.c file) or "SystemHeader" (.h file)
+%% "creator" is typically "Simulink".
+%% "name" is the base name of the file if writing to the build directory,
+%%        and is the full path if writing to some other directory (e.g. _sharedutils)
+%% 'basename' is always the base name of the file
+%%
+%% For example: Building model "foo" to build directory ./foo_ert_rtw/ .
+%%              If creating source file "foo.h" to build directory, then:
+%%                type="SystemHeader", creator="Simulink",
+%%                name="foo", basename="foo".
+%%              If creating shared type "a.h" in the shared utilities dir:
+%%                type="SystemHeader", creator="Simulink",
+%%                name="<fullpathto>/_sharedutils/a", basename="a"
+%%
+%function SLibAddModelFileWithBasename(type, creator, name, basename) void
+    %% Include the code template from "rtw_code.tlc" (or custom template)
+    %if ERTCustomFileBanners
+        %assign template = (type == "SystemBody") ? ...
+            ERTSrcFileBannerTemplate : ERTHdrFileBannerTemplate
+    %else
+        %assign template = "rtw_code.tlc"
+    %endif
+
+    %assign fullName = LibGetFullFileName(name, type)
+
+    %assign findIdx = SOURCE_FILE_EXISTS(fullName)
+
+    %if findIdx == -1 && type == "SystemHeader"
+        %assign findIdx = SOURCE_FILE_EXISTS("%<basename>.h")
+    %endif
+
+    %if findIdx != -1
+        %return FcnReturnExistingFile(findIdx, type, creator, name)
+    %endif
+
+    %% This creates a new file in the file repository
+    %assign fileIdx = CREATE_SOURCE_FILE(fullName)
+    %% Now, set the template, type and creator attributes
+    %assign success = SET_FILE_ATTRIBUTE(fileIdx, "Type", type)
+    %assign success = SET_FILE_ATTRIBUTE(fileIdx, "Creator", creator)
+    %assign success = SET_FILE_ATTRIBUTE(fileIdx, "CodeTemplate", template)
+
+    %% If the user has specified a different base name, then use that
+    %if name != basename
+        %assign success = SET_FILE_ATTRIBUTE(fileIdx, "BaseName", basename)
+    %endif
+
+    %return LibUpdateCompiledModelFiles(fileIdx)
+%endfunction
+
+%% Function: UpdateCompiledModelFiles
+%% Abstract:
+%%   Adds the newly created file to the compiled model files record
+%%
+%function LibUpdateCompiledModelFiles(fileIdx) void
+    %% For backwards compatibility, create a file record that just uses the
+    %% index. Operations will retrieve this record, and the use the index to
+    %% access the file repository
+    %addtorecord ::CompiledModel.ModelFiles   \
+    ModelFile {                             \
+        Index                  fileIdx          \
+    }
+
+    %assign ::CompiledModel.ModelFiles.NumModelFiles = ::CompiledModel.ModelFiles.NumModelFiles + 1
+    %return ::CompiledModel.ModelFiles.ModelFile[fileIdx]
+%endfunction
+
+%% Function: SLibDirectAccessGetFileAttribute ======================================================
+%% Abstract:
+%%   Returns the specified attribute of a file directly. This differs from
+%%   LibGetModelFileAttribute in that LibGetModelFileAttribute may format the data
+%%   returned, while this function returns the raw value of the attribute.
+%%
+%% Arguments:
+%%   file - the file we are accessing
+%%   attrib - the attribute name (e.g. WrittenToDisk, RequiredIncludes)
+%%
+%function SLibDirectAccessGetFileAttribute(file, attrib) void
+    %return GET_FILE_ATTRIBUTE(file.Index, attrib)
+%endfunction
+
+%% Function: SLibSetModelFileAttribute =============================================================
+%% Abstract:
+%%   Adds to either the file Contents or to some other top-level section
+%%   of the file (e.g. RequiredIncludes)
+%%
+%% Arguments:
+%%   opFile - the file we are adding to (see ::CompiledModel.ModelFiles structure above)
+%%   attrib - can specify a top-level section (field name) of the file to add to
+%%            (e.g. RequiredIncludes), or can specify a sub-section (field name) of
+%%            Contents (e.g. Includes or Typedefs or ...).
+%%   value - the text to add
+%%
+%function SLibSetModelFileAttribute(opFile,attrib,value) void
+    %% After LibClearModelFileBuffers() is called, Contents will not
+    %% exist. However, still allow access to SystemsInFile,
+    %% RequiredIncludes, NeedsModelHeader.
+    %assign c = ""
+
+    %if attrib == "Filter"
+        %assert (value == 1)
+    %elseif attrib == "WrittenToDisk"
+        %assert (value == TLC_TRUE)
+    %endif
+
+    %assign success = SET_FILE_ATTRIBUTE(opFile.Index, attrib, value)
+%endfunction
+
+%% Function: LibGetModelFileTag ====================================================================
+%% Abstract:
+%%   Returns <fileName>_h and <fileName>_c for header and source files,
+%%   respectively where fileName is the name of the model file.
+%%   This is useful for creating a header file multiple inclusion guaurd.  For example,
+%%     __RTW_GENERATED_HEADER_FILE_%<LibGetModelFileTag()>__
+%%
+%function LibGetModelFileTag(fileIdx) void
+    %assign mf = ::CompiledModel.ModelFiles.ModelFile[fileIdx]
+    %assign fileName = SLibDirectAccessGetFileAttribute(mf, "Name")
+    %assign baseName = SLibDirectAccessGetFileAttribute(mf, "BaseName")
+
+    %assign extension = SLibGetFileExtension(fileName)
+    %if ISEMPTY(extension)
+        %assign fileType = SLibDirectAccessGetFileAttribute(mf, "Type")
+        %assign extension = fileType == "SystemBody" ? "_c" : "_h"
+    %else
+        %assign extension = STRREP(extension, ".", "_")
+    %endif
+
+    %return "%<baseName>%<extension>"
+
+%endfunction
+
+%% Function: SLibGetFileExtension ==================================================================
+%% Abstract:
+%%   Function returns the extension for the provided filename & returns blank when no extension is available
+%%
+%function SLibGetFileExtension(aFileNameOrPathWithExtension) void
+    %assign lastDotIndex = CGMODEL_ACCESS("String.rfind", aFileNameOrPathWithExtension, ".", SIZE(aFileNameOrPathWithExtension, 1))
+    %if lastDotIndex > -1
+        %return CGMODEL_ACCESS("String.substr", aFileNameOrPathWithExtension, lastDotIndex, SIZE(aFileNameOrPathWithExtension, 1) - lastDotIndex)
+    %else
+        %return ""
+    %endif
+%endfunction
+
+%endif

@@ -1,0 +1,19 @@
+%if EXISTS(::_SYS_API_V3_) == 0
+%assign ::_SYS_API_V3_ = 1
+%%
+%% Copyright 2022-2023 The MathWorks, Inc.
+%%
+
+%function LibIsFirstInitCond() void
+    %<SLibV3CallsiteValid("LibIsFirstInitCond")>
+    %return CGMODEL_ACCESS("Block.LibIsFirstInitCond", BlockIdx[0], BlockIdx[2], ...
+        ::CurrentBlockFcn, ::CurrentBlockTid)
+%endfunction
+
+%function LibBlockExecuteFcnCall(sfcnBlock, callIdx) void
+    %return CGMODEL_ACCESS("Block.ExecuteFcnCall", ...
+        sfcnBlock.BlockIdx[0], sfcnBlock.BlockIdx[2], ...
+        ::CurrentBlockFcn, ::CurrentBlockTid, callIdx)
+%endfunction
+
+%endif %% _SYS_API_V3_

@@ -1,0 +1,507 @@
+%% ============================================================================
+%%
+%%
+%%
+%%
+%% Abstract:
+%%   This system file makes a code format independent pass through the
+%%   model.
+%%
+%% Copyright 1994-2023 The MathWorks, Inc.
+%%
+%selectfile NULL_FILE
+
+%if EXISTS(_COMMONPASS_) == 0
+%assign _COMMONPASS_ = 1
+
+%selectfile STDOUT
+%if RTWVerbose
+%%}
+### Initial pass through model to cache user defined code
+%%{
+%endif
+%selectfile NULL_FILE
+
+%<LibAddToCompiledModel("InCommonPass",1)>
+
+%% Propagate Model reference blocks' interfaces to CompiledModel
+%<PropModelReferenceBlocksInterface()>
+
+
+%%
+%% Validate the binding between CGTypes and SLTypes
+%% TopTester: test/toolbox/simulink/variants/var-bus-general/tVariantBusGecks.m
+%%
+%assign numBuiltInTypes = ::CompiledModel.DataTypes.NumSLBuiltInDataTypes
+%with ::CompiledModel.CGTypes
+    %foreach i = numBuiltInTypes
+        %if !ISFIELD(CGType[i], "SLTypeIdx") || CGType[i].SLTypeIdx != i
+            %error "Invalide Type binding of CGType[%<i>]."
+        %endif
+    %endforeach
+%endwith
+%undef numBuiltInTypes
+
+%if SLibFcnProtoCtrlActive() || GenerateClassInterface
+    %assign ::RTWCPPStepPrototypeRecord = ""
+    %include "ertfcnprotocontrol.tlc"
+%endif
+
+%%
+%% execute block instance and type setup
+%%
+%<BlockSetupAndCompatibilityCheck()>
+
+%% =============================================================================
+%% Loop through the Block Output records and attach the following three fields
+%% to each record:
+%%
+%% RequiredInBlockIO:
+%%      This setting determines if the block output needs to be declared in the
+%%      global BlockIO structure. This is true if a) if it is a TestPoint, b) it
+%%      is not constant valued and it is required in the global scope.
+%%
+%% RequiredInConstBlockIO:
+%%      This setting determines if the block output needs to be declared in the
+%%      global ConstBlockIO structure. Firstly the initial value of this setting
+%%      depends on the level that InlineInvariantSignals is set to, i.e.,
+%%
+%%   -> If InlineInvariantSignals=0, then RequiredInConstBlockIO=1 for all
+%%      invaraint block outputs.
+%%
+%%   -> If InlineInvariantSignals=1, then it is assumed (at this time) that
+%%      none of the invariant block outputs are required in the ConstBlockIO
+%%      structure, i.e., we expect all of these signals to be #def'ed to their
+%%      (invariant) initial values in model.h  This assumption will be corrected
+%%      during the process of code generation, for those invaraint signals that
+%%      are referenced by their address. Hence after all the code has been
+%%      generated into model.c and model.prm, we will end up with the *minimal*
+%%      number of invariant block outputs marked as required in the
+%%      ConstBlockIO structure.
+%%
+%% Also keep a count of a) the number of signals in the BlockIO structure,
+%% b) the number of signals in the ConstBlockIO structure, c) the number
+%% of signals that are invariant in the BlockIO structure, and d) the number
+%% of external signals.
+%%
+%% TopTester: test/toolbox/simulink/blocks/CPPCodeGen/tsmlk_core_cpp_coverage.m
+%% TopTester: test/toolbox/simulink/variants/var-vss-codevariants/tcodevariants1.m
+%% TopTester: test/toolbox/simulink/variants/var-inline-general/tIVfcnCall_neg.m
+%%
+%<LibAddIdentifier(BlockOutputs, "NumModelReferenceRootOutput", 0)>
+%<LibAddIdentifier(BlockOutputs, "NumSignalsInBlockIO", 0)>
+%<LibAddIdentifier(BlockOutputs, "NumSignalsInConstBlockIO", 0)>
+%<LibAddIdentifier(BlockOutputs, "NumExportedGlobalSignals", 0)>
+%<LibAddIdentifier(BlockOutputs, "NumImportedExternSignals", 0)>
+%<LibAddIdentifier(BlockOutputs, "NumImportedExternPointerSignals", 0)>
+%<LibAddIdentifier(BlockOutputs, "NumInPlaceOPTSignals", 0)>
+%<LibAddIdentifier(BlockOutputs, "NumAccessibleSignals", 0)>
+
+%assign nMdlRefOut    = 0
+%assign nInBlkIO      = BlockOutputs.NumGlobalBlockOutputs
+%assign nConstExpr    = BlockOutputs.NumConstOutputExpr
+%assign nInConstBlkIO = 0
+%assign nExtGlobal    = 0
+%assign nImpExtern    = 0
+%assign nImpExternPtr = 0
+%assign nCustom       = 0
+%assign nPRPortVar    = 0
+%assign nFPC          = 0
+
+%assign baseSystemIdx = GetBaseSystemIdx()
+
+%with ::CompiledModel.ZcRec
+    %assign numZc = 0
+    %foreach blkIdx = NumBlkZcRecs
+        %assign blkRec = BlkZcRec[blkIdx]
+        %assign numZc = numZc + blkRec.NumZcSignalInfos
+    %endforeach
+    %assign numEntries = 2*numZc
+    %assign ::ZcRecMap = Vector(%<numEntries>) [0@%<numEntries>]
+    %assign mapIdx = 0
+    %foreach blkIdx = NumBlkZcRecs
+        %assign blkRec = BlkZcRec[blkIdx]
+        %foreach sigIdx = blkRec.NumZcSignalInfos
+            %assign ::ZcRecMap[mapIdx * 2] = blkIdx
+            %assign ::ZcRecMap[mapIdx * 2 + 1] = sigIdx
+            %assign mapIdx = mapIdx + 1
+        %endforeach
+    %endforeach
+%endwith
+
+%if IsModelReferenceTarget()
+    %assign intf = System[baseSystemIdx].Interface
+    %foreach idx = intf.NumCanonicalInputArgDefs
+        %assign argdef = intf.CanonicalInputArgDef[idx]
+        %if argdef.ConnectedToSimulinkFunction == "yes"
+            %<LibAccessThisSysFcnArg(argdef, "Start", "Global")>
+            %<SLibAccessArg(argdef, "Start", 0, 0)>
+        %endif
+    %endforeach
+    %foreach idx = intf.NumCanonicalOutputArgDefs
+        %assign argdef = intf.CanonicalOutputArgDef[idx]
+        %if argdef.ConnectedToSimulinkFunction == "yes"
+            %assign extOut = ExternalOutputs.ExternalOutput[argdef.RootOutputIdx]
+            %if !ISFIELD(extOut, "IsMessage") || (extOut.IsMessage == 0)
+                %<LibAccessThisSysFcnArg(argdef, "Start", "Global")>
+                %<SLibAccessArg(argdef, "Start", 0, 0)>
+            %endif
+        %endif
+    %endforeach
+%endif
+
+%foreach boIdx = BlockOutputs.NumGlobalBlockOutputs
+    %assign globalBO = BlockOutputs.GlobalBlockOutput[boIdx]
+    %assign reqInBlkIO = 0
+
+    %if SIZE(globalBO.SigSrc,1) > 0
+        %assign srcSys = ::CompiledModel.System[globalBO.SigSrc[0]]
+        %assign srcBlk = srcSys.Block[globalBO.SigSrc[2]]
+
+        %if ISEQUAL(srcBlk.TID, "constant")
+            %% Mark this block so that its Outputs function gets
+            %% generated in mdlStart outside of #if 0 ... #endif
+            %<SETFIELD(srcBlk, "NeedOutputsFcnInMdlStart", 1)>
+        %endif
+    %endif
+
+    %% TopTester: test/toolbox/simulink/variants/var-vss-codevariants/tcodevariants1.m
+    %% TopTester: test/toolbox/simulink/variants/var-inline-vsink/tmVarSinkRateTransBlk_VC1.m
+    %% TopTester: test/toolbox/simulink/variants/var-simulinkfcns/tAutoInherit.m
+
+    %if globalBO.OwnerSysIdx[0] != -1 && ...
+        globalBO.OwnerSysIdx[0] > baseSystemIdx
+        %% This signal is allocated by the parent, and should not be initialized
+        %% Currently this is the case for buffers feeding the root output
+        %% ports of referenced models
+        %%
+        %assert(IsModelReferenceTarget())
+        %assign nMdlRefOut = nMdlRefOut + 1
+        %assign reqInBlkIO = 1
+    %endif
+
+    %assign required = [%<!ISEMPTY(globalBO.SigSrc)>, %<reqInBlkIO>]
+    %<LibAddIdentifier(globalBO, "RequiredInBlockIO", required)>
+%endforeach
+%assign BlockOutputs.NumModelReferenceRootOutput = nMdlRefOut
+
+%foreach boIdx = BlockOutputs.NumExternalBlockOutputs
+    %assign externBO = BlockOutputs.ExternalBlockOutput[boIdx]
+
+    %if SIZE(externBO.SigSrc,1) > 0
+        %assign srcSys = ::CompiledModel.System[externBO.SigSrc[0]]
+        %assign srcBlk = srcSys.Block[externBO.SigSrc[2]]
+
+        %if ISEQUAL(srcBlk.TID, "constant")
+            %% Mark this block so that its Outputs function gets
+            %% generated in mdlStart outside of #if 0 ... #endif
+            %<SETFIELD(srcBlk, "NeedOutputsFcnInMdlStart", 1)>
+        %endif
+    %endif
+
+    %switch externBO.StorageClass
+      %case "ExportedGlobal"
+        %assign nExtGlobal = nExtGlobal + 1
+        %break
+      %case "ImportedExtern"
+        %assign nImpExtern = nImpExtern + 1
+        %break
+      %case "ImportedExternPointer"
+        %assign nImpExternPtr = nImpExternPtr + 1
+        %break
+      %case "Custom"
+        %assign nCustom = nCustom + 1
+        %break
+      %default
+        %% Only removed reusable CSC can be of Auto storage class.
+        %if !SLibOmitRecord(externBO)
+            %assign errTxt = "Unknown storage class: %<externBO.StorageClass>"
+            %<LibReportFatalError(errTxt)>
+        %endif
+    %endswitch
+    %if ISFIELD(externBO, "AutosarPRPortVarIdx")
+        nPRPortVar = nPRPortVar + 1
+    %endif
+    %if ISFIELD(externBO, "FPCPortIdx")
+        %assign nFPC = nFPC + 1
+    %endif
+
+%endforeach
+
+%foreach boIdx = BlockOutputs.NumConstBlockOutputs
+    %assign constBO = BlockOutputs.ConstBlockOutput[boIdx]
+
+    %if constBO.RequiredInConstBlockIO
+        %assign nInConstBlkIO = nInConstBlkIO + 1
+    %elseif InlineInvariantSignals == 0 || ::CompiledModel.PadderActive
+        %assign constBO.RequiredInConstBlockIO = 1
+        %assign nInConstBlkIO = nInConstBlkIO + 1
+    %endif
+
+    %if SIZE(constBO.SigSrc,1) > 0
+        %assign srcSys = ::CompiledModel.System[constBO.SigSrc[0]]
+        %assign srcBlk = srcSys.Block[constBO.SigSrc[2]]
+
+        %%
+        %% If the initial value is empty then it implies that SL and the normal
+        %% TLC library functions cannot initialize this signal. This could be due
+        %% to the fact that the data type of signal is not known to Simulink. In
+        %% such an event, check if the block target file has "BlockInitialValues"
+        %% method, that can provide the required initialization. If this method
+        %% does not exist in the block target file, then mark the block so that
+        %% its Outputs function gets generated in mdlStart outside the #if 0 ...
+        %% #endif statements.
+        %%
+        %% TopTester: test/toolbox/simulink/blocks/CPPCodeGen/tsmlk_core_cpp_coverage.m
+        %% TopTester: test/toolbox/simulink/variants/var-vss-condexecuted/tContPortFcnCall3.m
+        %% TopTester: test/toolbox/simulink/variants/var-vss-flexiblevariants/tFlexibleVariantsCodeGen2.m
+        %% TopTester: test/toolbox/simulink/variants/var-vss-codevariants/tcodevariants9.m
+
+        %if ISEMPTY(constBO.InitialValue)
+
+            %assign initInMdlStart = 0
+
+            %if LibBlockFunctionExists(srcBlk, "BlockInitialValues")
+                %assign vType = "Y%<constBO.SigSrc[3]>"
+                %with srcSys
+                    %assign initVal = GENERATE(srcBlk,"BlockInitialValues",srcSys,vType)
+                %endwith %% srcSys
+                %if WHITE_SPACE(initVal)
+                    %assign warnTxt = "Ignoring bogus initial output value."
+                    %<LibReportWarning(warnTxt)>
+                    %assign initInMdlStart = 1
+                %else
+                    %<LibAddIdentifier(constBO, "CustomInitialValue", initVal)>
+                %endif
+            %else
+                %assign initInMdlStart = 1
+            %endif
+
+            %if initInMdlStart
+                %assign initVal = [0]
+                %<LibAddIdentifier(constBO, "CustomInitialValue", initVal)>
+                %assign constBO.RequiredInConstBlockIO = 1
+                %assign constBO.DoNotConstify = 1
+                %assign nInConstBlkIO = nInConstBlkIO + 1
+                %<SETFIELD(srcBlk, "NeedOutputsFcnInMdlStart", 1)>
+            %endif
+            %undef initInMdlStart, vType, initVal
+        %endif
+
+        %if ::GenCPP
+            %assign constBO.DoNotConstify = 1
+        %endif
+    %endif
+%endforeach
+
+%assign BlockOutputs.NumSignalsInBlockIO             = nInBlkIO
+%assign BlockOutputs.NumSignalsInConstBlockIO        = nInConstBlkIO
+%assign BlockOutputs.NumExportedGlobalSignals        = nExtGlobal
+%assign BlockOutputs.NumImportedExternSignals        = nImpExtern
+%assign BlockOutputs.NumImportedExternPointerSignals = nImpExternPtr
+%assign BlockOutputs.NumInPlaceOPTSignals            = nCustom + nPRPortVar + nFPC
+
+%% A block output signal is not included in the global memory map if
+%% it is written to by more than one block (reused).
+%%
+%assign nInBlkIOExtMode = 0
+%foreach boIdx = BlockOutputs.NumGlobalBlockOutputs
+    %if BlockOutputs.GlobalBlockOutput[boIdx].NumReusedBlockOutputs == 0
+        %assign nInBlkIOExtMode = nInBlkIOExtMode + 1
+    %endif
+%endforeach
+
+%% Total number of accessible signals for external mode.
+%assign BlockOutputs.NumAccessibleSignals            = ...
+    nInBlkIOExtMode + nExtGlobal + nImpExtern + nImpExternPtr + nCustom
+
+%% =============================================================================
+%% Loop through the ExternalInputs records and attach the following to
+%% determine the number of external signals.
+%%
+
+%% TopTester: test/toolbox/simulink/blocks/CPPCodeGen/tsmlk_core_cpp_coverage.m
+
+%<LibAddIdentifier(ExternalInputs, "NumAutoSignals", 0)>
+%<LibAddIdentifier(ExternalInputs, "NumExportedGlobalSignals", 0)>
+%<LibAddIdentifier(ExternalInputs, "NumImportedExternSignals", 0)>
+%<LibAddIdentifier(ExternalInputs, "NumImportedExternPointerSignals", 0)>
+%<LibAddIdentifier(ExternalInputs, "NumInPlaceOPTSignals", 0)>
+
+%assign nAuto         = 0
+%assign nExtGlobal    = 0
+%assign nImpExtern    = 0
+%assign nImpExternPtr = 0
+%assign nPRPortVar    = 0
+
+%foreach eiIdx = ExternalInputs.NumExternalInputs
+    %assign ei = ExternalInputs.ExternalInput[eiIdx]
+    %switch ei.StorageClass
+      %case "Auto"
+        %assign nAuto = nAuto + 1
+        %break
+      %case "ExportedGlobal"
+        %assign nExtGlobal = nExtGlobal + 1
+        %break
+      %case "ImportedExtern"
+        %assign nImpExtern = nImpExtern + 1
+        %break
+      %case "ImportedExternPointer"
+        %assign nImpExternPtr = nImpExternPtr + 1
+        %break
+      %case "Custom"
+        %assign nCustom = nCustom + 1
+        %break
+      %default
+        %assign errTxt = "Unknown storage class: %<ei.StorageClass>"
+        %<LibReportFatalError(errTxt)>
+    %endswitch
+    %if ISFIELD(ei, "AutosarPRPortVarIdx")
+        %assign nPRPortVar = nPRPortVar + 1
+    %endif
+    %if ISFIELD(ei, "FPCPortIdx")
+        %assign nFPC = nFPC + 1
+    %endif
+%endforeach
+
+%assign ExternalInputs.NumAutoSignals                  = nAuto
+%assign ExternalInputs.NumExportedGlobalSignals        = nExtGlobal
+%assign ExternalInputs.NumImportedExternSignals        = nImpExtern
+%assign ExternalInputs.NumImportedExternPointerSignals = nImpExternPtr
+%assign ExternalInputs.NumInPlaceOPTSignals            = nCustom + nPRPortVar + nFPC
+
+%% =============================================================================
+%% Loop through the ExternalOutputs records and attach the following to
+%% determine the number of external signals.
+%%
+
+%<LibAddIdentifier(ExternalOutputs, "NumAutoSignals", 0)>
+%<LibAddIdentifier(ExternalOutputs, "NumExportedGlobalSignals", 0)>
+%<LibAddIdentifier(ExternalOutputs, "NumImportedExternSignals", 0)>
+%<LibAddIdentifier(ExternalOutputs, "NumImportedExternPointerSignals", 0)>
+%<LibAddIdentifier(ExternalOutputs, "NumInPlaceOPTSignals", 0)>
+
+%assign nAuto         = 0
+%assign nExtGlobal    = 0
+%assign nImpExtern    = 0
+%assign nImpExternPtr = 0
+%assign nPRPortVar    = 0
+
+%foreach eoIdx = ExternalOutputs.NumExternalOutputs
+    %assign eo = ExternalOutputs.ExternalOutput[eoIdx]
+    %switch eo.StorageClass
+      %case "Auto"
+        %assign nAuto = nAuto + 1
+        %break
+      %case "ExportedGlobal"
+        %assign nExtGlobal = nExtGlobal + 1
+        %break
+      %case "ImportedExtern"
+        %assign nImpExtern = nImpExtern + 1
+        %break
+      %case "ImportedExternPointer"
+        %assign nImpExternPtr = nImpExternPtr + 1
+        %break
+      %case "Custom"
+        %assign nCustom = nCustom + 1
+        %break
+      %default
+        %assign errTxt = "Unknown storage class: %<eo.StorageClass>"
+        %<LibReportFatalError(errTxt)>
+    %endswitch
+    %if ISFIELD(eo, "AutosarPRPortVarIdx")
+        %assign nPRPortVar = nPRPortVar + 1
+    %endif
+    %if ISFIELD(eo, "FPCPortIdx")
+        %assign nFPC = nFPC + 1
+    %endif
+%endforeach
+
+%assign ExternalOutputs.NumAutoSignals                  = nAuto
+%assign ExternalOutputs.NumExportedGlobalSignals        = nExtGlobal
+%assign ExternalOutputs.NumImportedExternSignals        = nImpExtern
+%assign ExternalOutputs.NumImportedExternPointerSignals = nImpExternPtr
+%assign ExternalOutputs.NumInPlaceOPTSignals            = nCustom + nPRPortVar + nFPC
+
+%% =============================================================================
+%% Add total number of external signals (block io + external inputs) to
+%% ::CompiledModel for future reference.
+%%
+
+%<LibAddToCompiledModel("NumInPlaceOPTSignals", ...
+    BlockOutputs.NumInPlaceOPTSignals + ...
+    ExternalInputs.NumInPlaceOPTSignals + ...
+    ExternalOutputs.NumInPlaceOPTSignals )>
+
+%<LibAddToCompiledModel("NumExportedGlobalSignals", ...
+    BlockOutputs.NumExportedGlobalSignals + ...
+    ExternalInputs.NumExportedGlobalSignals + ...
+    ExternalOutputs.NumExportedGlobalSignals)>
+
+%<LibAddToCompiledModel("NumImportedExternSignals", ...
+    BlockOutputs.NumImportedExternSignals + ...
+    ExternalInputs.NumImportedExternSignals + ...
+    ExternalOutputs.NumImportedExternSignals)>
+
+%<LibAddToCompiledModel("NumImportedExternPointerSignals", ...
+    BlockOutputs.NumImportedExternPointerSignals + ...
+    ExternalInputs.NumImportedExternPointerSignals + ...
+    ExternalOutputs.NumImportedExternPointerSignals)>
+
+
+%% =============================================================================
+%% Add total number of external dwork to ::CompiledModel for future reference.
+%%
+
+%assign nCustom       = 0
+%assign nExtGlobal    = 0
+%assign nImpExtern    = 0
+%assign nImpExternPtr = 0
+%assign nActDWork     = 0
+%assign numDWorks = ::CompiledModel.DWorks.NumDWorks
+
+%foreach dwIdx = numDWorks
+    %assign dwRec = ::CompiledModel.DWorks.DWork[dwIdx]
+    %switch dwRec.StorageClass
+      %case "Custom"
+        %assign nCustom = nCustom + 1
+        %break
+      %case "ExportedGlobal"
+        %assign nExtGlobal = nExtGlobal + 1
+        %break
+      %case "ImportedExtern"
+        %assign nImpExtern = nImpExtern + 1
+        %break
+      %case "ImportedExternPointer"
+        %assign nImpExternPtr = nImpExternPtr + 1
+        %break
+      %default
+        %% Only removed reusable CSC can be of Auto storage class.
+        %if SLibOmitRecord(dwRec)
+            %break
+        %endif
+        %if !FcnGetOptimizedAwayInTLC(dwRec) && ...
+            (!dwRec.IsLocalScratchDWork || dwRec.VarGroupVarIdx > -1)
+            %assign nActDWork = nActDWork + 1
+        %endif
+    %endswitch
+%endforeach
+
+%<LibAddToCompiledModel("NumCustomDWork", nCustom)>
+
+%<LibAddToCompiledModel("NumExportedGlobalDWork", nExtGlobal)>
+
+%<LibAddToCompiledModel("NumImportedExternDWork", nImpExtern)>
+
+%<LibAddToCompiledModel("NumImportedExternPointerDWork", nImpExternPtr)>
+
+%<LibAddToCompiledModel("NumNonExternalDWork", nActDWork)>
+
+%undef bo, boIdx, nInBlkIO, nInConstBlkIO, currentStackSize
+%undef ei, eiIdx, nAuto, nExtGlobal, nImpExtern, nImpExternPtr, nActDWork
+
+%assign ::CompiledModel.InCommonPass = 0
+
+%endif  %% _COMMONPASS_
+
+%% [EOF] commonpass.tlc

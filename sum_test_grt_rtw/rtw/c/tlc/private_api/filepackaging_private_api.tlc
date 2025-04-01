@@ -1,0 +1,105 @@
+%%
+%% Copyright 2019-2023 The MathWorks, Inc.
+%%
+
+%if EXISTS(::_FILEPACKAGING_PRIVATE_API_) == 0
+%assign ::_FILEPACKAGING_PRIVATE_API_ = 1
+
+%include "codetemplate_private_api.tlc"
+%include "code_template_api.tlc"
+
+%% Function: SLibIsCompactFileFormat() ===============================
+%% Abstract:
+%%   Is file package format a compact format (including compact file
+%%   format with separate data file)?
+%%
+%function SLibIsCompactFileFormat()
+    %return CGMODEL_ACCESS("CGModel.IsCompactFileFormat")
+%endfunction %% SLibIsCompactFileFormat
+
+%function SLibGetFullFileNameForSystemCode(codeGroupName, sysIdx)
+    %assign system = ::CompiledModel.System[sysIdx]
+    %return CGMODEL_ACCESS("FileRepository.getSystemFileName", codeGroupName, "BaseFileWithExt", system.FileNameOwnerIdx)
+%endfunction
+
+%% Function: SLibGetFullFileNameForCode(codeGroupName) ================
+%% Abstract:
+%%    Lookup the file name with extension in file packaging table for codeGroupName
+%%
+%function SLibGetFullFileNameForCode(codeGroupName)
+    %assign fileType = CGMODEL_ACCESS("FileRepository.getFileType", codeGroupName)
+    %assign fileName = LibGetModelFileFullName(fileType)
+    %return fileName
+%endfunction
+
+%% Function: SLibUpdateHeadersNeededByFile() ================================
+%function SLibUpdateHeadersNeededByFile(fileName, headerFile) void
+    %assign success = CGMODEL_ACCESS("FileRepository.updateHeadersNeededByFile", fileName, headerFile)
+    %assert (success == 0)
+%endfunction %% SLibUpdateHeadersNeededByFile
+
+%% Function: SLibUpdateHeadersNeededByParamsUsingSymbolicValue() ================================
+%function SLibUpdateHeadersNeededByParamsUsingSymbolicValue(paramsUsingSymbolicValue, sourceFile) void
+    %assign usesAutosarSystemConstant = CGMODEL_ACCESS("FileRepository.UpdateHeadersNeededByParamsUsingSymbolicValue", paramsUsingSymbolicValue, sourceFile)
+%endfunction
+
+%% Function: SLibGetFileNameForCodeFromCGModel(codeGroupName) ====================
+%% Abstract:
+%%   Should be called only for certain codeGroupNames
+%%   Lookup the file name in file packaging table for codeGroupName
+%%
+%function SLibGetFileNameForCodeFromCGModel(codeGroupName)
+    %assert codeGroupName != "mdl_hdr" || codeGroupName != "mdl_src"
+    %assign fileType = CGMODEL_ACCESS("FileRepository.getFileType", codeGroupName)
+    %return LibGetModelFileBaseName(fileType)
+%endfunction %% SLibGetFileNameForCodeFromCGModel
+
+%% Function: SLibUpdateGlobalSymbolTableForFile() ===============================
+%function SLibUpdateGlobalSymbolTableForFile(fileName, symbolName) void
+    %assign success = CGMODEL_ACCESS("FileRepository.updateTheGlobalSymbolTable", fileName, symbolName)
+    %assert (success == 0)
+%endfunction %% SLibUpdateGlobalSymbolTableForFile
+
+%% Function: SLibLogFilePackagingDebugInfo() ===============================
+%function SLibLogFilePackagingDebugInfo() void
+    %assign success = CGMODEL_ACCESS("FileRepository.logFilePackagingDebugInfo")
+    %assert success
+%endfunction
+
+%% Function: SLibLogFilePackagingDebugInfo() ===============================
+%function SLibDumpBlkInterfaceDebugInfo(sysIdx, fcnRec) void
+    %if CGMODEL_ACCESS("FileRepository.isFunctionLoggingEnabled")
+        %selectfile STDOUT
+        %assign thisSystem = ::CompiledModel.System[sysIdx]
+        --FILE PACKAGING DEBUG INFO - BEGIN--
+        The function "%<fcnRec.FcnRec.FcnName>" is added to blkinterface record
+        SystemInfo  - Idx: %<sysIdx>; Identifier: %<thisSystem.Identifier>; sysHdrFileName: %<thisSystem.SystemHeaderFileName>; sysSrcFileName: %<thisSystem.SystemSourceFileName>
+        CGIRFcnName - %<fcnRec.FcnRec.CGIRName>; FcnSourceFile - %<fcnRec.FcnRec.FcnSourceFile>; FcnHeaderFile - %<fcnRec.FcnRec.FcnHeaderFile>
+        --FILE PACKAGING DEBUG INFO - END--
+        %closefile STDOUT
+    %endif
+%endfunction
+
+%% Function: SLibIsMoveFilePackagingTableFromTLC() ====================
+%% Abstract:
+%%    Checks if feature MoveFilePackagingTableFromTLC is turned or not
+%%
+%function SLibIsMoveFilePackagingTableFromTLC() void
+    %if !EXISTS(::IsMoveFilePackagingTableFromTLC)
+        %assign ::IsMoveFilePackagingTableFromTLC = CGMODEL_ACCESS("FileRepository.getMoveFilePackagingTableFromTLC")
+    %endif
+    %return ::IsMoveFilePackagingTableFromTLC
+%endfunction
+
+%% Function: SLibGetFileNameForCode(codeGroupName) ====================
+%% Abstract:
+%%    Lookup the file name in file packaging table for codeGroupName
+%%
+%function SLibGetFileNameForCode(codeGroupName) void
+    %if SLibIsMoveFilePackagingTableFromTLC()
+        %return CGMODEL_ACCESS("FileRepository.getBaseFileNameForCode", codeGroupName)
+    %else
+        %return SLibGetFileNameForCodeFromTLC(codeGroupName)
+    %endif
+%endfunction
+%endif %% ::_FILEPACKAGING_PRIVATE_API_

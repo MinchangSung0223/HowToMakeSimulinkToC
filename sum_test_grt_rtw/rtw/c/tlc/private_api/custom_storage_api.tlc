@@ -1,0 +1,18 @@
+%%
+%% Copyright 2022 The MathWorks, Inc.
+%%
+%% Abstract:
+%%   This TLC library file contains all obsolete TLC functions required for
+%%   backwards compatability.
+%%
+%if EXISTS(::_CUSTOM_STORAGE_API_) == 0
+%assign ::_CUSTOM_STORAGE_API_ = 1
+
+%%=============================================================================
+%function SLibGenerateIncludeGuardMacro(hdrfile) void
+    %assert !ISEMPTY(hdrfile)
+
+    %return  (CGMODEL_ACCESS("CGModel.GetHeaderGuardPrefix") + STRREP(hdrfile, ".", "_") + "_")
+%endfunction
+
+%endif

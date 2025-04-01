@@ -1,0 +1,100 @@
+%%
+%% Copyright 2023 The MathWorks, Inc.
+%%
+
+%if !EXISTS(::_COMMONPRM_PRIVATE_API_)
+%assign ::_COMMONPRM_PRIVATE_API_ = 1
+
+%% Function: SLibLUTObjectWithoutSynthRTPsInit =====================================================
+%% Abstract:
+%%   Generate initialization string for LUT object with pointer fields
+%%   without synthesized RTPs for arrays with the pointers point to.
+%%   These entries wont be present in the CGMODEL map. Initialize to
+%%   all fields to null.
+%%
+%% Argument:
+%%   mdlParam - A Parameter record from the ModelParameters table
+%% Returns:
+%%   initialization string for LUT object with pointer fields
+%%
+%function SLibLUTObjectWithoutSynthRTPsInit(mdlParam) void
+    %return SLibStructDefaultInit(mdlParam)
+%endfunction
+
+%% Function: SLibStructDefaultInit =================================================================
+%% Abstract:
+%%   Generate initialization string for a struct. Initialize to
+%%   all fields to null.
+%%
+%% Argument:
+%%   mdlParam - A Parameter record from the ModelParameters table
+%% Returns:
+%%   initialization string for a struct
+%%
+%function SLibStructDefaultInit(mdlParam) void
+    %assign dType = LibGetRecordContainerDataTypeId(mdlParam)
+    %return CGMODEL_ACCESS("DataTypes.GetStructDefaultInit", dType)
+%endfunction
+
+%% Function: SLibStructElementInit =================================================================
+%% Abstract:
+%%   Generate initialization string for struct element
+%%
+%% Argument:
+%%   dType - datatype id
+%%   elIdx - element index
+%%   elemVal - element value to initialize
+%% Returns:
+%%   initialization string for struct element
+%%
+%function SLibStructElementInit(dType, elIdx, elemVal) void
+    %return CGMODEL_ACCESS("DataTypes.GetStructElementInit", dType, elIdx, elemVal)
+%endfunction
+
+
+%% Function: SLibEmitMatrixValue ===================================================================
+%% Abstract:
+%%      Emits the formatted initialization value for the given paramter
+%% value at the given row/col coordinates in the current open file stream.
+%%
+%function SLibEmitMatrixValue(mdlPrmValue, dTypeId, row, col, isComplex, storageTypeId) void
+    %openfile valueString
+    %if LibIsEnumDataType(dTypeId)
+        %%
+        %% Write out the enum string instead of the ordinal number
+        %%
+        %<SLibGetEnumTypeCodeGenStringFromIndex(dTypeId, mdlPrmValue[col])>\
+    %elseif LibIsNonBuiltInTypeNeededForFixpt(dTypeId)
+        %% any non-built-in type has 33+ bits represented by string
+        %% its corresponding complex is represented by discreted vector
+        %if isComplex
+            {\
+                %% get both real and imag
+                %if TYPE(mdlPrmValue) == "Matrix"
+                    %<FcnGetNonBuiltInRe(mdlPrmValue[row][col])>\
+                %else
+                    %<FcnGetNonBuiltInRe(mdlPrmValue[col])>\
+                %endif
+                , \
+                %if TYPE(mdlPrmValue) == "Matrix"
+                    %<FcnGetNonBuiltInIm(mdlPrmValue[row][col])>\
+                %else
+                    %<FcnGetNonBuiltInIm(mdlPrmValue[col])>\
+                %endif
+            }\
+        %else
+            %if TYPE(mdlPrmValue) == "Matrix"
+                %<mdlPrmValue[row][col]>\
+            %else
+                %<mdlPrmValue[col]>\
+            %endif
+        %endif
+    %else
+        %<LibGetGroundInitFromId(storageTypeId)>\
+    %endif
+    %closefile valueString
+    %return valueString
+%endfunction %% SLibEmitMatrixValue
+
+
+%endif %% _COMMONPRM_PRIVATE_API_

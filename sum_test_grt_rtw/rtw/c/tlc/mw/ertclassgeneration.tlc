@@ -1,0 +1,2451 @@
+%% ============================================================================
+%%
+%%
+%%
+%%
+%% Copyright 2006-2023 The MathWorks, Inc.
+%%
+%% Abstract:
+%%   Functions for the generation of a C++ encapsulated interface for the ERT target
+
+
+%%
+%%
+%% DO NOT ADD TO THIS FILE
+%%
+%% It is now mostly dead code. Please contact the Coder Infrastructure team for more information.
+%%
+
+%if EXISTS(_CPP_CLASS_GEN_) == 0
+%assign _CPP_CLASS_GEN_ = 1
+
+%if EXISTS(GenerateEnableDisable)
+    %if GenerateEnableDisable
+        %assign errMsg = "C++ class generation does not support the case of "...
+            "-aGenerateEnableDisable=1"
+        %<LibReportFatalError(errMsg)>
+    %endif
+%endif
+
+%assign classConfObj = FcnGetRTWCPPStepPrototypeRecord()
+
+%% Set up defaults for undefined config set variables
+
+%if !EXISTS(CPPClassName) || CPPClassName == ""
+    %assign ::CPPClassName = CGMODEL_ACCESS("CGModel.getClassName")
+%endif
+
+%if !EXISTS(NamespaceName) || NamespaceName == ""
+    %assign ::NamespaceName = CGMODEL_ACCESS("CGModel.getNamespace")
+%endif
+
+%if !EXISTS(CPPObjectName) || CPPObjectName == ""
+    %assign ::CPPObjectName = ::CompiledModel.GlobalScope.tModelObject
+%endif
+
+%if !EXISTS(CPPBlockIOVisibility)
+    %if CGMODEL_ACCESS("CGModel.getInternalMemberVisibility") == "private"
+        %assign ::CPPBlockIOVisibility = "Private"
+    %elseif CGMODEL_ACCESS("CGModel.getInternalMemberVisibility") == "protected"
+        %assign ::CPPBlockIOVisibility = "Protected"
+    %else
+        %assign ::CPPBlockIOVisibility = "Public"
+    %endif
+%endif
+
+%if !EXISTS(CPPBlockParamsVisibility)
+    %if CGMODEL_ACCESS("CGModel.getParameterMemberVisibility") == "private"
+        %assign ::CPPBlockParamsVisibility = "Private"
+    %elseif CGMODEL_ACCESS("CGModel.getParameterMemberVisibility") == "protected"
+        %assign ::CPPBlockParamsVisibility = "Protected"
+    %else
+        %assign ::CPPBlockParamsVisibility = "Public"
+    %endif
+%endif
+
+%if !EXISTS(CPPDWorkVisibility)
+    %if CGMODEL_ACCESS("CGModel.getInternalMemberVisibility") == "private"
+        %assign ::CPPDWorkVisibility = "Private"
+    %elseif CGMODEL_ACCESS("CGModel.getInternalMemberVisibility") == "protected"
+        %assign ::CPPDWorkVisibility = "Protected"
+    %else
+        %assign ::CPPDWorkVisibility = "Public"
+    %endif
+%endif
+
+%if !EXISTS(CPPCStateVisibility)
+    %if CGMODEL_ACCESS("CGModel.getInternalMemberVisibility")  == "private"
+        %assign ::CPPCStateVisibility = "Private"
+    %elseif CGMODEL_ACCESS("CGModel.getInternalMemberVisibility") == "protected"
+        %assign ::CPPCStateVisibility = "Protected"
+    %else
+        %assign ::CPPCStateVisibility = "Public"
+    %endif
+%endif
+
+%if !EXISTS(CPPPeriodicCStateVisibility)
+    %if CGMODEL_ACCESS("CGModel.getInternalMemberVisibility") == "private"
+        %assign ::CPPPeriodicCStateVisibility = "Private"
+    %elseif CGMODEL_ACCESS("CGModel.getInternalMemberVisibility") == "protected"
+        %assign ::CPPPeriodicCStateVisibility = "Protected"
+    %else
+        %assign ::CPPPeriodicCStateVisibility = "Public"
+    %endif
+%endif
+
+%if !EXISTS(CPPPrevZCStateVisibility)
+    %if CGMODEL_ACCESS("CGModel.getInternalMemberVisibility")  == "private"
+        %assign ::CPPPrevZCStateVisibility = "Private"
+    %elseif CGMODEL_ACCESS("CGModel.getInternalMemberVisibility") == "protected"
+        %assign ::CPPPrevZCStateVisibility = "Protected"
+    %else
+        %assign ::CPPPrevZCStateVisibility = "Public"
+    %endif
+%endif
+
+%if !EXISTS(CPPRTMVisibility)
+    %if CGMODEL_ACCESS("CGModel.getInternalMemberVisibility")  == "private"
+        %assign ::CPPRTMVisibility = "Private"
+    %elseif CGMODEL_ACCESS("CGModel.getInternalMemberVisibility") == "protected"
+        %assign ::CPPRTMVisibility = "Protected"
+    %else
+        %assign ::CPPRTMVisibility = "Public"
+    %endif
+%endif
+
+%if ISFIELD(classConfObj,"noArgOnList") && classConfObj.noArgOnList
+    %assign ::CPPExternalIOPlacement = "Attribute"
+%else
+    %assign ::CPPExternalIOPlacement = "Argument"
+%endif
+
+%% Make external I/O public/private based on External I/O Member Visibility
+%% or I/O Access Method configuration
+%if !EXISTS(CPPExternalInportsVisibility)
+    %assign externInVisibility = CGMODEL_ACCESS("CGModel.getExternalInportsMemberVisibility")
+    %if externInVisibility == "private"
+        %assign ::CPPExternalInportsVisibility = "Private"
+    %elseif externInVisibility == "protected"
+        %assign ::CPPExternalInportsVisibility = "Protected"
+    %else
+        %assign ::CPPExternalInportsVisibility = "Public"
+    %endif
+%endif
+%if !EXISTS(CPPExternalOutportsVisibility)
+    %assign externOutVisibility = CGMODEL_ACCESS("CGModel.getExternalOutportsMemberVisibility")
+    %if externOutVisibility == "private"
+        %assign ::CPPExternalOutportsVisibility = "Private"
+    %elseif externOutVisibility == "protected"
+        %assign ::CPPExternalOutportsVisibility = "Protected"
+    %else
+        %assign ::CPPExternalOutportsVisibility = "Public"
+    %endif
+%endif
+
+%if !EXISTS(CPPBlockParamsGet)
+    %if CGMODEL_ACCESS("CGModel.getGenerateParameterAccessMethods") != "None"
+        %assign ::CPPBlockParamsGet = "on"
+    %else
+        %assign ::CPPBlockParamsGet = "off"
+    %endif
+%endif
+
+%if !EXISTS(CPPBlockParamsSet)
+    %if CGMODEL_ACCESS("CGModel.getGenerateParameterAccessMethods") != "None"
+        %assign ::CPPBlockParamsSet = "on"
+    %else
+        %assign ::CPPBlockParamsSet = "off"
+    %endif
+%endif
+
+%createrecord CPPGroupVisibility {}
+%createrecord CPPGroupGet {}
+%createrecord CPPGroupSet {}
+%createrecord CPPGroupMethods {}
+
+%foreach idx = ::CompiledModel.NumCoderDataGroups
+    %assign group = ::CompiledModel.CoderDataGroup[idx]
+    %assign groupToken = "CoderDataGroup" + group.Name
+    %% Currently this can only be InstP
+    %if group.ContainsInstanceSpecificParameter
+        %assign groupAccess = CGMODEL_ACCESS("CGModel.getGenerateModelParameterArgumentsAccessMethods")
+        %assign groupVisibility = CGMODEL_ACCESS("CGModel.getModelParameterArgumentsMemberVisibility")
+        %% Currently this can only be SharedDSM
+    %else
+        %assign groupAccess = CGMODEL_ACCESS("CGModel.getGenerateInternalMemberAccessMethods")
+        %assign groupVisibility = CPPDWorkVisibility
+    %endif
+    %addtorecord CPPGroupMethods %<groupToken> groupAccess
+    %if groupAccess != "None"
+        %addtorecord CPPGroupGet %<groupToken> "on"
+        %addtorecord CPPGroupSet %<groupToken> "on"
+    %else
+        %addtorecord CPPGroupGet %<groupToken> "off"
+        %addtorecord CPPGroupSet %<groupToken> "off"
+    %endif
+    %% Even if this model doesn't group arguments, it can still have an
+    %% InstP from propagated arguments; make them private
+    %if groupVisibility == "None"
+        %assign groupVisibility = "Private"
+    %endif
+    %addtorecord CPPGroupVisibility %<groupToken> groupVisibility
+%endforeach
+
+%assign ::CPPRTMGet = "on"
+
+%if !EXISTS(CPPRTMSet)
+    %if CGMODEL_ACCESS("CGModel.getGenerateInternalMemberAccessMethods") != "None"
+        %assign ::CPPRTMSet = "on"
+    %else
+        %assign ::CPPRTMSet = "off"
+    %endif
+%endif
+
+%if !EXISTS(CPPDWorkGet)
+    %if CGMODEL_ACCESS("CGModel.getGenerateInternalMemberAccessMethods") != "None"
+        %assign ::CPPDWorkGet = "on"
+    %else
+        %assign ::CPPDWorkGet = "off"
+    %endif
+%endif
+
+%if !EXISTS(CPPDWorkSet)
+    %if CGMODEL_ACCESS("CGModel.getGenerateInternalMemberAccessMethods") != "None"
+        %assign ::CPPDWorkSet = "on"
+    %else
+        %assign ::CPPDWorkSet = "off"
+    %endif
+%endif
+
+%if !EXISTS(CPPBlockIOGet)
+    %if CGMODEL_ACCESS("CGModel.getGenerateInternalMemberAccessMethods") != "None"
+        %assign ::CPPBlockIOGet = "on"
+    %else
+        %assign ::CPPBlockIOGet = "off"
+    %endif
+%endif
+
+%if !EXISTS(CPPBlockIOSet)
+    %if CGMODEL_ACCESS("CGModel.getGenerateInternalMemberAccessMethods") != "None"
+        %assign ::CPPBlockIOSet = "on"
+    %else
+        %assign ::CPPBlockIOSet = "off"
+    %endif
+%endif
+
+%if !EXISTS(CPPCStateGet)
+    %if CGMODEL_ACCESS("CGModel.getGenerateInternalMemberAccessMethods") != "None"
+        %assign ::CPPCStateGet = "on"
+    %else
+        %assign ::CPPCStateGet = "off"
+    %endif
+%endif
+
+%if !EXISTS(CPPCStateSet)
+    %if CGMODEL_ACCESS("CGModel.getGenerateInternalMemberAccessMethods") != "None"
+        %assign ::CPPCStateSet = "on"
+    %else
+        %assign ::CPPCStateSet = "off"
+    %endif
+%endif
+
+%if !EXISTS(CPPPeriodicCStateGet)
+    %if CGMODEL_ACCESS("CGModel.getGenerateInternalMemberAccessMethods") != "None"
+        %assign ::CPPPeriodicCStateGet = "on"
+    %else
+        %assign ::CPPPeriodicCStateGet = "off"
+    %endif
+%endif
+
+%if !EXISTS(CPPPeriodicCStateSet)
+    %if CGMODEL_ACCESS("CGModel.getGenerateInternalMemberAccessMethods") != "None"
+        %assign ::CPPPeriodicCStateSet = "on"
+    %else
+        %assign ::CPPPeriodicCStateSet = "off"
+    %endif
+%endif
+
+%if !EXISTS(CPPPrevZCStateGet)
+    %if CGMODEL_ACCESS("CGModel.getGenerateInternalMemberAccessMethods") != "None"
+        %assign ::CPPPrevZCStateGet = "on"
+    %else
+        %assign ::CPPPrevZCStateGet = "off"
+    %endif
+%endif
+
+%if !EXISTS(CPPPrevZCStateSet)
+    %if CGMODEL_ACCESS("CGModel.getGenerateInternalMemberAccessMethods") != "None"
+        %assign ::CPPPrevZCStateSet = "on"
+    %else
+        %assign ::CPPPrevZCStateSet = "off"
+    %endif
+%endif
+
+%if !EXISTS(CPPExternalInGet)
+    %if CGMODEL_ACCESS("CGModel.getGenerateExternalInportsAccessMethods") != "None"
+        %assign ::CPPExternalInGet = "on"
+    %else
+        %assign ::CPPExternalInGet = "off"
+    %endif
+%endif
+
+%if !EXISTS(CPPExternalOutGet)
+    %if CGMODEL_ACCESS("CGModel.getGenerateExternalOutportsAccessMethods") != "None"
+        %assign ::CPPExternalOutGet = "on"
+    %else
+        %assign ::CPPExternalOutGet = "off"
+    %endif
+%endif
+
+%function SLibAppendHeaderToModuleFcnHeaders(header, toModuleHdrFile) void
+    %assign moduleIdx = ::CurrentModuleIdx >= 0 ? ::CurrentModuleIdx : GetBaseModuleIdx()
+    %assign rtwModule = RTWCGModules.RTWCGModule[moduleIdx]
+    %if toModuleHdrFile
+        %assign moduleFileTypeIdx = ::CompiledModel.MdlHeaderFileIdx
+    %else
+        %assign moduleFileTypeIdx = ::CompiledModel.MdlSrcFileIdx
+    %endif
+    %<FcnAppendModuleFcnHeaders(rtwModule, header, moduleFileTypeIdx)>
+%endfunction
+
+%function SLibUpdateFcnInfoParamsWithConst(fcnInfo) void
+    %% Don't add close parenthesis if const method
+    %assign constMethod = FcnPrototypeEndsWithConst(fcnInfo.Params)
+    %assign lenParams = SIZE(fcnInfo.Params)[1]
+    %if lenParams == 0 || fcnInfo.Params[lenParams-1] != ")" && !constMethod
+        %assign fcnInfo.Params = fcnInfo.Params + ")"
+    %endif
+%endfunction
+
+%% Function: FcnIsServerPublicAccess
+
+%function SLibGetPublicSectionComment() Output
+    %return "/* public data and function members */"
+%endfunction
+%function SLibGetPrivateSectionComment() Output
+    %return "/* private data and function members */"
+%endfunction
+%function SLibGetProtectedSectionComment() Output
+    %return "/* protected data and function members */"
+%endfunction
+
+%function SLibAddMissingOutputFunctionsForDirectEmit() Output
+    %assign outFcnStr = SLibGetOutputFcnStr()
+    %foreach tid = NumSampleTimes
+        %if SLibUnionSampletimeTID(tid) || ...
+            (tid > 0 && !SLibIsPeriodicRateGrouping() && (!ISFIELD(SampleTime[tid], "EntryFcnName") || ...
+            ISEMPTY(SampleTime[tid].EntryFcnName)))
+            %% We never dump code for union rates or rates with no EntryFcnName
+            %continue
+        %endif
+        %assign decl = ""
+        %if tid >= NumRuntimeExportedRates
+            %if !ISFIELD(SampleTime[tid],"EntryFcnName")
+                %% Event was inlined in aggergate function do not create declaration
+                %continue
+            %endif
+            %assign sys = System[GetBaseSystemIdx()]
+
+
+            %assign protoTypeAlreadyConstructedInIR = FcnIsPrototypeConstructedInIR(sys, outFcnStr , tid)
+            %if(protoTypeAlreadyConstructedInIR)
+                %assign proto = SLibGetRateGroupedFcnPrototype(RTWCGModules.RTWCGModule[sys.CGIRModuleIdx], tid)
+                %assign decl = proto.Prototype + ";"
+            %else
+                %assign fcnInfo = LibGetFcnInfo(sys, outFcnStr, tid)
+                %<SLibUpdateFcnInfoParamsWithConst(fcnInfo)>
+                %assign decl = fcnInfo.Returns + " " + fcnInfo.CGIRName + "(" + fcnInfo.Params + ";"
+            %endif
+
+        %else
+            %assign decl = SLibGetStepMethodDecl(TLC_TRUE,tid)
+        %endif
+        %if !ISEMPTY(decl) && !WHITE_SPACE(decl)
+            /* model step function */
+            %<decl>
+        %endif
+    %endforeach
+%endfunction
+
+%function SLibSubmodelInstanceIsPublic() void
+    %return SLibDWorkHasDataStoreReference()
+%endfunction
+
+%function SLibFillInPublicClassMembers() void
+    %% These functions are used to allow TLC to add to a
+    %% directly emitted C++ class
+    %openfile tmp
+    %if SLibIsModelTypesModelClassNamespace() && ISFIELD(::CompiledModel, "CPPEncapModelData") && ISFIELD(::CompiledModel.CPPEncapModelData, "Typedefs")
+        %<::CompiledModel.CPPEncapModelData.Typedefs>
+    %endif
+    %if IsModelReferenceRTWTarget()
+        %<FcnAddModelInitializeFcn()>
+        %assign sys = System[GetBaseSystemIdx()]
+        %<FcnAddInitializeConditionsFcn()>
+        %<FcnAddStartFcn(sys)>
+        %<FcnAddModelTerminateFcn()>
+    %endif
+    %if CGMODEL_ACCESS("CGModel.GenerateOutputMethodInTLC")
+        %<SLibAddMissingOutputFunctionsForDirectEmit()>
+    %endif
+    %<SLibOutputCopyConstructorDecl(CPPClassName, "public")>
+    %<SLibOutputCopyAssignmentDecl(CPPClassName, "public")>
+    %<SLibOutputMoveFunctions(CPPClassName)>
+    %closefile tmp
+    %assign declRec = ::CompiledModel.CPPEncapsulationRecord
+    %return tmp + declRec.PublicData + declRec.AccessMethodsDecl + declRec.PublicMethodsDecl + ...
+        (SLibSubmodelInstanceIsPublic() ? declRec.MdlRefInstances : "") + declRec.MdlRefSetMethodsDecl
+%endfunction
+
+%function SLibFillInPrivateClassMembers() void
+    %assign declRec = ::CompiledModel.CPPEncapsulationRecord
+    %return declRec.PrivateData + declRec.PrivateMethodsDecl + ...
+        (SLibSubmodelInstanceIsPublic() ? "" : declRec.MdlRefInstances)
+%endfunction
+
+%function SLibFillInLastPrivateClassMembers() void
+    %assign declRec = ::CompiledModel.CPPEncapsulationRecord
+    %return SLibOutputCopyConstructorDecl(CPPClassName, "private") + ...
+        SLibOutputCopyAssignmentDecl(CPPClassName, "private") + declRec.LastPrivateData
+%endfunction
+
+%function SLibFillInProtectedClassMembers() void
+    %assign declRec = ::CompiledModel.CPPEncapsulationRecord
+    %return declRec.ProtectedData
+%endfunction
+
+%function GetCoderGroupInHeaderInitialization(coderGroupIdx) void
+    %% Return brace initialized value for supported coder groups
+    %assign coderGroup = ::CompiledModel.CoderDataGroup[coderGroupIdx]
+    %return "{" + coderGroup.Initializer + "};"
+    %return selfField
+%endfunction
+
+%function FcnIsServerPublicAccess(sys) void
+    %assert LibIsServer(sys)
+    %with ::CompiledModel
+        %foreach fcnIdx = NumSimulinkFunctions
+            %assign fcn = SimulinkFunction[fcnIdx]
+            %if ISFIELD(fcn,"SystemIdx") && sys.SystemIdx == fcn.SystemIdx
+                %return fcn.FullPathToFunction == "G" || fcn.FullPathToFunction == "P"
+            %endif
+        %endforeach
+        %return TLC_FALSE
+    %endwith
+%endfunction
+
+%function FcnGetModelConstructorArgs()
+    %assign rootSystem = System[GetBaseSystemIdx()]
+    %assign rootModule = ::CompiledModel.RTWCGModules.RTWCGModule[rootSystem.CGIRModuleIdx]
+    %assign fcnIdx = ISFIELD(rootModule,"SystemFunctionTypes") && ISFIELD(rootModule.SystemFunctionTypes,"ModelConstructor") ...
+        ? GETFIELD(rootModule.SystemFunctionTypes,"ModelConstructor") : -1
+    %assign fcnParams = ""
+    %if fcnIdx > -1
+        %assign constrFcn = rootModule.Function[fcnIdx]
+        %assign comma = ""
+        %foreach argIdx = constrFcn.NumArgs
+            %if 0 == constrFcn.ArgAccessed[argIdx]
+                %continue
+            %endif
+            %assign argName = constrFcn.ArgNames[argIdx]
+            %assign symbolPrefix = " *"
+            %assign idnum = IDNUM(constrFcn.ArgSource[argIdx])
+            %if constrFcn.ArgTypes[argIdx] >-1
+                %assign argType = SLibGetTypeNameFromCGType(constrFcn.ArgTypes[argIdx])
+                %if idnum[0] == "X"
+                    %assign symbolPrefix = " "
+                %endif
+            %else
+                %if idnum[0] == "LCDG"
+                    %assign group = ::CompiledModel.CoderDataGroup[idnum[1]]
+                    %assign groupToken = "CoderDataGroup" + group.Name
+                    %assign vgIdx = rootSystem.%<groupToken + "VarGroupIndex">[0]
+                    %assign argType = SLibGetTypeNameFromCGType(::CompiledModel.VarGroups.VarGroup[vgIdx].CGTypeIdx)
+                %else
+                    %continue
+                %endif
+            %endif
+            %assign fcnParams = fcnParams + comma + argType + symbolPrefix + argName
+            %assign comma = ","
+        %endforeach
+    %endif
+    %return fcnParams
+%endfunction
+
+%% Function: FcnGenerateCPPConstructor =============================================================
+%%
+%% Abstract:
+%% Generates the constructor for the model given the information in the CompiledModel
+%% ConstructorRecord field by appending data with their corresponding variant condition
+%% and by appending commas as needed
+%function FcnGenerateCPPConstructor()
+    %assign emitted = ""
+    %% We emit the basic initializer list into the file repository
+    %assign emitted = GET_FILE_REP_SCRATCH_BUFFER_CONTENTS("CPPClassDirectEmitInitializerList")
+
+    %assign numConstructorArgs = 0
+    %if ISFIELD(::CompiledModel, "CPPConstructorRecord")
+        %assign numConstructorArgs = SIZE(::CompiledModel.CPPConstructorRecord.Data)[1]
+    %endif
+
+    %if numConstructorArgs < 1
+        %if !ISEMPTY(emitted)
+            %% For direct emit, add a dummy element if the final element is variant if neccessary
+            %assign emitted = CGMODEL_ACCESS("CGModel.AddDummyVariantElementToInitializerList", emitted)
+            %if !CGMODEL_ACCESS("CGModel.GetLastInitializerListElementIsVariant")
+                %% If not, we know the existing final element is the last one, so remove the final comma
+                %assign emitted = CGMODEL_ACCESS("CGModel.RemoveFinalCommaForInitializerList", emitted)
+            %endif
+            %return ":\n" + emitted
+        %else
+            %return emitted
+        %endif
+    %endif
+
+    %openfile initializerList
+    %<":\n">
+    %if !SLibSubmodelInstanceIsPublic()
+        %<emitted>
+    %endif
+    %foreach arg = numConstructorArgs
+        %assign comma = ","
+        %assign argData = ::CompiledModel.CPPConstructorRecord.Data[arg]
+        %assign argIf = ::CompiledModel.CPPConstructorRecord.ppIf[arg]
+        %assign argEndIf = ::CompiledModel.CPPConstructorRecord.ppEndIf[arg]
+        %if !ISEMPTY(argIf)
+            %<argIf>
+            %<argData>%<comma>
+            %<argEndIf>
+        %else
+            %<argData>%<comma>
+        %endif
+    %endforeach
+    %if SLibSubmodelInstanceIsPublic()
+        %<emitted>
+    %endif
+    %closefile initializerList
+    %assign initializerList = CGMODEL_ACCESS("CGModel.AddDummyVariantElementToInitializerList", initializerList)
+    %if !CGMODEL_ACCESS("CGModel.GetLastInitializerListElementIsVariant")
+        %% See comment in above callsite
+        %assign initializerList = CGMODEL_ACCESS("CGModel.RemoveFinalCommaForInitializerList", initializerList)
+    %endif
+    %return initializerList
+%endfunction
+
+%% Function: FcnGenerateCPPClassFiles ==============================================================
+%%
+%%  Abstract:
+%%  Builds %<modelName>_class.h and .cpp to delcare and implement a C++
+%%  wrapper class around reusable, stateless, C-style ERT code.
+
+%function FcnGenerateCPPClassFiles() void
+
+    %% Generate Reusable Code must be selected
+    %assert MultiInstanceERTCode
+
+    %assign CPPFileName = LibGetModelName()
+
+    %assign modelName = LibGetModelName()
+
+    %assign declRec = ::CompiledModel.CPPEncapsulationRecord
+
+    %% Create a record to hold the constructor arguments and the variant info for them
+    %if !ISFIELD(::CompiledModel, "CPPConstructorRecord")
+        %createrecord CPPConstructorRecord \
+        {              \
+            Data   [];   \
+            ppIf   [];   \
+            ppEndIf  []  \
+        }
+        %<LibAddToCompiledModel("CPPConstructorRecord", CPPConstructorRecord)>
+    %endif
+
+
+    %assign declRec.PrivateMethodsDecl = declRec.PrivateMethodsDecl + ...
+        FcnCPPClassPrivateMethods()
+
+    %openfile classDeclaration
+
+    %assign rootSystem = System[GetBaseSystemIdx()]
+    %assign rootModuleIdx = rootSystem.CGIRModuleIdx
+
+    %<SLibListInitializerHelper(rootModuleIdx, declRec.PublicDataInit)>
+    %<SLibListInitializerHelper(rootModuleIdx, declRec.ProtectedDataInit)>
+    %<SLibListInitializerHelper(rootModuleIdx, declRec.PrivateDataInit)>
+
+    %% SLibGetSystemConstructionCode can call SLibListInitializerHelper through the intermediate TLC files and hence this has been
+    %% moved after the privateDataInit but before the rtModel/dummy element insertion
+    %assign mdlctorcode = SLibGetSystemConstructionCode(::CompiledModel.System[GetBaseSystemIdx()])
+
+    %% Lastly, either
+    %% a) add the rtModel constructor call OR
+    %% b) a dummy variable if needed. If the rtModel is included it is guaranteed to be unconditional. If the rtModel
+    %%    is not needed, then a dummy element is needed if the last element in the constructor is variant
+    %if NeedRTMInModelClass()
+        %assign ::CompiledModel.CPPConstructorRecord.Data = ::CompiledModel.CPPConstructorRecord.Data + "%<::tSimStruct>()"
+        %assign ::CompiledModel.CPPConstructorRecord.ppIf = ::CompiledModel.CPPConstructorRecord.ppIf + ""
+        %assign ::CompiledModel.CPPConstructorRecord.ppEndIf = ::CompiledModel.CPPConstructorRecord.ppEndIf + ""
+    %endif
+
+
+    /* Class declaration for model %<modelName> */
+    %assign fcnType = "ModelClassDefinition"
+    %% There's only a root opaque block for nonempty models
+    %% so only use GENERATE_TYPE in that case
+    %if SLibNonEmptyModel()
+        %assign rootOpaque = FcnRootOpaqueBlock()
+        %assign fileName = ::CompiledModel.RTWCGModules.RTWCGModule[::CompiledModel.System[GetBaseSystemIdx()].CGIRModuleIdx].TLCFileName + "_" + fcnType
+        %<GENERATE_TYPE(rootOpaque, fcnType, fileName)>
+        %assign unused = UNLOAD_GENERATE_TYPE(rootOpaque, fileName)
+    %else
+        %include "rtwcg_block" + "_" + fcnType + ".tlc"
+    %endif
+
+
+    %if ISFIELD(::CompiledModel, "CPPEncapModelData") && ISFIELD(::CompiledModel.CPPEncapModelData, "ExternData")
+        %<::CompiledModel.CPPEncapModelData.ExternData>
+    %endif
+
+    %closefile classDeclaration
+    %if ISFIELD(::CompiledModel, "CPPConstructorRecord") && !ISEMPTY(::CompiledModel.CPPConstructorRecord.Data)
+        %% Mark if last element in constructor is variant so we know if we need to add dummy element
+        %assign lastIdx = SIZE(::CompiledModel.CPPConstructorRecord.ppIf,1)
+        %assign cond = !ISEMPTY(::CompiledModel.CPPConstructorRecord.ppIf) && !WHITE_SPACE(::CompiledModel.CPPConstructorRecord.ppIf[lastIdx-1])
+        %<CGMODEL_ACCESS("CGModel.SetLastInitializerListElementIsVariant", cond)>
+    %endif
+    %assign classDeclaration = CGMODEL_ACCESS("CGModel.AddDummyVariantElementToClass", classDeclaration, ::CompiledModel.tSS_UCHAR)
+    %% Finalize class and add comments to visibility sections
+    %assign classDeclaration = CGMODEL_ACCESS("CGModel.RemoveEmptyModelClassSectionsAndAddComments", ...
+        classDeclaration, SLibGetPublicSectionComment(), SLibGetPrivateSectionComment(), SLibGetProtectedSectionComment())
+    %<SLibCacheCodeToFile("cpp_class_decl", classDeclaration)>
+    %if ISFIELD(::CompiledModel, "InSelfCPPInitializerDeclarations")
+        %<SLibCacheCodeToFile("cpp_class_decl", ::CompiledModel.InSelfCPPInitializerDeclarations)>
+    %endif
+
+    %if IsModelReferenceRTWTarget() && RealTimeModelAccessed && ...
+        SLibZeroMemory("RTM")
+
+        %openfile tmpInclBuf
+        %assign toInclude = SLibGenMemFcnCallInfo("memset", "(void *)%<::tSimStruct>", ...
+            "0", "sizeof(%<::tSimStructType>)")
+        #include %<toInclude.HeaderFile>
+        %closefile tmpInclBuf
+
+        %<SLibCacheCodeToFile("mdl_hdr_incl", tmpInclBuf)>
+    %endif
+
+    %if IsModelReferenceRTWTarget() || (RTWCAPI == 1)
+        %assign toInclude = SLibGetMathConstantInfo("NULL",tSS_INTEGER)
+        %if !ISEMPTY(toInclude.HeaderFile)
+            %openfile nullInclBuf
+            #include %<toInclude.HeaderFile>
+            %closefile nullInclBuf
+            %<SLibCacheCodeToFile("mdl_hdr_incl", nullInclBuf)>
+        %endif
+    %endif
+
+    %if EXISTS(::NamespaceName) && (::NamespaceName != "") ...
+        && (System[NumSystems-1].SystemNamespaceFlag == 0)
+        %openfile nsBuf
+        namespace %<::NamespaceName> {
+            %closefile nsBuf
+            %<SLibCacheCodeToFile("mdl_fcn_defn", nsBuf)>
+            %assign System[NumSystems-1].SystemNamespaceFlag = 1
+    %endif
+
+    %% CONSTRUCTOR
+    %openfile constructor
+
+    %assign fcnAbstract = "Constructor"
+    %assign fcnName = "%<CPPClassName>::%<CPPClassName>"
+    %assign fcnParams = FcnGetModelConstructorArgs()
+    %assign fcnReturns = ""
+    %assign rootModule = ::CompiledModel.RTWCGModules.RTWCGModule[rootModuleIdx]
+
+    %createrecord fcnRec {Name fcnName; Returns fcnReturns; Params fcnParams; Abstract fcnAbstract; ...
+        Category "cpp"; GeneratedBy "ertclassgeneration.tlc"; Type "C++ constructor"}
+    %<SLibDumpFunctionBanner(fcnRec)>
+    %undef fcnRec
+
+    %% The following needs to be called after the model constructor code
+    %% is generated because that sets up the initializer list
+    %% (CachedListInitializer and CachedModelRefConstructors)
+    %<SLibFcnCPPGenerateDestructorAndConstructorAssignmentsForModelRefs()>
+
+    %assign listInit = FcnGenerateCPPConstructor()
+    %<fcnReturns> %<fcnName>(%<fcnParams>)%<listInit>
+    {
+        %openfile constructorBody
+        %<declRec.ConstructorDeclaration>
+        %<declRec.ConstructorAssignment>
+        %%Do not call initizliaze(). Let user controls when to call intialize to
+        %%keep it similar to C code generation capability and user controls when
+        %%to call the intialize function.
+
+        %assign mdlRefBlks = ISFIELD(::CompiledModel,"ModelReferenceBlocks") ? ...
+            ::CompiledModel.ModelReferenceBlocks : []
+        %if !ISEMPTY(mdlRefBlks)
+            %%%% get the rtM records
+            %assign rtRecs = RTMGetRTModelRecShell()
+
+            %foreach rowIdx = SIZE(mdlRefBlks,0)
+                %assign fieldName = "ModelReferenceInstance%<rowIdx>"
+                %if ISFIELD(rtRecs, fieldName)
+                    %%%% when getting into here, the rtM must have had
+                    %%%% a field for the corresponding mdlref instance variable pointer.
+                    %%%% Check it out and initialize it.
+
+                    %assign thisfld = rtRecs.%<fieldName>
+                    %<::tSimStruct>->%<thisfld.VarName> = &%<thisfld.VarName>;
+                %endif
+            %endforeach
+        %endif
+        %<mdlctorcode> %% contains both decls and assignment from IR
+        %closefile constructorBody
+        %if ISEMPTY(constructorBody) || WHITE_SPACE(constructorBody)
+            /* Currently there is no constructor body generated.*/
+        %else
+            %<constructorBody>
+        %endif
+    }
+
+    %closefile constructor
+    %<SLibCacheCodeToFile("mdl_fcn_defn", constructor)>
+
+    %% DESTRUCTOR
+    %if CGMODEL_ACCESS("CGModel.getGenerateDestructor")
+        %openfile destructor
+
+        %assign fcnAbstract = "Destructor"
+        %assign fcnName = "%<CPPClassName>::~%<CPPClassName>"
+        %assign fcnParams = ""
+        %assign fcnReturns = ""
+        %createrecord fcnRec {Name fcnName; Returns fcnReturns; Params fcnParams; Abstract fcnAbstract; ...
+            Category "cpp"; GeneratedBy "ertclassgeneration.tlc"; Type "C++ destructor"}
+        %<SLibDumpFunctionBanner(fcnRec)>
+        %undef fcnRec
+        %assign emptyComment = "/* Currently there is no destructor body generated.*/"
+        %assign fcnSig = "%<fcnReturns> %<fcnName>(%<fcnParams>)"
+        %if ISEMPTY(declRec.DestructorStats) && ::GenCPP11
+            %<emptyComment>
+            %<fcnSig> = default;
+        %else
+            %<fcnSig>
+            {
+                %if ISEMPTY(declRec.DestructorStats)
+                    %<emptyComment>
+                %else
+                    %<declRec.DestructorStats>
+                %endif
+            }
+        %endif
+        %closefile destructor
+        %<SLibCacheCodeToFile("mdl_fcn_defn", destructor)>
+
+    %endif
+    %<SLibCacheCodeToFile("mdl_fcn_defn", declRec.AccessMethodsDefn)>
+    %<SLibCacheCodeToFile("mdl_fcn_defn", declRec.MdlRefSetMethodsDefn)>
+
+    %assign serviceGetterDefns = GET_FILE_REP_SCRATCH_BUFFER_CONTENTS("ServiceGetterDefns")
+    %if !ISEMPTY(serviceGetterDefns)
+        %<SLibCacheCodeToFile("mdl_fcn_defn", serviceGetterDefns)>
+    %endif
+
+    %assign servicePortsGetterDefns = GET_FILE_REP_SCRATCH_BUFFER_CONTENTS("ServicePortsGetterDefns")
+    %if !ISEMPTY(servicePortsGetterDefns)
+        %<SLibCacheCodeToFile("mdl_fcn_defn", servicePortsGetterDefns)>
+    %endif
+
+    %assign servicePortsFcnDefn = GET_FILE_REP_SCRATCH_BUFFER_CONTENTS("ServicePortsFcnDefn")
+    %if !ISEMPTY(servicePortsFcnDefn)
+        %<SLibCacheCodeToFile("mdl_fcn_defn", servicePortsFcnDefn)>
+    %endif
+
+    %if EXISTS(::NamespaceName) && (::NamespaceName != "") ...
+        && (System[NumSystems-1].SystemNamespaceFlag == 1)
+        %openfile nsBuf
+        %assign namespaceDeclCloseStr = CGMODEL_ACCESS("CGModel.getClassNamespaceDeclCloseStr")
+        %<namespaceDeclCloseStr>
+        %closefile nsBuf
+        %<SLibCacheCodeToFile("mdl_fcn_defn", nsBuf)>
+        %assign System[NumSystems-1].SystemNamespaceFlag = 0
+    %endif
+
+    %openfile si_mdlref_buffer
+
+    %assign mdlRefBlks = ISFIELD(::CompiledModel,"ModelReferenceBlocks") ? ...
+        ::CompiledModel.ModelReferenceBlocks : []
+
+    %assign additionalIncludes = ""
+    %assign forwardDeclarations = ""
+
+    %assign rtRecs = RTMGetRTModelRecShell()
+
+    %if !ISEMPTY(mdlRefBlks)
+        %foreach rowIdx = SIZE(mdlRefBlks,0)
+            %assign mdlRefInfo = mdlRefBlks[rowIdx]
+            %assign mSysIdx = mdlRefInfo[0]
+            %assign bIdx    = mdlRefInfo[1]
+            %assign instIdx = mdlRefInfo[2]
+
+            %if !System[mSysIdx].Block[bIdx].MdlRefIsCPPClassGenMode
+                %continue
+            %endif
+
+            %assign blkInterface = GetModelrefInterface(System[mSysIdx].Block[bIdx])
+            %assign independentBuild = blkInterface.IsScalableBuild && ...
+                !blkInterface.AncestorAllocatesCoderDataGroups
+            %if !(independentBuild || ...
+                CGMODEL_ACCESS("CGModel.getUseOperatorNewForModelRefRegistration"))
+                %continue
+            %endif
+
+            %assign FPC = blkInterface.FPC
+
+            %assign parentSys = System[mSysIdx]
+            %assign parentHasSeparateFile = !(LibSystemIsRoot(parentSys) || ...
+                IsModelReferenceBaseSys(parentSys)) && ...
+                CGMODEL_ACCESS("CGModel.System.SourceFileName", parentSys.SystemIdx) !=  ...
+                CGMODEL_ACCESS("CGModel.System.SourceFileName", GetBaseSystemIdx())
+
+
+            %if blkInterface.IsScalableBuild
+                %assign mdlRefInstCPPVar = ::CompiledModel.ModelBlock[rowIdx].MdlRefInstanceVarName
+
+                %openfile mdlRefVarBuf
+                %if !ISEMPTY(FPC.ClassNamespace)
+                    ::%<FPC.ClassNamespace>::%<FPC.ModelClassName> %<mdlRefInstCPPVar>;
+                %else
+                    %<FPC.ModelClassName> %<mdlRefInstCPPVar>;
+                %endif
+                %closefile mdlRefVarBuf
+
+                %if parentHasSeparateFile
+                    %assign system = System[mSysIdx]
+                    %assign res = SLibGetNeedDumpSysFcn(system)
+
+                    %if !res[0] && ...
+                        ((System[mSysIdx].FileNameOwnerIdx == mSysIdx) && NotRootFileName(system)) && ...
+                        (!LibIsServer(system) && !LibSkipSystemFcnEmission(system))
+                        /* model instance variable for '%<System[mSysIdx].Block[bIdx].Name>' */
+                        static %<mdlRefVarBuf>
+                        %<SLibUpdateLocalSymbolTableForFile(SLibGetFullFileNameForCode("mdl_data_defn"), ...
+                            FPC.ModelClassName)>\
+                    %else
+                        %openfile mdlRefVarDefnBuf
+                        /* model instance variable for '%<System[mSysIdx].Block[bIdx].Name>' */
+                        %<mdlRefVarBuf>
+                        %closefile mdlRefVarDefnBuf
+                        %<SLibCacheSystemCodeToFile("sys_data_define", parentSys, mdlRefVarDefnBuf)>
+                        %<SLibUpdateLocalSymbolTableForFile(...
+                            SLibGetFullFileNameForSystemCode("sys_data_define", parentSys.SystemIdx), ...
+                            mdlRefInstCPPVar)>\
+
+                        %openfile mdlRefVarExternDeclBuf
+                        /* Extern declaration of model instance variable for '%<System[mSysIdx].Block[bIdx].Name>' */
+                        extern %<mdlRefVarBuf>
+                        %closefile mdlRefVarExternDeclBuf
+                        %<SLibCacheSystemCodeToFile("sys_standalone_extern_data_decl", parentSys, mdlRefVarExternDeclBuf)>
+                        %assign headerFile = SLibGetFullFileNameForSystemCode("sys_standalone_extern_data_decl", parentSys.SystemIdx)
+                        %<SLibUpdateLocalSymbolTableForFile(headerFile, FPC.ModelClassName)>\
+                        %<SLibUpdateGlobalSymbolTableForFile(headerFile, mdlRefInstCPPVar)>\
+                    %endif
+                %else
+                    /* model instance variable for '%<System[mSysIdx].Block[bIdx].Name>' */
+                    static %<mdlRefVarBuf>
+                    %<SLibUpdateLocalSymbolTableForFile(SLibGetFullFileNameForCode("mdl_data_defn"), ...
+                        FPC.ModelClassName)>\
+                %endif
+
+                %openfile toIncludeBuf
+                #include "%<blkInterface.FileName>.h"
+                %closefile toIncludeBuf
+
+                %if parentHasSeparateFile
+                    %<SLibCacheSystemCodeToFile("sys_hdr_incl", parentSys, toIncludeBuf)>
+                %else
+                    %assign additionalIncludes = additionalIncludes + toIncludeBuf
+                %endif
+
+            %endif
+
+
+            %openfile fwdDeclBuf
+            %assign fieldName = "ModelReferenceInstance%<rowIdx>"
+            %assign trackingFieldName = "DeclearedClass%<FPC.ModelClassName>"
+            %if !ISFIELD(::CompiledModel, trackingFieldName)
+                %if SLibGetModelRefClassTypeAliasExists(CGMODEL_ACCESS("CGModel.getUseOperatorNewForModelRefRegistration"), blkInterface)
+                    %if !ISEMPTY(FPC.ClassNamespace)
+                        namespace %<FPC.ClassNamespace> {
+                    %endif
+                    class %<FPC.ModelClassName>; /* class forward declaration for %<System[mSysIdx].Block[bIdx].Name> */
+                    %<SLibOutputModelRefTypedef(FPC)>
+                    %if !ISEMPTY(FPC.ClassNamespace)
+                    }
+                    %endif
+
+                    %addtorecord ::CompiledModel %<trackingFieldName> 1
+                %endif
+            %endif
+            %closefile fwdDeclBuf
+
+            %if CGMODEL_ACCESS("CGModel.getUseOperatorNewForModelRefRegistration") && ...
+                !blkInterface.IsScalableBuild
+                %openfile toIncludeBuf
+                #include "%<blkInterface.FileName>.h"
+                %closefile toIncludeBuf
+
+                %if parentHasSeparateFile
+                    %<SLibCacheSystemCodeToFile("sys_src_incl", parentSys, toIncludeBuf)>
+                %endif
+
+                %assign additionalIncludes = additionalIncludes + toIncludeBuf
+            %endif
+
+            %assign fileName = ""
+            %if parentHasSeparateFile
+                %% The model block is contained in a subsystem that has its own
+                %% file, not the model.cpp/.h. We need to put the forward declaration
+                %% there.
+                %<SLibCacheSystemCodeToFile("sys_cppencap_fwd_typedef", parentSys, fwdDeclBuf)>
+                %assign fileName = SLibGetFullFileNameForSystemCode("sys_cppencap_fwd_typedef", parentSys.SystemIdx)
+            %else
+                %assign forwardDeclarations = forwardDeclarations + fwdDeclBuf
+                %assign fileName = SLibGetFileNameForCode("baseMdl_hdr_define")
+            %endif
+            %if !WHITE_SPACE(fwdDeclBuf) && ::GenCPP11
+                %% #include <memory> for smart pointer
+                %<SLibUpdateHeadersNeededByFile(fileName, "<memory>")>
+            %endif
+        %endforeach
+    %endif %%%% !ISEMPTY(mdlRefBlks)
+    %closefile si_mdlref_buffer
+
+    %<SLibCacheCodeToFile("mdl_data_defn", si_mdlref_buffer)>
+    %<SLibCacheCodeToFile("mdl_src_incl", additionalIncludes)>
+
+    %%%% For those single-instance mdlref instance variable pointers declared
+    %%%% in RT_Model, class forward declaration is needed.
+    %%%% Forward declaration can't be in Typedefs section since mdlref instance
+    %%%% variable pointers might be declared in DWork type definition.
+    %<SLibCacheCodeToFile("baseMdl_hdr_define", forwardDeclarations)>
+
+%endfunction    %% FcnGenerateCPPClassFiles
+
+%function FcnSysVarGroupInSelf(system,type)
+    %assign vargroupIdx = FcnSysVarGroupIndex(system,type, 0)
+    %if vargroupIdx > -1 && SLibGetSelfVarGroupIndex() > -1
+        %assign vargroupRec = ::CompiledModel.VarGroups.VarGroup[vargroupIdx]
+        %return vargroupRec.ParentVarGroupIdx == SLibGetSelfVarGroupIndex()
+    %endif
+    %return TLC_FALSE
+%endfunction
+
+%% Function: SLibIsRootSysOrMdlRefBaseSys ==========================================================
+%%
+%%  Abstract:
+%%
+%%  returns true if the system is the root system or mdlref base subsystem.
+
+%function SLibIsRootSysOrMdlRefBaseSys(sysIdx) void
+    %return LibSystemIsRoot(System[sysIdx]) || ...
+        IsModelReferenceBaseSys(System[sysIdx])
+%endfunction %% SLibIsRootSysOrMdlRefBaseSys
+
+%function SLibIsServiceSLFcn(sys) void
+    %return ISFIELD(sys, "IsServiceSLFcn") && sys.IsServiceSLFcn == TLC_TRUE
+%endfunction
+
+%function SLibIsPublicClassMemberSLFcn(sys) void
+    %return !LibIsServer(sys) || SLibIsMessageServiceProvider(sys) ||...
+        SLibIsServiceSLFcn(sys)
+%endfunction
+
+%function FcnStaticOnEmptyFunctionCheck()
+    %return ::GenerateClassInterface && ...
+        (CGMODEL_ACCESS("CGModel.getConstMemberMethodsFeature") >0)
+%endfunction
+
+%% ===========================================================================
+%% Function: FcnStaticOnEmptyInitMethod
+%%
+%% Abstract: Add static keyword on empty model initialize method
+%%           for better compliance for MISRA C++ 2008 : 9-3-3
+%function FcnStaticOnEmptyInitMethod()
+    %if (!FcnStaticOnEmptyFunctionCheck())
+        %return ""
+    %endif
+    %if(SLibGetEmptyTopMdlInitializeFcn())
+        %return "static "
+    %endif
+    %return ""
+%endfunction
+
+%% ===========================================================================
+%% Function: FcnStaticOnEmptyTermMethod
+%%
+%% Abstract: Add static keyword on empty model terminate method
+%%           for better compliance for MISRA C++ 2008 : 9-3-3
+%function FcnStaticOnEmptyTermMethod()
+    %if (!FcnStaticOnEmptyFunctionCheck())
+        %return ""
+    %endif
+    %% Only handle top model build for now
+    %if(!IsModelReferenceRTWTarget() && IncludeMdlTerminateFcn && ...
+        LibSystemFcnIsEmpty(System[GetBaseSystemIdx()], "Terminate")) && ...
+        !haveModelRefTermCode
+        %return "static "
+    %endif
+    %return ""
+%endfunction
+
+%% =============================================================
+%% Abstract: Add static keyword on empty model output/update
+%%           method for better compliance for MISRA C++ 2008 : 9-3-3
+%function FcnStaticOnEmptyOutputUpdateMethod()
+    %if (!FcnStaticOnEmptyFunctionCheck()) || ...
+        !SLibSingleTasking() %% Only single tasking supported now, see SLibGetStepMethodDecl
+        %return ""
+    %endif
+    %% Only handle top model build for now
+    %% Adaptive AUTOSAR step should not be made static, see
+    %% tCalibration:verifyImportedExtern
+    %if( ::CompiledModel.EmptyFunctionsInfo.EmptyOutputUpdateFcn) && ...
+        !SLibAdaptiveAutosarActive()
+        %return "static "
+    %endif
+    %return ""
+%endfunction
+
+
+%% ===========================================================================
+%% Function: SLibFcnCPPGenerateDestructorAndConstructorAssignmentsForModelRefs
+%%
+%% Abstract: Popolate the CPPConstructorAssignment fields and destructor statements
+%%
+%function SLibFcnCPPGenerateDestructorAndConstructorAssignmentsForModelRefs() void
+    %assign int32Type = LibGetDataTypeNameFromId(::CompiledModel.tSS_INT32)
+    %assign CPPConstructorAssignment = ""
+    %assign CPPDestructorStatements = ""
+    %assign mdlRefBlks = ISFIELD(::CompiledModel,"ModelReferenceBlocks") ? ...
+        ::CompiledModel.ModelReferenceBlocks : []
+    %if !ISEMPTY(mdlRefBlks)
+        %assign rootSystem = System[NumSystems-1]
+        %if IsModelReferenceTarget()
+            %assign rootSystem = System[NumSystems-2]
+        %endif
+        %assign nonDefaultCtorIdx = 0
+        %assign nonDefaultCtorList = LibIsSystemField(rootSystem,"CachedModelRefConstructors") ? LibGetSystemField(rootSystem, "CachedModelRefConstructors") : []
+        %foreach rowIdx = SIZE(mdlRefBlks,0)
+            %assign mdlRefInfo = mdlRefBlks[rowIdx]
+            %assign mSysIdx = mdlRefInfo[0]
+            %assign bIdx    = mdlRefInfo[1]
+            %assign instIdx = mdlRefInfo[2]
+            %assign mdlBlk = System[mSysIdx].Block[bIdx]
+            %if !mdlBlk.MdlRefIsCPPClassGenMode
+                %continue
+            %endif
+
+            %assign blkInterface = GetModelrefInterface(mdlBlk)
+            %assign FPC = blkInterface.FPC
+            %assign mdlRefInstCPPVar = ::CompiledModel.ModelBlock[rowIdx].MdlRefInstanceVarName
+            %assign emitOrder = ::CompiledModel.ModelBlock[rowIdx].MdlRefEmitOrder
+            %assign independentBuild = blkInterface.IsScalableBuild && ...
+                !blkInterface.AncestorAllocatesCoderDataGroups
+            %if !independentBuild
+                %if IsSystemReusableParentBaseSys(mSysIdx) || System[mSysIdx].HStructDeclSystemIdx == GetBaseSystemIdx()
+                    %if ConfigSet.UseOperatorNewForModelRefRegistration
+                        %if blkInterface.hasNonDefaultCtor
+                            %if emitOrder > -1
+                                %assign ctorExpr = nonDefaultCtorList[emitOrder]
+                            %else
+                                %assign ctorExpr = nonDefaultCtorList[nonDefaultCtorIdx]
+                            %endif
+                            %assign nonDefaultCtorIdx = nonDefaultCtorIdx + 1
+                        %else
+                            %assign ctorExpr = ""
+                        %endif
+                        %openfile localConsAssign
+                        /* instantiate instance for '%<System[mSysIdx].Block[bIdx].Name>' */
+                        %<SLibGetModelRefInstanceAllocExpr(mdlRefInstCPPVar, FPC, ctorExpr)>
+                        %closefile localConsAssign
+                        %assign vcRecord = SLibMdlRefNetInlineVariantPreprocessorCondition(mSysIdx, instIdx, bIdx)
+                        %assign localConsAssign =  SLibWrapBody(vcRecord.ifCond,localConsAssign,vcRecord.endIfCond)
+                        %assign blockName = System[mSysIdx].Block[bIdx].Name
+                        %assign deallocStr = SLibGetModelRefInstanceDeallocExpr(mdlRefInstCPPVar, blockName)
+                        %openfile localDelete
+                        %<deallocStr>
+                        %closefile localDelete
+                        %assign localDelete = SLibWrapBody(vcRecord.ifCond,localDelete,vcRecord.endIfCond)
+                        %assign CPPConstructorAssignment = CPPConstructorAssignment + ...
+                            localConsAssign
+                        %assign CPPDestructorStatements = CPPDestructorStatements + ...
+                            localDelete
+                    %endif
+                %else %% the modelref block is within a non-inlined subsystem
+                    %if ConfigSet.UseOperatorNewForModelRefRegistration
+
+                        %assign mdlBlkCompiledModel = ::CompiledModel.ModelBlock[rowIdx]
+                        %openfile  optForEachPrem
+                        %if ISFIELD(mdlBlkCompiledModel, "ForEachSSLoopBnds")
+                            %assign ::NeedForEachLoopInReg = TLC_TRUE
+                            %assign ::NumForEachLoopHierarchyLevel = SIZE(mdlBlkCompiledModel.ForEachSSLoopBnds,1)
+                            %assign ::ForEachLoopHierarchyLevel = ::NumForEachLoopHierarchyLevel
+                            {
+                                %foreach ssIdx = SIZE(mdlBlkCompiledModel.ForEachSSLoopBnds,1)
+                                    %assign iterVar = "i_%<ForEachLoopHierarchyLevel>"
+                                    %assign ::ForEachLoopHierarchyLevel = ::ForEachLoopHierarchyLevel - 1
+                                    %<int32Type> %<iterVar>;
+                                    for (%<iterVar> = 0; %<iterVar> < %<mdlBlkCompiledModel.ForEachSSLoopBnds[::ForEachLoopHierarchyLevel]>; %<iterVar>++) {
+                                    %endforeach
+                                    %assign ::ForEachLoopHierarchyLevel = 1
+                        %endif
+                        %closefile optForEachPrem
+
+                        %assign cppVarPath = SLibCalcMdlRefObjSubsysAccessPath(mSysIdx,...
+                            bIdx,instIdx,"Constructor")
+
+                        %openfile optForEachPostm
+                        %if ISFIELD(mdlBlkCompiledModel, "ForEachSSLoopBnds")
+                            %foreach ssIdx = SIZE(mdlBlkCompiledModel.ForEachSSLoopBnds,1)
+                            }
+                        %endforeach
+                    }
+                    %assign ::NeedForEachLoopInReg = TLC_FALSE
+                        %endif
+                        %closefile optForEachPostm
+
+                        %if blkInterface.hasNonDefaultCtor
+                            %if emitOrder > -1
+                                %assign ctorExpr = nonDefaultCtorList[emitOrder]
+                            %else
+                                %assign ctorExpr = nonDefaultCtorList[nonDefaultCtorIdx]
+                            %endif
+                            %assign nonDefaultCtorIdx = nonDefaultCtorIdx + 1
+                        %else
+                            %assign ctorExpr = ""
+                        %endif
+
+                        %openfile localConsAssign
+                        /* instantiate instance(s) for '%<System[mSysIdx].Block[bIdx].Name>' */
+                        %<optForEachPrem>
+                        %<SLibGetModelRefInstanceAllocExpr(cppVarPath, FPC, ctorExpr)>
+                        %<optForEachPostm>
+                        %closefile localConsAssign
+                        %assign blockName = System[mSysIdx].Block[bIdx].Name
+                        %assign deallocStr = SLibGetModelRefInstanceDeallocExpr(cppVarPath, blockName)
+                        %openfile localDelete
+                        %if !ISEMPTY(deallocStr)
+                            %<optForEachPrem>
+                            %<deallocStr>
+                            %<optForEachPostm>
+                        %endif
+                        %closefile localDelete
+                        %assign CPPConstructorAssignment = CPPConstructorAssignment + ...
+                            localConsAssign
+                        %assign CPPDestructorStatements = CPPDestructorStatements + ...
+                            localDelete
+                    %endif
+
+                %endif %% is base system
+            %endif %% is scalable build
+        %endforeach %% model block
+        %assign declRec = ::CompiledModel.CPPEncapsulationRecord
+
+        %assign declRec.ConstructorAssignment = declRec.ConstructorAssignment + ...
+            CPPConstructorAssignment
+        %assign declRec.DestructorStats = declRec.DestructorStats + ...
+            CPPDestructorStatements
+    %endif
+
+%endfunction
+
+%function FcnAddContinuousStatesToClass(declRec, classNamePrefixForInternal) void
+    %assign rootSystem = System[NumSystems-1]
+
+    %assign reqInsts = LibGetSystemField(rootSystem, "ReqRootPrmHdrDataInsts")
+
+    %if !reqInsts.PeriodicContStatesInst && !LibPeriodicContStatesInstanceIsEmpty()
+        %assign declaration = ...
+            "%<tPeriodicStateIndType> %<tPeriodicStateInd>; /* Block periodic continuous states */\n" ...
+            "%<tPeriodicStateRngType> %<tPeriodicStateRng>;\n"
+        %if CPPPeriodicCStateVisibility == "Public"
+            %assign declRec.PublicData = declRec.PublicData + declaration
+        %elseif CPPPeriodicCStateVisibility == "Protected"
+            %assign declRec.ProtectedData = declRec.ProtectedData + declaration
+        %else
+            %assign declRec.PrivateData = declRec.PrivateData + declaration
+        %endif
+        %assign append = ""
+        %if CGMODEL_ACCESS("CGModel.IsModelTypesModelClassNamespace")
+            %assign append = CGMODEL_ACCESS("CGModel.getClassName") + "::"
+        %endif
+        %if (CPPPeriodicCStateGet == "on" || CPPPeriodicCStateSet == "on")
+            %openfile tempbuffer
+            %if CPPPeriodicCStateGet == "on"
+                %% Get periodic state indices
+                %assign fcnAbstract = "Get periodic continuous state indices"
+                %assign fcnReturns = "const %<append>%<tPeriodicStateIndType>& "
+                %assign fcnName = "getPeriodicContStateIndices"
+                %assign fcnParams = ""
+                %if CGMODEL_ACCESS("CGModel.getGenerateInternalMemberAccessMethods") != "Inlined method"
+                    %assign declRec.AccessMethodsDecl = declRec.AccessMethodsDecl + ...
+                        "\n/* " + fcnAbstract + " */\n" + ...
+                        "%<fcnReturns> %<fcnName>(%<fcnParams>) const;\n"
+                %endif
+                %assign fcnName = classNamePrefixForInternal + fcnName
+                %createrecord fcnRec {Name fcnName; Returns fcnReturns; Params fcnParams; Abstract fcnAbstract; ...
+                    Category "cpp"; GeneratedBy "ertclassgeneration.tlc"; Type "C++ const member"}
+                %<SLibDumpFunctionBanner(fcnRec)>
+                %undef fcnRec
+                %<fcnReturns> %<fcnName>(%<fcnParams>) const {
+                    return %<tPeriodicStateInd>;
+                }
+                %% Get periodic state ranges
+                %assign fcnAbstract = "Get periodic continuous state ranges"
+                %assign fcnReturns = "const %<append>%<tPeriodicStateRngType>& "
+                %assign fcnName = "getPeriodicContStateRanges"
+                %assign fcnParams = ""
+                %if CGMODEL_ACCESS("CGModel.getGenerateInternalMemberAccessMethods") != "Inlined method"
+                    %assign declRec.AccessMethodsDecl = declRec.AccessMethodsDecl + ...
+                        "\n/* " + fcnAbstract + " */\n" + ...
+                        "%<fcnReturns> %<fcnName>(%<fcnParams>) const;\n"
+                %endif
+                %assign fcnName = classNamePrefixForInternal + fcnName
+                %createrecord fcnRec {Name fcnName; Returns fcnReturns; Params fcnParams; Abstract fcnAbstract; ...
+                    Category "cpp"; GeneratedBy "ertclassgeneration.tlc"; Type "C++ const member"}
+                %<SLibDumpFunctionBanner(fcnRec)>
+                %undef fcnRec
+                %<fcnReturns> %<fcnName>(%<fcnParams>) const {
+                    return %<tPeriodicStateRng>;
+                }
+            %endif
+            %if CPPPeriodicCStateSet == "on"
+                %assign declind = "const %<tPeriodicStateIndType>* p%<tPeriodicStateInd>"
+                %assign declrng = "const %<tPeriodicStateRngType>* p%<tPeriodicStateRng>"
+                %% Set periodic state indices
+                %assign fcnAbstract = "Set periodic continuous state indices"
+                %assign fcnReturns = "void"
+                %assign fcnName = "setPeriodicContStateIndices"
+                %assign fcnParams = declind
+                %if  CGMODEL_ACCESS("CGModel.getGenerateInternalMemberAccessMethods") != "Inlined method"
+                    %assign declRec.AccessMethodsDecl = declRec.AccessMethodsDecl + ...
+                        "\n/* " + fcnAbstract + " */\n" + ...
+                        "%<fcnReturns> %<fcnName>(%<fcnParams>);\n"
+                %endif
+                %assign fcnName = classNamePrefixForInternal + fcnName
+                %createrecord fcnRec {Name fcnName; Returns fcnReturns; Params fcnParams; Abstract fcnAbstract; ...
+                    Category "cpp"; GeneratedBy "ertclassgeneration.tlc";Type "C++ member"}
+                %<SLibDumpFunctionBanner(fcnRec)>
+                %undef fcnRec
+                %<fcnReturns> %<fcnName>(%<fcnParams>) {
+                    static_cast<void>(
+                    memcpy(%<tPeriodicStateInd>, p%<tPeriodicStateInd>, sizeof(%<tPeriodicStateIndType>)));
+                }
+                %% Set periodic state ranges
+                %assign fcnAbstract = "Set periodic continuous state ranges"
+                %assign fcnReturns = "void"
+                %assign fcnName = "setPeriodicContStateRanges"
+                %assign fcnParams = declrng
+                %if  CGMODEL_ACCESS("CGModel.getGenerateInternalMemberAccessMethods") != "Inlined method"
+                    %assign declRec.AccessMethodsDecl = declRec.AccessMethodsDecl + ...
+                        "\n/* " + fcnAbstract + " */\n" + ...
+                        "%<fcnReturns> %<fcnName>(%<fcnParams>);\n"
+                %endif
+                %assign fcnName = classNamePrefixForInternal + fcnName
+                %createrecord fcnRec {Name fcnName; Returns fcnReturns; Params fcnParams; Abstract fcnAbstract; ...
+                    Category "cpp"; GeneratedBy "ertclassgeneration.tlc";Type "C++ member"}
+                %<SLibDumpFunctionBanner(fcnRec)>
+                %undef fcnRec
+                %<fcnReturns> %<fcnName>(%<fcnParams>) {
+                    static_cast<void>(
+                    memcpy(%<tPeriodicStateRng>, p%<tPeriodicStateRng>, sizeof(%<tPeriodicStateRngType>)));
+                }
+            %endif
+
+            %closefile tempbuffer
+
+            %if  CGMODEL_ACCESS("CGModel.getGenerateInternalMemberAccessMethods") == "Inlined method"
+                %assign declRec.AccessMethodsDecl = declRec.AccessMethodsDecl + tempbuffer
+            %else
+                %assign declRec.AccessMethodsDefn = declRec.AccessMethodsDefn + tempbuffer
+            %endif
+        %endif
+    %endif %% need PeriodicCStates
+%endfunction
+
+%% Function: FcnCPPGenerateDeclarations ============================================================
+%%
+%%  Abstract:
+%%
+%%  Based on SLibDeclareModelFcnArgs()
+
+%function FcnCPPGenerateDeclarations() void
+    %% TopTester: test/toolbox/rtw/targets/ert/tLangStandardTypesCppClassGen.m
+    %assign booleanType = LibGetDataTypeNameFromId(::CompiledModel.tSS_BOOLEAN)
+
+    %selectfile NULL_FILE
+    %assert MultiInstanceERTCode
+
+    %assign CPPPublicData = ""
+    %assign CPPPrivateData = ""
+    %assign CPPProtectedData = ""
+    %assign CPPPublicMethodsDecl = ""
+    %assign CPPPrivateMethodsDecl = ""
+    %assign CPPConstructorAssignment = ""
+    %assign CPPDestructorStatements = ""
+    %assign CPPConstructorDeclaration = ""
+    %assign CPPAccessMethodsDecl = ""
+    %assign CPPLastPrivateData = ""
+    %assign CPPAccessMethodsDefn = ""
+    %assign CPPMdlRefInstancesDecl = ""
+    %assign CPPMdlRefSetMethodsDecl = ""
+    %assign CPPMdlRefSetMethodsDefn = ""
+    %assign classNamePrefixForParam = ""
+    %assign classNamePrefixForInternal = ""
+    %assign classNamePrefixForIn = ""
+    %assign classNamePrefixForOut = ""
+    %assign CPPPublicDataInit = []
+    %assign CPPPrivateDataInit = []
+    %assign CPPProtectedDataInit = []
+    %assign previousNSFlag = System[NumSystems-1].SystemNamespaceFlag
+    %assign System[NumSystems-1].SystemNamespaceFlag = 1
+    %if CGMODEL_ACCESS("CGModel.getGenerateParameterAccessMethods") != "Inlined method"
+        %% -SAM- Changed the way prefix is derived
+        %assign classNamePrefixForParam = ::CPPClassName + "::"
+    %endif
+
+    %if CGMODEL_ACCESS("CGModel.getGenerateInternalMemberAccessMethods") != "Inlined method"
+        %% -SAM- Changed the way prefix is derived
+        %assign classNamePrefixForInternal = ::CPPClassName + "::"
+    %endif
+
+    %if CGMODEL_ACCESS("CGModel.getGenerateExternalInportsAccessMethods") == "Method" || ...
+        CGMODEL_ACCESS("CGModel.getGenerateExternalInportsAccessMethods") == "Structure-based method"
+        %% -SAM- Changed the way prefix is derived
+        %assign classNamePrefixForIn = ::CPPClassName + "::"
+    %endif
+
+    %if CGMODEL_ACCESS("CGModel.getGenerateExternalOutportsAccessMethods") == "Method" || ...
+        CGMODEL_ACCESS("CGModel.getGenerateExternalOutportsAccessMethods") == "Structure-based method"
+        %% -SAM- Changed the way prefix is derived
+        %assign classNamePrefixForOut = ::CPPClassName + "::"
+    %endif
+
+    %assign recArgs = []
+    %assign rootSystem = System[NumSystems-1]
+
+    %assign reqInsts = LibGetSystemField(rootSystem, "ReqRootPrmHdrDataInsts")
+
+    %assign typePrefix = SLibGetModelTypesNamespacePrefix()
+
+    %assign fcns =  GET_FILE_REP_SCRATCH_BUFFER_CONTENTS("CPPClassDirectEmitAccessFcns")
+    %<SLibCacheCodeToFile("mdl_fcn_defn", fcns)>
+
+    %% non-reusable subsystem functions
+    %foreach sysIdx = NumSystems
+        %assign sys = System[sysIdx]
+
+        %assign   memberBuff = ""
+        %assign   pvtMemberBuff = ""
+        %openfile memberBuff
+        %if SLibGenSubsysFcnAsClassMemFcn(sys)
+            %assign systemFcnPrototype = LibGetSystemField(sys,"EncapSystemFcnPrototype")
+            %if !WHITE_SPACE(systemFcnPrototype)
+                %<systemFcnPrototype>
+            %endif
+        %endif
+        %closefile memberBuff
+        %% System field "SystemMemberPrototype" records potential system member
+        %% functions from systems with SubFunctions
+        %assign memberFunctions = LibGetSystemField(sys, "SystemMemberPrototype")
+        %if !WHITE_SPACE(memberFunctions)
+            %if SLibIsPublicClassMemberSLFcn(sys)
+                %assign memberBuff = memberBuff + memberFunctions
+            %else
+                %assign pvtMemberBuff = memberFunctions
+            %endif
+        %endif
+
+
+        %if !WHITE_SPACE(memberBuff)
+            %assign subSysBuff = ""
+            %openfile subSysBuff
+            /* private member function(s) for subsystem '%<sys.Name>'*/
+            %<memberBuff>\
+            %closefile subSysBuff
+            %assign CPPPrivateMethodsDecl = CPPPrivateMethodsDecl + subSysBuff
+        %endif
+
+        %% append any additional subsystem functions like Init and Start to the private scope
+        %if !WHITE_SPACE(pvtMemberBuff)
+            %assign pvtSubSysBuff = ""
+            %openfile pvtSubSysBuff
+            /* private member function(s) for subsystem '%<sys.Name>'*/
+            %<pvtMemberBuff>\
+            %closefile pvtSubSysBuff
+            %assign CPPPrivateMethodsDecl = CPPPrivateMethodsDecl + pvtSubSysBuff
+        %endif
+    %endforeach
+
+    %% Does any subsystem needs global variables?
+    %foreach sysIdx = NumSystems
+        %if LibSystemIsRoot(System[sysIdx])
+            %continue
+        %endif
+
+        %assign sys = System[sysIdx]
+        %assign vars = LibDeclareGlobalVars(sys,"","")
+        %if !WHITE_SPACE(vars)
+            %assign sysInfo = GetSystemNameForComments(sys)
+            %openfile glbBuff
+            /* Declare private class scope variables for system: "%<sysInfo>" */
+            %<vars>\
+            %closefile glbBuff
+
+            %assign CPPPrivateData = CPPPrivateData + glbBuff
+
+        %endif
+    %endforeach
+
+
+    %if IsModelReferenceRTWTarget()
+        %assign system = System[NumSystems - 2]
+        %with system
+
+            %openfile tempbuffertocpp
+
+            %if !SuppressErrorStatus
+                %assign fcnAbstract = "member function to setup error status pointer"
+                %assign fcnReturns = "void"
+                %assign fcnName = "setErrorStatusPointer"
+                %assign fcnParams = "const %<LibGetDataTypeNameFromId(::CompiledModel.tSS_CHAR)> **rt_errorStatus"
+                %assign CPPMdlRefSetMethodsDecl = CPPMdlRefSetMethodsDecl + ...
+                    "\n/*" + fcnAbstract + " */\n" + ...
+                    "%<fcnReturns> %<fcnName>(%<fcnParams>);"
+                %assign className = CGMODEL_ACCESS("CGModel.getClassName")
+                %assign fcnName = "%<className>::" + fcnName
+                %createrecord fcnRec {Name fcnName; Returns fcnReturns; Params fcnParams; ...
+                    Abstract fcnAbstract; Category "cpp"; GeneratedBy "ertclassgeneration.tlc"; Type "C++ member"}
+                %<SLibDumpFunctionBanner(fcnRec)>
+                %undef fcnRec
+                %<fcnReturns> %<fcnName>(%<fcnParams>) {
+                    %<RTMSet("ErrorStatusPointer", "rt_errorStatus")>;
+                }
+            %endif
+
+            %if RTMStopReqAccessed() || ::CompiledModel.ModelBlocksUseStopReq
+                %assign fcnAbstract = "member function to setup stop request pointer"
+                %assign fcnReturns = "void"
+                %assign fcnName = "setStopRequestPointer"
+                %assign fcnParams = "%<booleanType> *rt_stopRequested"
+                %assign CPPMdlRefSetMethodsDecl = CPPMdlRefSetMethodsDecl + ...
+                    "\n/*" + fcnAbstract + " */\n" + ...
+                    "%<fcnReturns> %<fcnName>(%<fcnParams>);"
+                %assign className = CGMODEL_ACCESS("CGModel.getClassName")
+                %assign fcnName = "%<className>::" + fcnName
+                %createrecord fcnRec {Name fcnName; Returns fcnReturns; Params fcnParams; ...
+                    Abstract fcnAbstract; Category "cpp"; GeneratedBy "ertclassgeneration.tlc"; Type "C++ member"}
+                %<SLibDumpFunctionBanner(fcnRec)>
+                %undef fcnRec
+                %<fcnReturns> %<fcnName>(%<fcnParams>) {
+                    %<RTMSet("StopRequestedPtr", "rt_stopRequested")>;
+                }
+            %endif
+            %closefile tempbuffertocpp
+
+            %assign CPPMdlRefSetMethodsDefn = CPPMdlRefSetMethodsDefn + tempbuffertocpp
+        %endwith
+    %endif
+    %assign mdlRefBlks = ISFIELD(::CompiledModel,"ModelReferenceBlocks") ? ...
+        ::CompiledModel.ModelReferenceBlocks : []
+
+
+    %if !ISEMPTY(mdlRefBlks)
+        %assign NO_PARENT        = ""
+        %assign NO_QUALIFIER     = ""
+        %assign ERT_MACRO_NONE   = [0, 0, 0, 0]
+        %assign nonDefaultCtorIdx = 0
+        %assign nonDefaultCtorList = LibIsSystemField(rootSystem,"CachedModelRefConstructors") ? LibGetSystemField(rootSystem, "CachedModelRefConstructors") : []
+        %assign useOpNew = CGMODEL_ACCESS("CGModel.getUseOperatorNewForModelRefRegistration")
+        %assign numMdlRefs = SIZE(mdlRefBlks,0)
+        %assign mdlrefDecl = []
+        %foreach rowIdx = numMdlRefs
+            %assign mdlrefDecl = mdlrefDecl + ""
+        %endforeach
+        %foreach rowIdx = numMdlRefs
+            %assign mdlRefInfo = mdlRefBlks[rowIdx]
+            %assign mSysIdx = mdlRefInfo[0]
+            %assign bIdx    = mdlRefInfo[1]
+            %assign instIdx = mdlRefInfo[2]
+            %assign mdlBlk = System[mSysIdx].Block[bIdx]
+            %assign emitOrder = ::CompiledModel.ModelBlock[rowIdx].MdlRefEmitOrder
+            %if !mdlBlk.MdlRefIsCPPClassGenMode
+                %continue
+            %endif
+
+            %assign blkInterface = GetModelrefInterface(mdlBlk)
+            %assign FPC = blkInterface.FPC
+            %assign mdlRefInstCPPVar = ::CompiledModel.ModelBlock[rowIdx].MdlRefInstanceVarName
+            %assign independentBuild = blkInterface.IsScalableBuild && ...
+                !blkInterface.AncestorAllocatesCoderDataGroups
+            %if !independentBuild
+                %assign mdlBlkInsideForEach = mdlBlk.ParamSettings.InsideForEachSS
+                %if (IsSystemReusableParentBaseSys(mSysIdx) && !mdlBlkInsideForEach) || ...
+                    System[mSysIdx].HStructDeclSystemIdx == GetBaseSystemIdx()
+                    %%%% for single instance case, no need to declare class members for
+                    %%%% referenced models. Use global variables instead.
+                    %%%% And we do not need to do this if the mdlref block is inside
+                    %%%% a non-virtual subsystem, as it will be handled by the subsystem
+                    %%%% dwork.
+                    %assign instanceType = SLibGetModelRefInstanceType(FPC, useOpNew, blkInterface)
+                    %assign declType = SLibGetModelRefDeclarationType(instanceType, FPC, useOpNew, blkInterface)
+                    %assign declaration = declType + ...
+                        mdlRefInstCPPVar + ...
+                        ";\n"
+
+                    %assign vcRecord = SLibMdlRefNetInlineVariantPreprocessorCondition(mSysIdx, instIdx, bIdx)
+                    %assign temp = vcRecord.ifCond + "\n"
+                    %assign temp = temp + ...
+                        "/* model instance variable for '" + ...
+                        mdlBlk.Name + ...
+                        "' */\n"
+                    %assign temp = temp + declaration
+                    %assign temp = temp + vcRecord.endIfCond + "\n"
+                    %if emitOrder < 0
+                        %assign CPPMdlRefInstancesDecl = CPPMdlRefInstancesDecl + temp
+                    %else
+                        %assert emitOrder < numMdlRefs
+                        %assign mdlrefDecl[emitOrder] = temp
+                    %endif
+                    %assign headerFile = SLibGetFullFileNameForCode("cpp_class_decl")
+                    %<SLibUpdateLocalSymbolTableForFile(headerFile, instanceType)>
+                    %<SLibUpdateGlobalSymbolTableForFile(headerFile, mdlRefInstCPPVar)>
+                %endif
+            %endif
+        %endforeach
+        %foreach rowIdx = numMdlRefs
+            %if !ISEMPTY(mdlrefDecl[rowIdx])
+                %assign CPPMdlRefInstancesDecl = CPPMdlRefInstancesDecl + mdlrefDecl[rowIdx]
+            %endif
+        %endforeach
+    %endif
+    %assign System[NumSystems-1].SystemNamespaceFlag = previousNSFlag
+    %createrecord declRec\
+    {\
+        PublicData                CPPPublicData;\
+        PrivateData               CPPPrivateData;\
+        LastPrivateData           CPPLastPrivateData;\
+        ProtectedData             CPPProtectedData;\
+        PublicMethodsDecl         CPPPublicMethodsDecl;\
+        PrivateMethodsDecl        CPPPrivateMethodsDecl;\
+        ConstructorAssignment     CPPConstructorAssignment;\
+        ConstructorDeclaration    CPPConstructorDeclaration;\
+        DestructorStats           CPPDestructorStatements;\
+        AccessMethodsDefn         CPPAccessMethodsDefn\
+        AccessMethodsDecl         CPPAccessMethodsDecl\
+        MdlRefInstances           CPPMdlRefInstancesDecl\
+        MdlRefSetMethodsDecl      CPPMdlRefSetMethodsDecl\
+        MdlRefSetMethodsDefn      CPPMdlRefSetMethodsDefn\
+        PublicDataInit            CPPPublicDataInit\
+        PrivateDataInit           CPPPrivateDataInit\
+        ProtectedDataInit         CPPProtectedDataInit\
+    }
+
+    %<LibAddToCompiledModel("CPPEncapsulationRecord", declRec)>
+
+    %<FcnAddContinuousStatesToClass(declRec, classNamePrefixForInternal)>
+
+%endfunction    %% FcnCPPGenerateDeclarations
+
+%% Function: FcnCPPGetStaticMainMacros =============================================================
+%%
+%%  Abstract:
+%%    Return the #defines for static main
+%%
+
+%function FcnCPPGetStaticMainMacros()
+    %assign classConfObj = FcnGetRTWCPPStepPrototypeRecord()
+
+    %openfile classgenMacrosForStaticMainBuffer
+    %selectfile classgenMacrosForStaticMainBuffer
+    %assign className = CGMODEL_ACCESS("CGModel.getClassName")
+    %if !ISEMPTY(::NamespaceName)
+        %assign className = "%<NamespaceName>::%<className>"
+    %endif
+    #define MODEL_CLASSNAME %<className>
+    %if SLibNeedWrapperStepFcn()!=0
+        %if ISEMPTY(::NamespaceName)
+            #define MODEL_STEPNAME %<SLibModelStepFcnName("")>
+        %else
+            #define MODEL_STEPNAME %<NamespaceName>::%<SLibModelStepFcnName("")>
+        %endif
+    %elseif ISFIELD(classConfObj,"FunctionName")
+        #define MODEL_STEPNAME %<classConfObj.FunctionName>
+    %endif
+    %closefile classgenMacrosForStaticMainBuffer
+
+    %return classgenMacrosForStaticMainBuffer
+%endfunction    %% FcnCPPGetStaticMainMacros
+
+
+%function NeedRTMInModelClass()
+    %% Always need the true root, even for modelref
+    %assign sys = System[NumSystems-1]
+    %assign reqInsts = LibGetSystemField(sys, "ReqRootPrmHdrDataInsts")
+    %return !reqInsts.SimStructInst && (RealTimeModelAccessed || RTMTaskCountersIsReqFcn())
+%endfunction
+
+
+%function GetRtmReturnType()
+    %assign returnType = "%<::tSimStructType> *"
+    %if CGMODEL_ACCESS("CGModel.IsModelTypesModelClassNamespace")
+        %assign className = CGMODEL_ACCESS("CGModel.getClassName")
+        %assign returnType = "%<className>::%<returnType>"
+    %endif
+    %return returnType
+%endfunction
+
+%function FcnGetGetRTMMethodName()
+    %return "getRTM"
+%endfunction
+
+
+
+%function FcnGetSetRTMMethodName()
+    %return "setRTM"
+%endfunction
+
+
+%function FcnCreateGetRTMFunctionRecord(classNamePrefix, fcnReturns)
+    %assign fcnReturns = GetRtmReturnType()
+    %assign fcnName = FcnGetGetRTMMethodName()
+    %assign fcnParams = ""
+    %assign fcnAbstract = "Real-Time Model get method"
+    %createrecord fcnRec {Name (classNamePrefix + fcnName); NameNoPrefix fcnName; Returns fcnReturns; Params fcnParams; ...
+        Abstract fcnAbstract; Category "cpp"; GeneratedBy "ertclassgeneration.tlc"; Type "C++ const member"}
+    %return fcnRec
+%endfunction
+
+%function FcnCreateSetRTMFunctionRecord(classNamePrefix, fcnParams)
+    %assign fcnName = FcnGetSetRTMMethodName()
+    %assign fcnReturns = "void"
+    %assign fcnAbstract = "Real-Time Model set method"
+    %createrecord fcnRec {Name (classNamePrefix + fcnName); NameNoPrefix fcnName; Returns fcnReturns; Params fcnParams; ...
+        Abstract fcnAbstract; Category "cpp"; GeneratedBy "ertclassgeneration.tlc"; Type "C++ const member"}
+    %return fcnRec
+%endfunction
+
+%function FcnAddGetSetRTMToClassWhenNeeded(declRec, classNamePrefix) void
+    %if NeedRTMInModelClass()
+        %% Always declare the RTM structure private.
+        %assign declaration = ...
+            "%<::tSimStructType> %<::tSimStruct>;\n"
+        %assign declRec.LastPrivateData = declRec.LastPrivateData + "/* Real-Time Model */"
+        %assign declRec.LastPrivateData = declRec.LastPrivateData + declaration
+
+        %%declare and define accessor methods
+        %if (CPPRTMGet == "on" || CPPRTMSet == "on")
+            %assign system = System[GetBaseSystemIdx()]
+
+            %with system
+                %openfile tempbuffer
+                %if CPPRTMGet == "on"
+                    %assign getRTMRecord = FcnCreateGetRTMFunctionRecord(classNamePrefix, "%<SLibGetModelTypesNamespacePrefix()>%<::tSimStructType> *")
+                    %if CGMODEL_ACCESS("CGModel.getGenerateInternalMemberAccessMethods") != "Inlined method"
+                        %assign declRec.AccessMethodsDecl = declRec.AccessMethodsDecl + ...
+                            "\n/* " + getRTMRecord.Abstract + " */\n" + ...
+                            "%<getRTMRecord.Returns> %<getRTMRecord.NameNoPrefix>(%<getRTMRecord.Params>);\n"
+                    %endif
+                    %<SLibDumpFunctionBanner(getRTMRecord)>
+                    %<getRTMRecord.Returns> %<getRTMRecord.Name>(%<getRTMRecord.Params>) {
+                        return %<GetSimStructExpr(system, ::tSimStruct)>;
+                    }
+
+                    %% Add multicore Task RTM get method
+                    %if LibIsDeploymentDiagram()
+                        %assign fcnAbstract = "Task Real-Time Model get method"
+                        %assign fcnReturns = "%<SLibGetModelTypesNamespacePrefix()>%<::tSimStructType> *"
+                        %assign fcnName = "getTaskRTM"
+                        %assign fcnParams = ""
+                        %if CGMODEL_ACCESS("CGModel.getGenerateInternalMemberAccessMethods") != "Inlined method"
+                            %assign declRec.AccessMethodsDecl = declRec.AccessMethodsDecl + ...
+                                "\n/* " + fcnAbstract + " */\n" + ...
+                                "%<fcnReturns> %<fcnName>(%<fcnParams>);\n"
+                        %endif
+                        %assign fcnName = classNamePrefix + fcnName
+
+                        %createrecord fcnRec {Name fcnName; Returns fcnReturns; Params fcnParams; ...
+                            Abstract fcnAbstract; Category "cpp"; GeneratedBy "deploymentdiagram.tlc"; Type "C++ const member"}
+                        %<SLibDumpFunctionBanner(fcnRec)>
+                        %undef fcnRec
+                        %<fcnReturns> %<fcnName>(%<fcnParams>) {
+                            return %<SLibDeploymentGetTaskRTMVarName()>;
+                        }
+                    %endif
+                %endif
+            %endwith
+
+            %if CPPRTMSet == "on"
+                %assign setRTMRecord = FcnCreateSetRTMFunctionRecord(classNamePrefix, "const %<::tSimStructType> *p%<::tSimStruct>")
+                %if CGMODEL_ACCESS("CGModel.getGenerateInternalMemberAccessMethods") != "Inlined method"
+                    %assign declRec.AccessMethodsDecl = declRec.AccessMethodsDecl + ...
+                        "\n/* " + setRTMRecord.Abstract + " */\n" + ...
+                        "%<setRTMRecord.Returns> %<setRTMRecord.NameNoPrefix>(%<setRTMRecord.Params>);\n"
+                %endif
+                %<SLibDumpFunctionBanner(setRTMRecord)>
+                %<setRTMRecord.Returns> %<setRTMRecord.Name>(%<setRTMRecord.Params>) {
+                    %<::tSimStruct> = *p%<tSimStruct>;
+                }
+            %endif
+            %closefile tempbuffer
+            %if CGMODEL_ACCESS("CGModel.getGenerateInternalMemberAccessMethods") == "Inlined method"
+                %assign declRec.AccessMethodsDecl = declRec.AccessMethodsDecl + tempbuffer
+            %else
+                %assign declRec.AccessMethodsDefn = declRec.AccessMethodsDefn + tempbuffer
+            %endif
+        %endif
+        %assign ::CompiledModel.CPPEncapsulationRecord = declRec
+    %endif
+%endfunction
+
+%% Function: AddRTMToClassWhenNeeded ===============================================================
+%%
+%%  Abstract:
+%%    We need to split class declaration into two stages and only in the
+%%    later stage will we determine whether RT_Model is needed, as the
+%%    information is only available at the latter stage.
+%%
+%%
+
+%function AddRTMToClassWhenNeeded() void
+    %assert GenerateClassInterface
+    %assign previousNSFlag = System[NumSystems-1].SystemNamespaceFlag
+    %assign System[NumSystems-1].SystemNamespaceFlag = 1
+    %assign declRec = ::CompiledModel.CPPEncapsulationRecord
+
+    %assign classNamePrefix = ""
+
+    %if CGMODEL_ACCESS("CGModel.getGenerateInternalMemberAccessMethods") != "Inlined method"
+        %% -SAM- Changed the way prefix is derived
+        %assign classNamePrefix = ::CPPClassName + "::"
+    %endif
+
+    %assign reqInsts = LibGetSystemField(rootSystem, "ReqRootPrmHdrDataInsts")
+
+    %<FcnAddGetSetRTMToClassWhenNeeded(declRec, classNamePrefix)>
+
+    %% Add multicore specific data
+    %if LibIsDeploymentDiagram()
+        %<SLibDeploymentAddClassPrivateData()>
+    %endif
+    %assign System[NumSystems-1].SystemNamespaceFlag = previousNSFlag
+
+%endfunction
+
+
+%% Function: AddMdlRefTimingInfoWhenNeeded =========================================================
+%%
+%%  Abstract:
+%%    We need to split class declaration into two stages and only in the
+%%    later stage will we determine whether the global timing engine info
+%%    setter member function needs to be added to a model class.
+%%
+%function AddMdlRefTimingInfoWhenNeeded() void
+
+    %if !IsModelReferenceRTWTarget()
+        %return
+    %endif
+
+    %assign declRec = ::CompiledModel.CPPEncapsulationRecord
+
+    %assign classNamePrefix = CGMODEL_ACCESS("CGModel.getClassName") + "::"
+    %assign decArgs = CppEncapMdlrefTimingDecArgs()
+
+    %if ISEMPTY(decArgs)
+        %return
+    %endif
+
+    %foreach idx = SIZE(decArgs,1)
+        %if idx == 0
+            %assign fcnArgs = decArgs[idx]
+        %else
+            %assign fcnArgs = fcnArgs + ", %<decArgs[idx]>"
+        %endif
+    %endforeach
+
+    %assign system = System[GetBaseSystemIdx()]
+    %with system
+        %openfile tempbuffer
+        %assign fcnAbstract = "Private member function to set up the global timing engine"
+        %assign fcnReturns = "void"
+        %assign fcnName = "setupGlobalTimingEngine"
+        %assign fcnParams = fcnArgs
+        %assign declRec.PrivateMethodsDecl = declRec.PrivateMethodsDecl + ...
+            "\n/* " + fcnAbstract + " */\n" + ...
+            "%<fcnReturns> %<fcnName>(%<fcnParams>);\n"
+        %assign fcnName = classNamePrefix + fcnName
+        %createrecord fcnRec {Name fcnName; Returns fcnReturns; Params fcnParams; ...
+            Abstract fcnAbstract; Category "cpp"; GeneratedBy "ertclassgeneration.tlc"; Type "C++ private member"}
+        %<SLibDumpFunctionBanner(fcnRec)>
+        %undef fcnRec
+        %<fcnReturns> %<fcnName>(%<fcnParams>) {
+            %if ::tMdlRefGlobalTIDMapAccessed
+                %if !MdlRefIsConstSampleBlock() || MdlRefHasParameterRate()
+                    %% Write out the declaration of the global TID map.  Note that for inherited
+                    %% submodels, we will put the map into the rtModel.  This is because each
+                    %% instance the submodel could get a different TID and we need the TID
+                    %% for logging. see FcnInitializeModelRefGlobalTimingEngine().
+                    %assign numTIDs = SLibGetNumTIDsForGlobalTIDMap()
+                    %foreach idx = numTIDs
+                        %% skip service task tid which is
+                        %% used for service infrastructure only
+                        %if SLibIsServiceTaskTID(idx) || SLibSimEventTID(idx)
+                            %continue
+                        %endif
+
+                        %% We do not access union rate without task TIDs in referenced models.
+                        %if SLibIsUnionSampleTimeTIDWithoutTask(idx)
+                            %continue
+                        %endif
+
+                        %<FcnGetMdlRefGlobalTIDMap("")>[%<idx>] = mdlref_TID%<idx>;
+                    %endforeach
+                %else
+                    %<::tMdlRefGlobalTID>[0] = mdlref_TID0;
+                %endif
+
+                %if RTMMdlRefTriggerTIDIsReqFcn()
+                    %<FcnGetMdlRefTriggerTIDMap("")> = mdlref_TriggerTID;
+                %endif
+            %endif
+
+            %if !IsModelReferenceForASimstructBasedTarget() && ...
+                ::tMdlRefTimingBridgeAccessed
+                %<SLibGetGlobalTimingBridge()> = timingBridge;
+            %endif
+        }
+        %closefile tempbuffer
+    %endwith
+
+    %assign declRec.AccessMethodsDefn = declRec.AccessMethodsDefn + tempbuffer
+
+    %assign ::CompiledModel.CPPEncapsulationRecord = declRec
+
+    %% Declare the global timing variables at the top of
+    %% model.cpp, and extern them in model_private.h, as needed
+    %<FcnInitializeModelRefGlobalTimingEngine()>
+
+%endfunction %% AddMdlRefTimingInfoWhenNeeded
+
+
+%% Function: AddCAPIMethodWhenNeeded ===============================================================
+%%
+%%  Abstract:
+%%    We need to split class declaration into two stages and only in the
+%%    later stage will we determine whether the C-API setup method
+%%    needs to be added to a model class.
+%%
+%function AddCAPIMethodWhenNeeded() void
+    %assign charType = LibGetDataTypeNameFromId(::CompiledModel.tSS_CHAR)
+    %assign intType = LibGetDataTypeNameFromId(::CompiledModel.tSS_INTEGER)
+
+    %if !IsModelReferenceRTWTarget() || !(RTWCAPI == 1)
+        %return
+    %endif
+
+    %assign System[NumSystems-1].SystemNamespaceFlag = 1
+
+    %assign declRec = ::CompiledModel.CPPEncapsulationRecord
+
+    %assign classNamePrefix = CGMODEL_ACCESS("CGModel.getClassName") + "::"
+    %assign recArgs = []
+
+    %assign recArgs = recArgs + "rtwCAPI_ModelMappingInfo *rt_ParentMMI"
+    %assign recArgs = recArgs + "const %<charType> *rt_ChildPath"
+    %assign recArgs = recArgs + "%<intType> rt_ChildMMIIdx"
+    %assign recArgs = recArgs + "%<intType> rt_CSTATEIdx"
+
+    %foreach idx = SIZE(recArgs,1)
+        %if idx == 0
+            %assign fcnArgs = recArgs[idx]
+        %else
+            %assign fcnArgs = fcnArgs + ", %<recArgs[idx]>"
+        %endif
+    %endforeach
+
+    %assign system = System[GetBaseSystemIdx()]
+    %with system
+        %openfile tempbuffer
+        %assign fcnAbstract = "member function to set up the C-API information"
+        %assign fcnReturns = "void"
+        %assign fcnName = "setupCAPIInfo"
+        %assign fcnParams = fcnArgs
+        %assign declRec.AccessMethodsDecl = declRec.AccessMethodsDecl + ...
+            "\n/* " + fcnAbstract + " */\n" + ...
+            "%<fcnReturns> %<fcnName>(%<fcnParams>);\n"
+        %assign mmiStr = "%<RTMGetModelSS()>->DataMapInfo.mmi"
+        %assign fcnName = classNamePrefix + fcnName
+        %createrecord fcnRec {Name fcnName; Returns fcnReturns; Params fcnParams; ...
+            Abstract fcnAbstract; Category "cpp"; GeneratedBy "ertclassgeneration.tlc"; ...
+            Type "C++ member"}
+        %<SLibDumpFunctionBanner(fcnRec)>
+        %undef fcnRec
+        %<fcnReturns> %<fcnName>(%<fcnParams>) {
+            /* Initialize Parent model MMI */
+            if ((rt_ParentMMI != %<SLibGetNullDefinitionFromTfl()>) && (rt_ChildPath != %<SLibGetNullDefinitionFromTfl()>))
+            {
+                rtwCAPI_SetChildMMI(*rt_ParentMMI, rt_ChildMMIIdx, &(%<mmiStr>));
+                rtwCAPI_SetPath(%<mmiStr>, rt_ChildPath);
+                rtwCAPI_MMISetContStateStartIndex(%<mmiStr>, rt_CSTATEIdx);
+            }
+        }
+        %closefile tempbuffer
+    %endwith
+
+    %assign declRec.AccessMethodsDefn = declRec.AccessMethodsDefn + tempbuffer
+
+    %assign ::CompiledModel.CPPEncapsulationRecord = declRec
+
+%endfunction %% AddCAPIMethodWhenNeeded
+
+
+%% Function: AddRTMInitWhenNeeded ==================================================================
+%%
+%%  Abstract:
+%%    We need to split class declaration into two stages and only in the
+%%    later stage will we determine whether the RTM init method
+%%    needs to be added to a model class. For C code generation/mdlref, rtm init
+%%    code is within the model_initialize function. For C++ encap/mdlref, it can
+%%    not be within the model_initialize method, as it would have removed the
+%%    errorstatus pointer/C-API pointers that have to be setup before the
+%%    model_intialize method is called.
+%%
+%function AddRTMInitWhenNeeded(modelInterface) void
+    %assign int32Type = LibGetDataTypeNameFromId(::CompiledModel.tSS_INT32)
+
+    %if !IsModelReferenceRTWTarget() || !(RealTimeModelAccessed || ::tMdlRefNeedTIDArgs)
+        %return
+    %endif
+
+    %assert GenerateClassInterface && IsModelReferenceRTWTarget() && ...
+        RealTimeModelAccessed
+    %assign previousNSFlag = System[NumSystems-1].SystemNamespaceFlag
+    %assign System[NumSystems-1].SystemNamespaceFlag = 1
+
+    %assign declRec = ::CompiledModel.CPPEncapsulationRecord
+
+    %assign classNamePrefix = CGMODEL_ACCESS("CGModel.getClassName") + "::"
+    %assign baseSysIdx = GetBaseSystemIdx()
+    %assign ::BlockFcn = "Registration"
+    %assign system = System[baseSysIdx]
+
+    %with system
+
+        %openfile initializeRTMBody
+        %if SLibZeroMemory("RTM")
+            (void) %<LibGenMemFcnCall("memset", "(void *)(%<GetSimStructExpr(system, ::tSimStruct)>)", ...
+                "0", "sizeof(%<::tSimStructType>)")>;
+            %<SLibAccessArgHelper(::CompiledModel.System[baseSysIdx].Interface.RTMArgDef,"","")>
+        %endif
+
+        %% Setup the rtwsolverinfo
+        %if LibIsContinuous(0) || (NumChildSFunctions > 0)
+            /* initialize RTWSolverInfo */
+            %<RTMSet("RTWSolverInfo", "rt_solverInfo")>;
+            %if LibIsContinuous(0)
+                %<FcnModelRefCreateAndInitializeSolverData()>
+            %endif
+        %endif
+
+        %if IsModelReferenceTarget() && !IsModelReferenceForASimstructBasedTarget() && ...
+            NumChildSFunctions > 0
+            %<RTMSet("RTWSfcnInfo", "rt_sfcnInfo")>;
+        %endif
+
+        %<LibDumpSFunctionRegistration()>\
+        %if IsModelReferenceTarget()
+            %assign decArgs = []
+            %if !IsModelReferenceForASimstructBasedTarget() && ...
+                ::tMdlRefTimingBridgeAccessed
+                %assign decArgs = decArgs + "timingBridge"
+            %endif
+            %if ::tMdlRefGlobalTIDMapAccessed
+                %if ::tMdlRefNeedTIDArgs
+                    %if !MdlRefIsConstSampleBlock() || MdlRefHasParameterRate()
+                        %% Write out the declaration of the global TID map.  Note that for inherited
+                        %% submodels, we will put the map into the rtModel.  This is because each
+                        %% instance the submodel could get a different TID and we need the TID
+                        %% for logging. see FcnInitializeModelRefGlobalTimingEngine().
+                        %assign numTIDs = SLibGetNumTIDsForGlobalTIDMap()
+                        %foreach idx = numTIDs
+                            %% skip service task tid which is
+                            %% used for service infrastructure only
+                            %if SLibIsServiceTaskTID(idx) || SLibSimEventTID(idx)
+                                %continue
+                            %endif
+
+                            %% We do not access union rate without task TIDs in referenced models.
+                            %if SLibIsUnionSampleTimeTIDWithoutTask(idx)
+                                %continue
+                            %endif
+
+                            %assign decArgs = decArgs + "mdlref_TID%<idx>"
+                        %endforeach
+                    %else
+                        %assign decArgs = decArgs + "mdlref_TID0"
+                    %endif
+                %endif
+            %endif
+            %assign timingBridgeSetupArgs = decArgs
+            %if SLibModelNeedsTriggerTIDArg()
+                %assign decArgs = decArgs + "mdlref_TriggerTID"
+                %if ::tMdlRefGlobalTIDMapAccessed
+                    %assign timingBridgeSetupArgs = timingBridgeSetupArgs + "mdlref_TriggerTID"
+                %endif
+            %endif
+            %if !ISEMPTY(timingBridgeSetupArgs)
+                %assign fcnArgs = SLibSerializeFcnArgs(timingBridgeSetupArgs)
+                setupGlobalTimingEngine(%<fcnArgs>);
+            %endif
+            %assign mdlRefBlks = ISFIELD(::CompiledModel,"ModelReferenceBlocks") ? ...
+                ::CompiledModel.ModelReferenceBlocks : []
+            %foreach rowIdx = SIZE(mdlRefBlks,0)
+                %assign mdlRefInfo = mdlRefBlks[rowIdx]
+                %assign mSysIdx = mdlRefInfo[0]
+                %assign bIdx    = mdlRefInfo[1]
+                %assign instIdx = mdlRefInfo[2]
+                %assign thisSystem = ::CompiledModel.System[mSysIdx]
+                %assign block = thisSystem.Block[bIdx]
+                %assign blockInterface = GetModelrefInterface(block)
+                %if blockInterface.RTMAccessed && ...
+                    (ISFIELD(blockInterface, "RegistrationFcn") || ...
+                    (!IsModelReferenceForASimstructBasedTarget() && blockInterface.NeedsGlobalTimingEngine)) && ...
+                    block.MdlRefIsCPPClassGenMode && ...
+                    (ISFIELD(blockInterface, "NeedsCPPInitRTM") && blockInterface.NeedsCPPInitRTM)
+                    %% The net condition already takes into account local and net instance condition
+                    %% We do not need multiple #ifs here
+                    %assign vcRecord = SLibMdlRefNetInlineVariantPreprocessorCondition(mSysIdx, instIdx, bIdx)
+                    %<vcRecord.ifCond>
+
+                    %assign mdlBlkCompiledModel = ::CompiledModel.ModelBlock[rowIdx]
+                    %if ISFIELD(mdlBlkCompiledModel, "ForEachSSLoopBnds")
+                        %assign ::NeedForEachLoopInReg = TLC_TRUE
+                        %assign ::NumForEachLoopHierarchyLevel = SIZE(mdlBlkCompiledModel.ForEachSSLoopBnds, 1)
+                        %assign ::ForEachLoopHierarchyLevel = ::NumForEachLoopHierarchyLevel
+                        {
+                            %foreach ssIdx = SIZE(mdlBlkCompiledModel.ForEachSSLoopBnds, 1)
+                                %assign iterVar = "i_%<::ForEachLoopHierarchyLevel>"
+                                %assign ::ForEachLoopHierarchyLevel = ::ForEachLoopHierarchyLevel - 1
+                                %<int32Type> %<iterVar>;
+                                for (%<iterVar> = 0; %<iterVar> < %<mdlBlkCompiledModel.ForEachSSLoopBnds[::ForEachLoopHierarchyLevel]>; %<iterVar>++) {
+                                %endforeach
+                                %assign ::ForEachLoopHierarchyLevel = 1
+                                %<SLibGetMdlRefCppEncapRTMInitCall(block, blockInterface, instIdx, mSysIdx)>
+                                %foreach ssIdx = SIZE(mdlBlkCompiledModel.ForEachSSLoopBnds, 1)
+                                }
+                            %endforeach
+                        }
+                        %assign ::NeedForEachLoopInReg = TLC_FALSE
+                    %else
+                        %<SLibGetMdlRefCppEncapRTMInitCall(block, blockInterface, instIdx, mSysIdx)>
+                    %endif
+
+                    %<vcRecord.endIfCond>
+                %endif
+            %endforeach
+        %endif
+        %closefile initializeRTMBody
+
+        %if ISEMPTY(initializeRTMBody) || WHITE_SPACE(initializeRTMBody)
+            %return
+        %endif
+
+        %addtorecord modelInterface NeedsCPPInitRTM TLC_TRUE
+
+        %openfile tempbuffer
+        %assign fcnAbstract = "member function to initialize Real-Time model"
+        %assign fcnReturns = "void"
+        %assign fcnName = "initializeRTM"
+        %assign recArgs = []
+        %if !IsModelReferenceForASimstructBasedTarget() && ...
+            ::tMdlRefTimingBridgeAccessed
+            %assign recArgs = recArgs + "const rtTimingBridge *timingBridge"
+        %endif
+        %if LibIsContinuous(0) || SLibModelHierarchyContainsNoninlinedSfcn()
+            %assign recArgs = recArgs + "RTWSolverInfo *rt_solverInfo"
+        %endif
+        %if SLibModelHierarchyContainsNoninlinedSfcn()
+            %assign recArgs = recArgs + "RTWSfcnInfo *rt_sfcnInfo"
+        %endif
+        %assign recArgs = AddCppEncapMdlrefTIDArgs(recArgs)
+        %assign fcnParams = SLibSerializeFcnArgs(recArgs)
+        %assign declRec.AccessMethodsDecl = declRec.AccessMethodsDecl + ...
+            "\n/* " + fcnAbstract + " */\n" + ...
+            "%<fcnReturns> %<fcnName>(%<fcnParams>);\n"
+
+        %assign fcnName = classNamePrefix + fcnName
+        %createrecord fcnRec {Name fcnName; Returns fcnReturns; Params fcnParams; ...
+            Abstract fcnAbstract; Category "cpp"; GeneratedBy "ertclassgeneration.tlc"; ...
+            Type "C++ member"}
+        %<SLibDumpFunctionBanner(fcnRec)>
+        %undef fcnRec
+        void %<classNamePrefix>initializeRTM(%<fcnParams>)
+        {
+            %<initializeRTMBody>
+        }
+        %closefile tempbuffer
+    %endwith
+    %assign System[NumSystems-1].SystemNamespaceFlag = previousNSFlag
+
+    %assign declRec.AccessMethodsDefn = declRec.AccessMethodsDefn + tempbuffer
+
+    %assign ::CompiledModel.CPPEncapsulationRecord = declRec
+
+%endfunction %% AddRTMInitWhenNeeded
+
+
+%function AddConstToMemberMethodIfNecessary(system, fcnRecord)
+    %assign constMemberMethod = ""
+    %if FcnIsConstMemberMethod(system, fcnRecord.CGIRName)
+        %assign constMemberMethod = " const"
+    %endif
+    %return constMemberMethod
+%endfunction
+
+
+%% Does the C++ class need to subclass when generating
+%% ERT S-Function?
+%function SLibCPPClassNeedSubclass()
+    %assign retVal = TLC_FALSE
+
+    %if GenerateClassInterface && ::GenerateErtSFunction && ...
+        (classConfObj.hasGlobalAccessForOutport || ...
+        classConfObj.hasGlobalAccessForInport) && ...
+        (CGMODEL_ACCESS("CGModel.getGenerateExternalInportsAccessMethods") != "None" || ...
+        CGMODEL_ACCESS("CGModel.getGenerateExternalOutportsAccessMethods") != "None")
+        %% The only case we need to subclass is that ert-sfunction, void-void case,
+        %% and generating i/o
+        %% access methods is 'on' (i/o access methods will be per-signal, instead
+        %% of per-structure.) In this case, rtU/Y will be protected members, and
+        %% thus need to use subclass/friend approach so that mdlOutputs can access
+        %% the rtU/Y data members.
+        %assign retVal = TLC_TRUE
+    %endif
+
+    %return retVal
+%endfunction %% SLibCPPClassNeedSubclass
+
+%function FcnAddStartFcn(sys) Output
+    %if (ISFIELD(sys,"StartFcn") && !LibSystemFcnIsEmpty(sys,"Start")) || ...
+        (ISFIELD(sys,"SetupRuntimeResourcesFcn") && !LibSystemFcnIsEmpty(sys,"SetupRuntimeResources"))
+        %%  inline SetupRuntimeResourcesFcn into start
+        %assign fcnRecord = SLibSystemFcnInfoRecord(sys, "Start")
+        /* model start function */
+        void start(%<fcnRecord.Params>)%<AddConstToMemberMethodIfNecessary(sys, fcnRecord)>;
+    %endif
+%endfunction
+
+%function FcnAddModelInitializeFcn() Output
+    %if !(IsModelReferenceTarget() && SLibGetEmptyModelRefInitializeFcn())
+        /* model initialize function */
+        %if CGMODEL_ACCESS("CGModel.isCPPMappingEnabled")
+            %assign initFcnName = "%<CGMODEL_ACCESS("CGModel.getModelEntryFunctionName","Initialize", "")>"
+        %else
+            %assign initFcnName = "initialize"
+        %endif
+        %<FcnStaticOnEmptyInitMethod()>void %<initFcnName>();
+    %endif
+%endfunction
+
+%function FcnAddInitializeConditionsFcn() Output
+    %assign sys = System[NumSystems-2]
+
+    %if ISFIELD(sys,"SystemInitializeFcn") && !LibSystemFcnIsEmpty(sys, "SystemInitialize")
+        %assign fcnRecord = SLibSystemFcnInfoRecord(sys, "SystemInitialize")
+        /* Initial conditions function */
+        void init(%<fcnRecord.Params>)%<AddConstToMemberMethodIfNecessary(sys, fcnRecord)>;
+    %endif
+%endfunction
+
+%function FcnAddModelTerminateFcn() Output
+    %if (IncludeMdlTerminateFcn && !IsModelReferenceRTWTarget()) || ...
+        (IncludeMdlTerminateFcn && IsModelReferenceRTWTarget() && ...
+        (SLibSystemTerminateNonEmpty(System[GetBaseSystemIdx()]) || ...
+        !LibSystemFcnIsEmpty(System[GetBaseSystemIdx()], "CleanupRuntimeResources") ))
+        %assign fcnRecord = SLibSystemFcnInfoRecord(System[GetBaseSystemIdx()], "Terminate")
+        %%  inline CleanupRuntimeResourcesFcn into Terminate
+        %assign constMemberMethod = ""
+        %if FcnIsConstMemberMethod(System[GetBaseSystemIdx()], fcnRecord.CGIRName)
+            %assign constMemberMethod = " const"
+        %endif
+        /* model terminate function */
+        %if CGMODEL_ACCESS("CGModel.isCPPMappingEnabled")
+            %assign termFcnName = "%<CGMODEL_ACCESS("CGModel.getModelEntryFunctionName","Terminate", "")>"
+        %else
+            %assign termFcnName = "terminate"
+        %endif
+        %<FcnStaticOnEmptyTermMethod()> void %<termFcnName>(%<fcnRecord.Params>)%<constMemberMethod>;
+    %endif
+%endfunction
+
+%% Function: FcnCPPClassPrivateMethods
+%function FcnCPPClassPrivateMethods() void
+    %assign booleanType = LibGetDataTypeNameFromId(::CompiledModel.tSS_BOOLEAN)
+    %assign intType = LibGetDataTypeNameFromId(::CompiledModel.tSS_INTEGER)
+    %assign realType = LibGetDataTypeNameFromId(::CompiledModel.tSS_DOUBLE)
+    %openfile retBuf
+    %<SLibOutputCopyConstructorDecl(CPPClassName, "private")>
+
+    %<SLibOutputCopyAssignmentDecl(CPPClassName, "private")>
+    %if NumContStates > 0 && ...
+        ( ISEQUAL(Solver, "ode1") || ISEQUAL(Solver, "ode2") || ...
+        ISEQUAL(Solver, "ode3") || ISEQUAL(Solver, "ode4") || ...
+        ISEQUAL(Solver, "ode5") || ISEQUAL(Solver, "ode8") || ...
+        ISEQUAL(Solver, "ode14x") || ISEQUAL(Solver, "ode1be") )
+        %assign reuseArgs = SLibModelFcnArgs("ODEUpdateContinuousStates",TLC_FALSE,"")
+        %if ISEQUAL(reuseArgs,"void") || ISEMPTY(reuseArgs)
+            %assign reuseArgs = ""
+        %else
+            %assign reuseArgs = ", " + reuseArgs
+        %endif
+
+        /* Continuous states update member function*/
+        void rt_ertODEUpdateContinuousStates(RTWSolverInfo *si %<reuseArgs>);
+
+        %if SLibGetIsFixedStepZeroCrossingEnabled()
+            /* Continuous Integration Method */
+            void rt_ertODEIntegrate(RTWSolverInfo *si );
+
+            /* Check For zero-crossing Event */
+            %<booleanType> rt_checkForEvent( RTWSolverInfo *si,%<realType>* vL, %<realType>* vR, %<intType> izc );
+
+            /* Bracket Zero Crossing Event */
+            void rt_ZcLocate( RTWSolverInfo *si );
+
+        %endif
+
+    %endif
+
+    %if NumContStates > 0 && ( ISEQUAL(Solver, "ode14x") || ISEQUAL(Solver, "ode1be") )
+        %%ode14x may need local_numjac
+
+        %assign reuseArgsNumjac = SLibModelFcnArgs("ODEUpdateContinuousStates",TLC_FALSE,"")
+        %if ISEQUAL(reuseArgsNumjac,"void") || ISEMPTY(reuseArgsNumjac)
+            %assign reuseArgsNumjac = ""
+            %assign reuseArgsNumjacCall = ""
+        %else
+            %assign reuseArgsNumjac = ", " + reuseArgsNumjac
+            %assign reuseArgsNumjacCall = ", " + SLibModelFcnArgs("ODEUpdateContinuousStates",2,0)
+        %endif
+
+        %if (ModelIsLinearlyImplicit == "yes") && (SLibModelMassMatrixType() == "statedep")
+
+            void local_numjac(RTWSolverInfo   *si,\
+            %<realType>          *y,\
+            const %<realType>    *v,\
+            const %<realType>    *Fty,\
+            %<realType>            *fac,\
+            %<realType>          *dFdy \
+            %<reuseArgsNumjac>);
+        %else
+            void local_numjac(RTWSolverInfo   *si,\
+            %<realType>          *y,\
+            const %<realType>    *Fty,\
+            %<realType>            *fac,\
+            %<realType>          *dFdy \
+            %<reuseArgsNumjac>);
+        %endif
+    %endif
+
+    %if NumContStates > 0
+        %assign fcnRec = LibGetSystemField(System[NumSystems-1], "DerivativeFcnInfo")
+
+        /* Derivatives member function */
+        void %<fcnRec.Name>(%<SLibModelFcnArgs("Derivative",0,"")>);
+
+        %if SLibGetIsFixedStepZeroCrossingEnabled()
+            %assign fcnRec = LibGetSystemField(System[NumSystems-1], "ZeroCrossingFcnInfo")
+
+            /* Zero Crossing member function */
+            void %<fcnRec.Name>(%<SLibModelFcnArgs("ZeroCrossing",0,"")>);
+        %endif
+
+    %endif
+
+    %if ModelHasProjections == "yes"
+        %assign fcnRec = LibGetSystemField(System[NumSystems-1], "ProjectionFcnInfo")
+
+        /* Projection member function */
+        void %<fcnRec.Name>(%<SLibModelFcnArgs("Projection",0,"")>);
+    %endif
+
+    %closefile retBuf
+
+    %return retBuf
+%endfunction %% FcnCPPClassPrivateMethods
+
+
+%% Function: FcnCPPGetRootIOArgs ===================================================================
+%%
+%%  Abstract:
+%%  Returns string of root-level I/O declarations or arguments for a call site
+%%
+%%  Arguments:
+%%  request - "decl" or "call"
+
+%function FcnCPPGetRootIOArgs(request)
+    %if request != "decl" && request != "call"
+        %return ""    %% error message?
+    %endif
+
+    %if SLibRTWCPPClassActive()
+        %if request == "decl"
+            %assign rootIOArgs = FcnModelStepFcnArgs(classConfObj, "WrapperDec")
+        %else
+            %assign rootIOArgs = FcnModelStepFcnArgs(classConfObj, "WrapperCall")
+        %endif
+        %return rootIOArgs
+    %endif
+
+    %assign declaration = (request == "decl")
+    %% determine external I/O arguments (if any)
+    %assign rootSystem = System[NumSystems-1]
+    %assign reqInsts = LibGetSystemField(rootSystem, "ReqRootPrmHdrDataInsts")
+    %assign rootIOArgs = ""
+    %if !reqInsts.ExtInpsInst && !LibExternalInputsInstanceIsEmpty() && ...
+        CPPExternalIOPlacement == "Argument"
+        %if RootIOStructures
+            %if declaration
+                %assign rootIOArgs = "%<::tInputType> *%<::tInput>"
+            %else
+                %assign rootIOArgs = "&%<::tInput>"
+            %endif
+        %else
+            %foreach idx = ExternalInputs.NumExternalInputs
+                %assign extInp = ExternalInputs.ExternalInput[idx]
+                %assign id = LibGetRecordIdentifier(extInp)
+                %with extInp
+                    %if extInp.StorageClass != "Auto"
+                        %continue
+                    %endif
+                    %assign dataType  = SLibGetRecordDataTypeName(extInp, "")
+                    %if LibGetRecordSymbolicWidth(extInp) != "1"
+                        %if ISEMPTY(rootIOArgs)
+                            %if declaration
+                                %assign rootIOArgs = ...
+                                    "%<dataType> %<::tInput>%<UQualifier>" ...
+                                    "%<id>[%<LibGetRecordSymbolicWidth(extInp)>]"
+                            %else
+                                %assign rootIOArgs = ...
+                                    "%<::tInput>%<UQualifier>" ...
+                                    "%<id>"
+                            %endif
+                        %else
+                            %if declaration
+                                %assign rootIOArgs = rootIOArgs + ...
+                                    ", %<dataType> %<::tInput>%<UQualifier>" ...
+                                    "%<id>[%<LibGetRecordSymbolicWidth(extInp)>]"
+                            %else
+                                %assign rootIOArgs = rootIOArgs + ...
+                                    ", %<::tInput>%<UQualifier>" ...
+                                    "%<id>"
+                            %endif
+                        %endif
+                    %else
+                        %if ISEMPTY(rootIOArgs)
+                            %if declaration
+                                %assign rootIOArgs = ...
+                                    "%<dataType> %<::tInput>%<UQualifier>%<id>"
+                            %else
+                                %assign rootIOArgs = ...
+                                    "%<::tInput>%<UQualifier>%<id>"
+                            %endif
+                        %else
+                            %if declaration
+                                %assign rootIOArgs = rootIOArgs + ...
+                                    ", %<dataType> %<::tInput>%<UQualifier>%<id>"
+                            %else
+                                %assign rootIOArgs = rootIOArgs + ...
+                                    ", %<::tInput>%<UQualifier>%<id>"
+                            %endif
+                        %endif
+                    %endif
+                %endwith
+            %endforeach
+        %endif
+    %endif
+    %if !reqInsts.ExtOutputsInst && !LibExternalOutputsInstanceIsEmpty() && ...
+        CPPExternalIOPlacement == "Argument"
+        %if RootIOStructures
+            %if ISEMPTY(rootIOArgs)
+                %if declaration
+                    %assign rootIOArgs = "%<::tOutputType> *%<::tOutput>"
+                %else
+                    %assign rootIOArgs = "&%<::tOutput>"
+                %endif
+            %else
+                %if declaration
+                    %assign rootIOArgs = rootIOArgs + ", %<::tOutputType> *%<::tOutput>"
+                %else
+                    %assign rootIOArgs = rootIOArgs + ", &%<::tOutput>"
+                %endif
+            %endif
+        %else
+            %foreach idx = ExternalOutputs.NumExternalOutputs
+                %assign extOut       = ExternalOutputs.ExternalOutput[idx]
+                %assign sysIdx       = extOut.Block[0]
+                %assign blkIdx       = extOut.Block[1]
+                %assign outportBlock = System[sysIdx].Block[blkIdx]
+                %if SLibExternalOutputIsVirtual(outportBlock)
+                    %continue
+                %endif
+                %assign portWidth = LibGetRecordSymbolicWidth(extOut)
+                %assign dataType = LibGetRecordDataTypeName(extOut, "")
+                %assign id = LibGetRecordIdentifier(outportBlock)
+                %if portWidth != "1"
+                    %if ISEMPTY(rootIOArgs)
+                        %if declaration
+                            %assign rootIOArgs = ...
+                                "%<dataType> %<::tOutput>%<YQualifier>" ...
+                                "%<id>[%<portWidth>]"
+                        %else
+                            %assign rootIOArgs = ...
+                                "%<::tOutput>%<YQualifier>%<id>"
+                        %endif
+                    %else
+                        %if declaration
+                            %assign rootIOArgs = rootIOArgs + ...
+                                ", %<dataType> %<::tOutput>%<YQualifier>" ...
+                                "%<id>[%<portWidth>]"
+                        %else
+                            %assign rootIOArgs = rootIOArgs + ...
+                                ", %<::tOutput>%<YQualifier>%<id>"
+                        %endif
+                    %endif
+                %else
+                    %if ISEMPTY(rootIOArgs)
+                        %if declaration
+                            %assign rootIOArgs = ...
+                                "%<dataType> %<::tOutput>%<YQualifier>%<id>"
+                        %else
+                            %assign rootIOArgs = ...
+                                "%<::tOutput>%<YQualifier>%<id>"
+                        %endif
+                    %else
+                        %if declaration
+                            %assign rootIOArgs = rootIOArgs + ...
+                                ", %<dataType> %<::tOutput>%<YQualifier>%<id>"
+                        %else
+                            %assign rootIOArgs = rootIOArgs + ...
+                                ", %<::tOutput>%<YQualifier>%<id>"
+                        %endif
+                    %endif
+                %endif
+            %endforeach
+        %endif
+    %endif
+    %return rootIOArgs
+%endfunction %% FcnGetCPPRootIOArgs()
+
+%endif %% _CPP_CLASS_GEN_

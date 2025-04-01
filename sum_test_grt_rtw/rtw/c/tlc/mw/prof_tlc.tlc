@@ -1,0 +1,23 @@
+%% Copyright 2010-2021 The MathWorks, Inc.
+%%
+%% Abstract: Profiling instrumention for code that is not accessible and cannot
+%%           be instrumented from CGIR
+%%
+%if EXISTS(_PROF_TLC_) == 0
+%assign _PROF_TLC_ = 1
+
+%% Function: SLibProfilerTypeDefs ==================================================================
+%% Abstract:
+%%    Generate code for typedefs of profiler objects and macro definitions
+%%    for CPU cycle counting
+%function SLibProfilerTypeDefs() void
+
+    %assign declarationsSymbol = FEVAL("coder.internal.getExecTimeProbeSymbol", "declarations")
+    %openfile tmpBuff
+    /* %<declarationsSymbol> */
+    %closefile tmpBuff
+    %return tmpBuff
+
+%endfunction
+
+%endif

@@ -1,0 +1,248 @@
+%%/* Copyright 2019-2021 The MathWorks, Inc. */
+%if EXISTS(_CODECACHE_API_) == 0
+%assign _CODECACHE_API_ = 1
+
+%include "utils_api.tlc"
+
+%% Function: LibCacheFunctionPrototypeBuffer =======================================================
+%% Abstract:
+%%   Caches the function prototype buffer to model_private.h/model.c file
+%%   based on the file packaging format
+%function LibCacheFunctionPrototypeBuffer(buffer) void
+    %assign fileIdx = CGMODEL_ACCESS("BlockTypeSetup.CacheFunctionPrototype", buffer)
+    %return LibUpdateCompiledModelFiles(fileIdx)
+%endfunction
+
+%% DocFunction{Code Configuration Functions}: LibCacheDefine ===================
+%% Abstract:
+%%   Each call to this function appends your buffer to the existing cache
+%%   buffer. For blocks, this function is generally called from BlockTypeSetup.
+%%
+%%   For C,
+%%       This function caches #define statements for inclusion in
+%%       model_private.h (or in model.c if file packaging format is set to
+%%       compact).
+%%
+%%       LibCacheDefine should be called from inside BlockTypeSetup to cache a
+%%       #define statement.  Each call to this function appends your buffer to
+%%       the existing cache buffer.
+%%       The #define statements are placed inside model_private.h or model.c.
+%%
+%%   Example:
+%%     %openfile buffer
+%%       #define INTERP(x,x1,x2,y1,y2) ( y1+((y2 - y1)/(x2 - x1))*(x-x1) )
+%%       #define this that
+%%     %closefile buffer
+%%     %<LibCacheDefine(buffer)>
+%%
+%%
+%function LibCacheDefine(buffer) void
+    %if !SLibHasBufferAlreadyBeenAddedToCache()
+        %<CGMODEL_ACCESS("CustomCodeCache.AddToCache", ::CustomCodeCacheType.Define, buffer)>
+        %<FcnUpdateCustomBlockTypeSetupHeaderForSystem("custom_blockTypeSetup_define")>
+    %endif
+%endfunction
+
+%% Function: LibDumpDefinesCache ===================================================================
+%% Abstract:
+%%   Place any cached defines into the output stream.
+%%
+%function LibDumpDefinesCache() Output
+    %assign cache = CGMODEL_ACCESS("CustomCodeCache.GetCache", ::CustomCodeCacheType.Define, CAST("Boolean", ResetTLCGlobalsAfterUse))
+    %if !WHITE_SPACE(cache)
+
+        %<cache>\
+    %endif
+%endfunction
+
+%% DocFunction{Code Configuration Functions}: LibCacheFunctionPrototype ========
+%% Abstract:
+%%   LibCacheFunctionPrototype should be called from inside BlockTypeSetup
+%%   to cache a function prototype.  Each call to this function appends
+%%   your buffer to the existing cache buffer.  The prototypes are placed
+%%   inside model_private.h
+%%
+%%   Example:
+%%     %openfile buffer
+%%       extern int_T fun1(real_T x);
+%%       extern real_T fun2(real_T y, int_T i);
+%%     %closefile buffer
+%%     %<LibCacheFunctionPrototype(buffer)>
+%%
+%function LibCacheFunctionPrototype(buffer) void
+    %if !SLibHasBufferAlreadyBeenAddedToCache()
+        %if(CGMODEL_ACCESS("CGModel.TLCServerBlockOperationsInCPP"))
+            %<LibCacheFunctionPrototypeBuffer(buffer)>
+        %else
+            %<CGMODEL_ACCESS("CustomCodeCache.AddToCache", ::CustomCodeCacheType.FunctionPrototype, buffer)>
+        %endif
+
+        %<FcnUpdateCustomBlockTypeSetupHeaderForSystem("custom_blockTypeSetup_fcn_prototype")>
+    %endif
+%endfunction
+
+%% Function: LibDumpFunctionPrototypesCache ========================================================
+%%   Place any cached function prototypes into the output stream.
+%%
+%function LibDumpFunctionPrototypesCache() Output
+    %assign cache = CGMODEL_ACCESS("CustomCodeCache.GetCache", ::CustomCodeCacheType.FunctionPrototype, CAST("Boolean", ResetTLCGlobalsAfterUse))
+    %if !WHITE_SPACE(cache)
+
+        %<cache>\
+    %endif
+%endfunction
+
+%% DocFunction{Code Configuration Functions}: LibCacheTypedefs =================
+%% Abstract:
+%%   LibCacheTypedefs should be called from inside BlockTypeSetup to cache
+%%   typedef declarations.  Each call to this function appends your buffer
+%%   to the existing cache buffer.  The typedef statements are placed
+%%   inside model.h.
+%%
+%%   Example:
+%%     %openfile buffer
+%%       typedef foo bar;
+%%     %closefile buffer
+%%     %<LibCacheTypedefs(buffer)>
+%%
+%function LibCacheTypedefs(buffer) void
+    %if !SLibHasBufferAlreadyBeenAddedToCache()
+        %<CGMODEL_ACCESS("CustomCodeCache.AddToCache", ::CustomCodeCacheType.Typedef, buffer)>
+    %endif
+%endfunction
+
+
+%% Function: LibDumpTypedefsCache ==================================================================
+%% Abstract:
+%%   Place any cached typedefs into the output stream.
+%%
+%function LibDumpTypedefsCache() void
+    %assign cache = CGMODEL_ACCESS("CustomCodeCache.GetCache", ::CustomCodeCacheType.Typedef, TLC_FALSE)
+    %if !WHITE_SPACE(cache)
+        %return "\n%<cache>"
+    %else
+        %return ""
+    %endif
+%endfunction
+
+%% DocFunction{Code Configuration Functions}: LibCacheIncludes =================
+%% Abstract:
+%%   LibCacheIncludes should be called from inside BlockTypeSetup to cache
+%%   #include statements.  Each call to this function appends your buffer to
+%%   the existing cache buffer.  The #include statements are placed inside
+%%   model_private.h.
+%%
+%%   Example:
+%%     %openfile buffer
+%%       #include "myfile.h"
+%%     %closefile buffer
+%%     %<LibCacheIncludes(buffer)>
+%%
+%%
+%function LibCacheIncludes(buffer) void
+    %if !SLibHasBufferAlreadyBeenAddedToCache()
+        %<CGMODEL_ACCESS("CustomCodeCache.AddToCache", ::CustomCodeCacheType.Include, buffer)>
+        %<FcnUpdateCustomBlockTypeSetupHeaderForSystem("custom_blockTypeSetup_include")>
+    %endif
+%endfunction
+
+%% Function: LibDumpIncludesCache ==================================================================
+%% Abstract:
+%%   Place any cached includes into the output stream.
+%%
+%function LibDumpIncludesCache() Output
+    %assign cache = CGMODEL_ACCESS("CustomCodeCache.GetCache", ::CustomCodeCacheType.Include, CAST("Boolean", ResetTLCGlobalsAfterUse))
+    %if !WHITE_SPACE(cache)
+
+        %<cache>\
+    %endif
+%endfunction
+
+%% Function: LibResetCustomCodeCache ===============================================================
+%% Abstract:
+%%   Reset the specified cache to empty
+%%
+%function LibResetCustomCodeCache(customCodeCacheType) void
+    %assert(TYPE(customCodeCacheType) == "Number")
+    %<CGMODEL_ACCESS("CustomCodeCache.ResetCache", customCodeCacheType)>
+%endfunction
+
+%% DocFunction{Code Configuration Functions}: LibCacheExtern ===================
+%% Abstract:
+%%   LibCacheExtern should be called from inside BlockTypeSetup to cache an
+%%   extern statement.  Each call to this function appends your buffer to
+%%   the existing cache buffer.  The extern statements are placed in
+%%   model_private.h.
+%%
+%%   A C example:
+%%     %openfile buffer
+%%       extern real_T mydata;
+%%     %closefile buffer
+%%     %<LibCacheExtern(buffer)>
+%%
+%function LibCacheExtern(buffer) void
+    %if !SLibHasBufferAlreadyBeenAddedToCache()
+        %<CGMODEL_ACCESS("CustomCodeCache.AddToCache", ::CustomCodeCacheType.Extern, buffer)>
+
+        %if SLibIsMainCodeGenPhase()
+            %% Only do this for the main TLC process, not the pre-code gen phase.
+            %<FcnCacheSFunctionExternDeclToRLS(buffer)>;
+        %endif
+
+        %<FcnUpdateCustomBlockTypeSetupHeaderForSystem("custom_blockTypeSetup_extern_data_decl")>
+    %endif
+%endfunction
+
+%% Function: LibDumpExternsCache ===================================================================
+%% Abstract:
+%%   Place any cached externs into the output stream.
+%%
+%function LibDumpExternsCache() Output
+    %assign cache = CGMODEL_ACCESS("CustomCodeCache.GetCache", ::CustomCodeCacheType.Extern, CAST("Boolean", ResetTLCGlobalsAfterUse))
+    %if !WHITE_SPACE(cache)
+
+        %<cache>\
+    %endif
+%endfunction
+
+%% DocFunction{Code Configuration Functions}: LibAddToCommonIncludes ==========
+%% Abstract:
+%%   Adds items to a unique-ified list of #include/package spec items.
+%%
+%%   Should be called from block TLC methods to specify generation of
+%%   #include statements in model.h.  Specify locals bare, "myinclude.h",
+%%   and include path files are specified in braces, "<sysinclude.h>". Each
+%%   call to this function adds the file to the list only if it is not already
+%%   there.  <math.h> and "math.h" are considered different files for the
+%%   purpose of uniqueness. The #include statements are placed inside
+%%   model.h.
+%%
+%%   Example:
+%%     %<LibAddToCommonIncludes("tpu332lib.h")>
+%%
+%%
+%function LibAddToCommonIncludes(incFileName) void
+    %%
+    %% ignore empties
+    %%
+    %if (incFileName == "") || SLibHasBufferAlreadyBeenAddedToCache()
+        %return
+    %endif
+
+    %assign cacheType = ::ModelHeaderType.BlockLocal
+
+    %if incFileName[0] == "<"
+        %assign cacheType =  ::ModelHeaderType.BlockPath
+    %endif
+
+    %<CGMODEL_ACCESS("Includes.AddToModelHeaderCache", cacheType, incFileName)>
+
+    %if SLibIsMainCodeGenPhase()
+        %<SAddSfuncHeaderToRLSIncludes(incFileName)>
+    %elseif SLibInBlockScope()
+        %<CGMODEL_ACCESS("Block.AddIncludeFile", BlockIdx[0], BlockIdx[2], incFileName)>
+    %endif
+
+%endfunction
+
+%endif %% _CODECACHE_API_

@@ -1,0 +1,151 @@
+%%
+%% Copyright 2022 The MathWorks, Inc.
+%%
+%% Abstract:
+%%   This file contains all functions required for loop rolling.
+%%
+
+%if EXISTS(::_ROLLERLIB_) == 0
+%assign _ROLLERLIB_ = 1
+
+%function SLibBlockAddToIdentifierStack(block, identifier) void
+    %if !ISFIELD(block, "__IdentifierStack__")
+        %addtorecord block __IdentifierStack__ []
+        %addtorecord block __IdentifierStackPosition__ -1
+    %endif
+    %assign block.__IdentifierStackPosition__ = block.__IdentifierStackPosition__ + 1
+    %if SIZE(block.__IdentifierStack__, 1) > block.__IdentifierStackPosition__
+        %assign block.__IdentifierStack__[block.__IdentifierStackPosition__] = identifier
+    %else
+        %assign block.__IdentifierStack__ =  block.__IdentifierStack__ + identifier
+    %endif
+%endfunction
+
+%function SLibBlockGetCurrentIdentifierStackElement(block) void
+    %return block.__IdentifierStack__[block.__IdentifierStackPosition__]
+%endfunction
+
+%function SLibBlockRemoveTopIdentifierStackEntry(block) void
+    %assign block.__IdentifierStack__[block.__IdentifierStackPosition__] = ""
+    %assign block.__IdentifierStackPosition__ = block.__IdentifierStackPosition__ - 1
+%endfunction
+
+%% Function: LibGetRollRegions1 ====================================================================
+%% Abstract:
+%%
+%function LibGetRollRegions1(rollRegions) void
+
+    %assign rrSz = SIZE(rollRegions,1)
+    %if rrSz < 3
+        %if rrSz <= 1
+            %assign rollRegions1 = []
+        %else
+            %assign rollRegions1 = [1]
+        %endif
+        %return rollRegions1
+    %endif
+
+    %assign inpStr = "%<rollRegions>"
+    %assign strLen = SIZE(inpStr, 1)
+
+    %assign vect3 = FcnGetNextRollRegion(inpStr, 0, strLen)
+
+    %assign outStr = "[1"
+    %assign offset = vect3[2]
+
+    %if vect3[1] > 1
+        %assign outStr = outStr + ":%<vect3[1]>"
+    %elseif vect3[1] == 0
+        %assign vect3 = FcnGetNextRollRegion(inpStr, vect3[2], strLen)
+        %assign offset = vect3[2]
+        %if vect3[1] > 1
+            %assign outStr = outStr + ":%<vect3[1]>"
+        %endif
+    %endif
+
+    %foreach idx = strLen-offset
+        %assign outStr = outStr + inpStr[idx+offset]
+    %endforeach
+    %assign rollRegions1 = %<outStr>
+
+    %return rollRegions1
+
+%endfunction %% LibGetRollRegions1
+
+%%---------------------------------------------%
+%% (2) Local Library Functions (Fcn Functions) %
+%%---------------------------------------------%
+
+%% Function: FcnGetNextRollRegion ==================================================================
+%% Abstarct:
+%%     Work horse routine used by the function LibGetRollRegions1
+%%
+%function FcnGetNextRollRegion(inpStr, startIdx, strLen) void
+
+    %assign idx0 = -1
+    %assign startRoll = ""
+
+    %foreach idx = strLen-startIdx
+        %assign ch = inpStr[idx+startIdx]
+        %if ch != "[" && ch != "," && ch != " "
+            %assign idx0 = idx+startIdx+1
+            %assign startRoll = "%<inpStr[idx+startIdx]>"
+            %break
+        %endif
+    %endforeach
+
+    %if idx0 == -1
+        %assign errTxt = "Invalid input argument: %<inpStr>"
+        %<LibBlockReportFatalError([], errTxt)>
+    %endif
+
+    %assign idx1 = -1
+    %assign outStr = ""
+
+    %foreach idx = strLen-idx0
+        %assign ch = inpStr[idx+idx0]
+        %if ch == ":"
+            %assign idx1 = idx+idx0+1
+            %break
+        %endif
+        %if ch == "]" || ch == ","
+            %assign outStr = "[%<startRoll>, %<startRoll>, %<idx+idx0>]"
+            %break
+        %endif
+        %assign startRoll = startRoll + ch
+    %endforeach
+
+    %if outStr != ""
+        %assign outVec = %<outStr>
+        %return outVec
+    %endif
+
+    %if idx1 == -1
+        %assign errTxt = "Invalid input argument: %<inpStr>"
+        %<LibBlockReportFatalError([], errTxt)>
+    %endif
+
+    %assign idx2 = -1
+    %assign endRoll = "%<inpStr[idx1]>"
+
+    %foreach idx = strLen-idx1-1
+        %assign ch = inpStr[idx+idx1+1]
+        %if ch == "," || ch == "]"
+            %assign idx2 = idx+idx1+1
+            %break
+        %endif
+        %assign endRoll = endRoll + ch
+    %endforeach
+
+    %if idx2 == -1
+        %assign errTxt = "Invalid input argument: %<inpStr>"
+        %<LibBlockReportFatalError([], errTxt)>
+    %endif
+
+    %assign outStr = "[%<startRoll>, %<endRoll>, %<idx2>]"
+    %assign outVec = %<outStr>
+    %return outVec
+
+%endfunction %% FcnGetNextRollRegion
+
+%endif %% _ROLLERLIB_

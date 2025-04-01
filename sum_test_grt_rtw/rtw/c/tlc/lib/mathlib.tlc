@@ -1,0 +1,945 @@
+%%
+%% Copyright 1994-2023 The MathWorks, Inc.
+%%
+%% Abstract:
+%%
+%%   Methods and default data to allow target-specific datatyped
+%%   run-time library support.  The target must register replacement
+%%   prototypes before including codegenentry.tlc.
+%%
+%%   NOTE: Since this file can be %included before codegenentry,
+%%         many common TLC constants and utilities are not
+%%         available for use in all methods in this library.
+%%
+%if EXISTS(_MATHLIB_) == 0
+%assign _MATHLIB_ = 1
+
+
+%% Function: LibMathFcnExists ======================================================================
+%% Abstract:
+%%    Return whether or not an implementation function exists for a given
+%%    generic operation (function), given the specified function prototype.
+%%
+%function LibMathFcnExists(RTWFcnName, RTWFcnTypeId) void
+    %assign RTWType = FcnGetMathDataTypeNameFromId(RTWFcnTypeId)
+    %assign FcnInfo = FEVAL("rtwgettargetfcnlib_nothrow", LibGetModelName(), ...
+        RTWFcnName, RTWType, ...
+        ::IsSimBuild)
+    %if !ISEMPTY(FcnInfo) && ISFIELD(FcnInfo,"ErrIdentifier")
+        %<SLibReportErrorWithIdAndArgs(FcnInfo.ErrIdentifier, FcnInfo.ErrArguments)>
+    %endif
+
+    %return !ISEMPTY(FcnInfo)
+%endfunction %% LibMathFcnExists
+
+
+%% Function: LibCreateHomogMathFcnRec ==============================================================
+%%
+%function LibCreateHomogMathFcnRec(FcnName, FcnTypeId) void
+    %% Test that we can use call the UDD based math function attached to the model
+    %assign RTWType = FcnGetMathDataTypeNameFromId(FcnTypeId)
+    %assign FcnInfo = FEVAL("rtwgettargetfcnlib_nothrow", LibGetModelName(), ...
+        FcnName, RTWType, ...
+        ::IsSimBuild)
+    %if ISEMPTY(FcnInfo)
+        %assign msg = "Database has no function '%<FcnName>' returning '%<RTWType>'"
+        %<LibReportFatalError(msg)>
+    %elseif ISFIELD(FcnInfo,"ErrIdentifier")
+        %<SLibReportErrorWithIdAndArgs(FcnInfo.ErrIdentifier, FcnInfo.ErrArguments)>
+    %endif
+
+    %assign NumInputs = FcnInfo.NumInputs
+    %createrecord FcnRec { Name FcnName; RetTypeId FcnTypeId; NumArgs NumInputs }
+    %foreach k = NumInputs
+        %addtorecord FcnRec ArgList { Expr "u%<k>"; TypeId FcnTypeId; IsPtr 0; IsCplx 0; IsConst 1 }
+    %endforeach
+    %return FcnRec
+%endfunction
+
+
+%% Function: LibCreateHomogFcnRec ==================================================================
+%%
+%function LibCreateHomogFcnRec(FcnName, InputTypeId) void
+    %% Test that we can use call the UDD based math function attached to the model
+    %assign RTWType = FcnGetMathDataTypeNameFromId(InputTypeId)
+    %assign FcnInfo = FEVAL("rtwgettargetfcnlib_nothrow", LibGetModelName(), ...
+        FcnName, RTWType, ...
+        ::IsSimBuild)
+
+    %if ISEMPTY(FcnInfo)
+        %assign msg = "Database has no function '%<FcnName>' returning '%<RTWType>'"
+        %<LibReportFatalError(msg)>
+    %elseif ISFIELD(FcnInfo,"ErrIdentifier")
+        %<SLibReportErrorWithIdAndArgs(FcnInfo.ErrIdentifier, FcnInfo.ErrArguments)>
+    %endif
+
+    %assign NumInputs = FcnInfo.NumInputs
+    %createrecord FcnRec { Name FcnName; RetTypeId FcnGetDataTypeIdFromName(FcnInfo.FcnType); NumArgs NumInputs }
+    %foreach k = NumInputs
+        %addtorecord FcnRec ArgList { Expr "u%<k>"; TypeId InputTypeId; IsPtr 0; IsCplx 0; IsConst 1 }
+    %endforeach
+    %return FcnRec
+%endfunction
+
+
+%% Function: LibSetMathFcnRecArgExpr ===============================================================
+%%
+%function LibSetMathFcnRecArgExpr(FcnRec, idx, argStr) void
+    %if idx < SIZE(FcnRec.ArgList,1)
+        %assign FcnRec.ArgList[idx].Expr = argStr
+    %else
+        %% START_ASSERT
+        %exit "Internal error:  argument index exceeds function prototype argument count"
+        %% END_ASSERT
+    %endif
+    %return FcnRec
+%endfunction %% LibSetMathFcnRecArgExpr
+
+
+%% Function: SLibGenRTLibFcnCallForDataTypeId ======================================================
+%% Abstract:
+%%  Generate an expression to perform the requested generic run-time function
+%%  consuming the required arguments contained in the FcnRec record's ArgList.
+%%  The resulting string is not an lvalue.  If the requested generic function
+%%  is not supported, the empty string "" is returned.
+%%
+%%  If output type does not match generic output type, an output cast is added.
+%%  If an input arg type does not match the generic input type, a cast is
+%%  added to the input argument.
+%%
+%%  FcnRec record definition:
+%%    Name      - generic function name
+%%    RetTypeId - generic function return type (tSS_DOUBLE, void, etc.)
+%%    NumArgs   - length of ArgList
+%%    ArgList   - record array containing these fields:
+%%                Expr    - Expression for argument instance (string)
+%%                TypeId  - datatype ID of argument instance
+%%                IsPtr   - arg is a pointer
+%%                IsCplx  - arg is complex
+%%                IsConst - arg is const (read-only)
+%%
+%function SLibGenRTLibFcnCallForDataTypeId(FcnRec, dtypeId) void
+    %% Test that we can use call the UDD based math function attached to the model
+    %assign RTWType = FcnGetMathDataTypeNameFromId(dtypeId)
+    %assign FcnInfo = FEVAL("rtwgettargetfcnlib_nothrow", LibGetModelName(), ...
+        FcnRec.Name, RTWType, ...
+        ::IsSimBuild)
+
+    %if ISEMPTY(FcnInfo)
+        %return ""
+    %elseif ISFIELD(FcnInfo,"ErrIdentifier")
+        %<SLibReportErrorWithIdAndArgs(FcnInfo.ErrIdentifier, FcnInfo.ErrArguments)>
+    %else
+        %assign FcnName   = FcnInfo.FcnName
+        %assign FcnType   = FcnInfo.FcnType
+        %assign HdrFile   = FcnInfo.HdrFile
+        %assign NumInputs = FcnInfo.NumInputs
+    %endif
+
+    %if NumInputs != FcnRec.NumArgs
+        %% START_ASSERT
+        %assign msg = "Number of arguments indicated in FcnRec must match"...
+            "generic operation's number of arguments."
+        %<LibReportFatalError(msg)>
+        %% END_ASSERT
+    %endif
+
+    %<FcnTrackHeaderFileUsage(HdrFile, ...
+        ISFIELD(FcnInfo, "HasTLCGenCallBack") && FcnInfo.HasTLCGenCallBack, ...
+        TLC_FALSE)>
+
+    %assign FcnTypeId = FcnGetDataTypeIdFromName(FcnType)
+
+    %% Type cast the return value if needed
+    %if LibGetDataTypeIdAliasedThruToFromId(FcnTypeId) != ...
+        LibGetDataTypeIdAliasedThruToFromId(FcnRec.RetTypeId)
+        %assign outExpr = "(%<LibGetDataTypeNameFromId(FcnRec.RetTypeId)>)"
+    %else
+        %assign outExpr = ""
+    %endif
+    %assign outExpr = outExpr + FcnName + "("
+
+    %% Generate the callsite arg list
+    %foreach k = NumInputs
+        %if k > 0
+            %if !FEVAL("rem",k,2)
+                %assign comma = ",\n"
+            %else
+                %assign comma = ","
+            %endif
+        %else
+            %assign comma = ""
+        %endif
+        %assign outExpr = "%<outExpr>%<comma>%<FcnRec.ArgList[k].Expr>"
+    %endforeach
+    %return "%<outExpr>)"
+%endfunction %% SLibGenRTLibFcnCallForDataTypeId
+
+
+
+%% Function: SLibGenRTLibFcnCall ===================================================================
+%%  Abstract: This function is similar with SLibGenRTLibFcnCallForDataTypeId.
+%%  The difference is data type id is not defined, use retunr data type to
+%%  choose function.
+%%
+%function SLibGenRTLibFcnCall(FcnRec) void
+
+    %return SLibGenRTLibFcnCallForDataTypeId(FcnRec, FcnRec.RetTypeId)
+
+%endfunction %% SLibGenRTLibFcnCall
+
+
+%% Function: LibGenUnusedParamFcnCall ==============================================================
+%% Abstract:
+%%    Return a complete callsite expression the unused parameter macro.
+%%
+%%       o) fcnName    - Name of the unused parameter macro
+%%       o) input0Arg  - string expression of param
+%%
+%%
+%function LibGenUnusedParamFcnCall(fcnName, input0Arg) void
+    %assign fcnInfo = SLibGenUnusedParamFcnCall(fcnName, input0Arg)
+    %if ISEMPTY(fcnInfo)
+        %return ""
+    %else
+        %return fcnInfo.Expr
+    %endif
+%endfunction
+
+%% Function: LibGenUnusedParamFcnCall ==============================================================
+%% Abstract:
+%%    Return the header file the unused parameter macro.
+%%
+%%       o) fcnName    - Name of the unused parameter macro
+%%       o) input0Arg  - string expression of param
+%%
+%%
+%function LibGenUnusedParamHeaderFile(fcnName, input0Arg) void
+    %assign fcnInfo = SLibGenUnusedParamFcnCall(fcnName, input0Arg)
+    %if ISEMPTY(fcnInfo)
+        %return ""
+    %else
+        %return fcnInfo.HeaderFile
+    %endif
+%endfunction
+
+%function SLibGenUnusedParamFcnCall(fcnName, input0Arg) void
+    %switch fcnName
+      %case "RT_UNUSED_PARAMETER"
+        %createrecord FcnRec { Name fcnName; RetTypeId FcnGetDataTypeIdFromName("void"); IsPtr 0; IsCplx 0; IsConst 0; NumArgs 1 }
+        %addtorecord FcnRec ArgList { Expr input0Arg; TypeId FcnGetDataTypeIdFromName("void"); IsPtr 0; IsCplx 0; IsConst 0 }
+        %break
+      %default
+        %exit "MATHLIB: Unsupported function %<fcnName>."
+    %endswitch
+    %return SLibGenFcnCallInfo(FcnRec)
+%endfunction
+
+%% Function: LibGenStringFcnCall2Args ==============================================================
+%% Abstract:
+%%    Return a complete callsite expression for a strxxx() function with 2
+%%    arguments of string.h
+%%
+%%       o) fcnName    - Name of the memxxx() function
+%%       o) input0Arg  - string expression of input arg 0
+%%       o) input1Arg  - string expression of input arg 1
+%%
+%%
+%function LibGenStringFcnCall2Args(fcnName, input0Arg, input1Arg) void
+    %assign fcnRec = LibCreateHomogMathFcnRec(fcnName, tSS_POINTER)
+    %assign fcnRec = LibSetMathFcnRecArgExpr(fcnRec, 0, input0Arg)
+    %assign fcnRec = LibSetMathFcnRecArgExpr(fcnRec, 1, input1Arg)
+    %return SLibGenRTLibFcnCall(fcnRec)
+%endfunction
+
+
+%% Function: LibGenZCFcnCall =======================================================================
+%% Abstract:
+%%    Return a complete callsite expression for a rt_ZCFcn() function
+%%
+%%       o) dataTypeId - Data Type Id of input signal
+%%       o) input0Arg  - string expression of input arg 0
+%%       o) input1Arg  - string expression of input arg 1
+%%       o) input2Arg  - string expression of input arg 2
+%%
+%%
+%function LibGenZCFcnCall(dataTypeId, input0Arg, input1Arg, input2Arg) void
+    %assign fcnRec = LibCreateHomogFcnRec("rt_zcFcn", dataTypeId)
+    %assign fcnRec = LibSetMathFcnRecArgExpr(fcnRec, 0, input0Arg)
+    %assign fcnRec = LibSetMathFcnRecArgExpr(fcnRec, 1, input1Arg)
+    %assign fcnRec = LibSetMathFcnRecArgExpr(fcnRec, 2, input2Arg)
+    %return SLibGenRTLibFcnCallForDataTypeId(fcnRec, dataTypeId)
+%endfunction
+
+
+%% Function: SLibGenPowFcnCall =====================================================================
+%% Abstract:
+%%    Return a complete callsite expression for a math function in the
+%%    target environment given the following function prototype info:
+%%
+%%       o) RTWFcnName - Generic function name
+%%       o) RTWFcnType - type needed for function I/O (e.g., tSS_DOUBLE)
+%%       o) input1Arg  - string expression of input arg 1 of type RTWFcnType
+%%       o) input2Arg  - if needed, addition input of type RTWFcnType
+%%
+%%    If no specification is found that exactly matches the
+%%    given prototype, this function returns the output name
+%%    along with the casts needed at each position (input, output).
+%%
+%function SLibGenPowFcnCall(RTWFcnName, RTWFcnTypeId, input1Arg, input2Arg) void
+
+    %createrecord FcnRec { Name RTWFcnName; RetTypeId RTWFcnTypeId; NumArgs 2 }
+    %addtorecord FcnRec ArgList { Expr input1Arg; TypeId RTWFcnTypeId; IsPtr 0; IsCplx 0; IsConst 0 }
+    %addtorecord FcnRec ArgList { Expr input2Arg; TypeId RTWFcnTypeId; IsPtr 0; IsCplx 0; IsConst 0 }
+
+    %assign fcnInfo = SLibGenFcnCallInfoWithCheck(FcnRec, TLC_FALSE, TLC_FALSE)
+    %if ISEMPTY(fcnInfo)
+        %<FcnTrackMathDotH()>
+        %if GenCPP
+            %assign fcnName = "std::pow"
+        %else
+            %assign fcnName = "pow"
+        %endif
+        %return fcnName + "(" + input1Arg + ", " + input2Arg + ")"
+    %endif
+    %return fcnInfo.Expr
+%endfunction %% LibGenTwoInputFcnCall
+
+%function FcnTrackMathDotH() void
+    %if GenCPP
+        %<FcnTrackHeaderFileUsage("<cmath>", TLC_FALSE, TLC_FALSE)>
+    %else
+        %<FcnTrackHeaderFileUsage("math.h", TLC_FALSE, TLC_FALSE)>
+    %endif
+%endfunction
+
+%% Function: LibGenSharedMathFcnCall ===============================================================
+%function LibGenSharedMathFcnCall(RTWFcnName, RTWFcnTypeId, input1Arg, input2Arg) void
+
+    %% under backwards compatiability mode, it's identical to LibGenMathFcnCall.
+    %% under shared mode, it will also record include file requirements into stack.
+    %if RTWFcnName == "ldexp"
+        %return LibGenNonHomogenousTwoInputFcnCall(RTWFcnName, tSS_DOUBLE, ...
+            tSS_DOUBLE, input1Arg, ...
+            tSS_INTEGER, input2Arg)
+    %else
+        %createrecord FcnRec { Name RTWFcnName; RetTypeId RTWFcnTypeId; NumArgs 1 }
+        %addtorecord FcnRec ArgList { Expr input1Arg; TypeId RTWFcnTypeId; IsPtr 0; IsCplx 0; IsConst 0 }
+
+        %if input2Arg != ""
+            %assign FcnRec.NumArgs = 2
+            %addtorecord FcnRec ArgList { Expr input2Arg; TypeId RTWFcnTypeId; IsPtr 0; IsCplx 0; IsConst 0 }
+        %endif
+
+        %return LibGenFcnCall(FcnRec)
+    %endif
+%endfunction %% LibGenSharedMathFcnCall
+
+
+
+%% Function: SLibCheckComplexSupportRequired =======================================================
+%function SLibCheckComplexSupportRequired(Headers) void
+    %if !ISEMPTY(Headers)
+        %assign nHeaders = SIZE(Headers,1)
+        %foreach idx = nHeaders
+            %if (Headers[idx] == "blascompat32_crl.h")
+                %if (SupportComplex == 0)
+                    %assign msg = "Use of blascompat32_crl.h requires complex numbers to be supported. Please enable complex support."
+                    %<LibReportFatalError(msg)>
+                %endif
+            %endif
+            %if (Headers[idx] == "blas.h")
+                %if (SupportComplex == 0)
+                    %assign msg = "Use of blas.h requires complex numbers to be supported. Please enable complex support."
+                    %<LibReportFatalError(msg)>
+                %endif
+            %endif
+
+        %endforeach
+    %endif
+%endfunction %%SLibCheckComplexSupportRequired
+
+%% Function: LibGenNonHomogenousTwoInputFcnCall ====================================================
+%% Abstract:
+%%    Return a complete callsite expression for a math function in the
+%%    target environment given the following function prototype info:
+%%
+%%       o) RTWFcnName - Generic function name
+%%       o) RTWFcnTypeIdOut - type needed for function Output (e.g., tSS_DOUBLE)
+%%       o) RTWFcnTypeId1 - type needed for function arg1 type (e.g., tSS_DOUBLE)
+%%       o) input1Arg  - string expression of input arg 1 of type RTWFcnType
+%%       o) RTWFcnTypeId2 - type needed for function arg 2 type (e.g., tSS_DOUBLE)
+%%       o) input2Arg  - if needed, addition input of type RTWFcnType
+%%
+%%    If no specification is found that exactly matches the
+%%    given prototype, this function returns the output name
+%%    along with the casts needed at each position (input, output).
+%%
+%function LibGenNonHomogenousTwoInputFcnCall(RTWFcnName, RTWFcnTypeIdOut, RTWFcnTypeId1, input1Arg, RTWFcnTypeId2, input2Arg) void
+    %assign fcnInfo = SLibGenNonHomogenousTwoInputFcnCallInfo(RTWFcnName, RTWFcnTypeIdOut, RTWFcnTypeId1, input1Arg, RTWFcnTypeId2, input2Arg)
+    %if ISEMPTY(fcnInfo)
+        %return ""
+    %endif
+    %return fcnInfo.Expr
+%endfunction %% LibGenTwoInputFcnCall
+
+%% Function: SLibGenNonHomogenousTwoInputFcnCallInfo ===============================================
+%% Abstract:
+%%    Return a complete callsite expression and header file for a math function in the
+%%    target environment given the following function prototype info:
+%%
+%%       o) RTWFcnName - Generic function name
+%%       o) RTWFcnTypeIdOut - type needed for function Output (e.g., tSS_DOUBLE)
+%%       o) RTWFcnTypeId1 - type needed for function arg1 type (e.g., tSS_DOUBLE)
+%%       o) input1Arg  - string expression of input arg 1 of type RTWFcnType
+%%       o) RTWFcnTypeId2 - type needed for function arg 2 type (e.g., tSS_DOUBLE)
+%%       o) input2Arg  - if needed, addition input of type RTWFcnType
+%%
+%%    If no specification is found that exactly matches the
+%%    given prototype, this function returns the output name
+%%    along with the casts needed at each position (input, output).
+%%
+%function SLibGenNonHomogenousTwoInputFcnCallInfo(RTWFcnName, RTWFcnTypeIdOut, RTWFcnTypeId1, input1Arg, RTWFcnTypeId2, input2Arg) void
+
+    %createrecord FcnRec { Name RTWFcnName; RetTypeId RTWFcnTypeIdOut; NumArgs 2 }
+    %addtorecord FcnRec ArgList { Expr input1Arg; TypeId RTWFcnTypeId1; IsPtr 0; IsCplx 0; IsConst 0 }
+    %addtorecord FcnRec ArgList { Expr input2Arg; TypeId RTWFcnTypeId2; IsPtr 0; IsCplx 0; IsConst 0 }
+
+    %return SLibGenFcnCallInfo(FcnRec)
+%endfunction %% SLibGenNonHomogenousTwoInputFcnCallInfo
+
+%% Function: SLibGetNonFiniteFcnCallExpr ===========================================================
+%% Abstract:
+%%    Return a complete callsite expression for a nonfinite function in the
+%%    target environment given the following function prototype info:
+%%
+%%       o) RTWFcnName    - Nonfinite function name
+%%       o) RTWFcnTypeIn  - type needed for function input (e.g., tSS_DOUBLE)
+%%       o) RTWFcnTypeOut - type needed for function output (e.g., tSS_DOUBLE)
+%%       o) inputArg      - string expression of input arg of type RTWFcnTypeIn
+%%
+%%
+%function SLibGetNonFiniteFcnCallExpr(fcnName, inType, outType, inArgExpr) void
+    %assign callInfo = SLibGenOneInputOneOutputFcnCallInfo(fcnName,inType,outType,inArgExpr)
+    %assign includeHdr = !SLibIsCompactFileFormat() || ::CompiledModel.GenUtilsSrcInSharedLocation == 1
+    %if !ISEMPTY(callInfo) && includeHdr && ISEMPTY(callInfo.HeaderFile)
+        %switch fcnName
+          %case "getNaN"
+          %case "rtGetNaN"
+            %if outType == tSS_DOUBLE
+                %<FcnTrackHeaderFileUsage("rtGetNaN.h", TLC_FALSE, TLC_TRUE)>
+            %else
+                %<FcnTrackHeaderFileUsage("rtGetNaNF.h", TLC_FALSE, TLC_TRUE)>
+            %endif
+            %break
+          %case "isNaN"
+          %case "rtIsNaN"
+            %if inType == tSS_DOUBLE
+                %<FcnTrackHeaderFileUsage("rtIsNaN.h", TLC_FALSE, TLC_TRUE)>
+            %else
+                %<FcnTrackHeaderFileUsage("rtIsNaNF.h", TLC_FALSE, TLC_TRUE)>
+            %endif
+            %break
+          %case "getInf"
+          %case "rtGetInf"
+            %if outType == tSS_DOUBLE
+                %<FcnTrackHeaderFileUsage("rtGetInf.h", TLC_FALSE, TLC_TRUE)>
+            %else
+                %<FcnTrackHeaderFileUsage("rtGetInfF.h", TLC_FALSE, TLC_TRUE)>
+            %endif
+            %break
+          %case "isInf"
+          %case "rtIsInf"
+            %if inType == tSS_DOUBLE
+                %<FcnTrackHeaderFileUsage("rtIsInf.h", TLC_FALSE, TLC_TRUE)>
+            %else
+                %<FcnTrackHeaderFileUsage("rtIsInfF.h", TLC_FALSE, TLC_TRUE)>
+            %endif
+            %break
+          %case "getMinusInf"
+          %case "rtGetMinusInf"
+            %if outType == tSS_DOUBLE
+                %<FcnTrackHeaderFileUsage("rtGetMinusInf.h", TLC_FALSE, TLC_TRUE)>
+            %else
+                %<FcnTrackHeaderFileUsage("rtGetMinusInfF.h", TLC_FALSE, TLC_TRUE)>
+            %endif
+            %break
+        %endswitch
+    %endif
+    %return callInfo.Expr
+%endfunction
+
+%% Function: LibGenOneInputOneOutputFcnCall ========================================================
+%% Abstract:
+%%    Return a complete callsite expression for a math function in the
+%%    target environment given the following function prototype info:
+%%
+%%       o) RTWFcnName    - Generic function name
+%%       o) RTWFcnTypeIn  - type needed for function input (e.g., tSS_DOUBLE)
+%%       o) RTWFcnTypeOut - type needed for function output (e.g., tSS_DOUBLE)
+%%       o) inputArg      - string expression of input arg of type RTWFcnTypeIn
+%%
+%%    If no specification is found that exactly matches the
+%%    given prototype, this function returns the output name
+%%    along with the casts needed at each position (input, output).
+%%
+%function LibGenOneInputOneOutputFcnCall(RTWFcnName, RTWFcnTypeIdIn, RTWFcnTypeIdOut, inputArg) void
+    %assign fcnInfo = SLibGenOneInputOneOutputFcnCallInfo(RTWFcnName, RTWFcnTypeIdIn, RTWFcnTypeIdOut, inputArg)
+    %if ISEMPTY(fcnInfo)
+        %return ""
+    %endif
+    %return fcnInfo.Expr
+%endfunction %% LibGenOneInputOneOutputFcnCall
+
+%% Function: SLibGenOneInputOneOutputFcnCallInfo ===================================================
+%% Abstract:
+%%    Return a complete callsite expression for a math function in the
+%%    target environment given the following function prototype info:
+%%
+%%       o) RTWFcnName    - Generic function name
+%%       o) RTWFcnTypeIn  - type needed for function input (e.g., tSS_DOUBLE)
+%%       o) RTWFcnTypeOut - type needed for function output (e.g., tSS_DOUBLE)
+%%       o) inputArg      - string expression of input arg of type RTWFcnTypeIn
+%%
+%%    If no specification is found that exactly matches the
+%%    given prototype, this function returns the output name
+%%    along with the casts needed at each position (input, output).
+%%
+%function SLibGenOneInputOneOutputFcnCallInfo(RTWFcnName, RTWFcnTypeIdIn, RTWFcnTypeIdOut, inputArg) void
+
+    %createrecord FcnRec { Name RTWFcnName; RetTypeId RTWFcnTypeIdOut; NumArgs 1}
+
+    %if (RTWFcnTypeIdIn == tSS_POINTER)
+        %assign IsPtr = 1
+    %else
+        %assign IsPtr = 0
+    %endif
+
+    %addtorecord FcnRec ArgList { Expr inputArg; TypeId RTWFcnTypeIdIn; IsPtr %<IsPtr>; IsCplx 0; IsConst 0 }
+
+    %return SLibGenFcnCallInfo(FcnRec)
+%endfunction %% SLibGenOneInputOneOutputFcnCallInfo
+
+
+
+
+
+
+
+%% Function: LibGenFcnExpr =========================================================================
+%% Abstract:
+%%  Generate an expression to perform the requested generic run-time function
+%%  consuming the required arguments contained in the FcnRec record's ArgList.
+%%  This API also supports function inlining and returns function body if a
+%%  corresponding TflCustom entry exists for the given function.
+%%  The resulting string is not an lvalue.  If the requested generic function
+%%  is not supported, the empty string "" is returned.
+%%
+%%  If output type does not match generic output type, an output cast is added.
+%%  If an input arg type does not match the generic input type, a cast is
+%%  added to the input argument.
+%%
+%%  FcnRec record definition:
+%%    Name        - generic function name
+%%    RetTypeId   - generic function return type (tSS_DOUBLE, etc.)
+%%    RetExpr     - Expression for return argument (string)
+%%    NumArgs     - length of ArgList
+%%    ArgList     - record array containing these fields:
+%%                  Expr    - Expression for argument instance (string)
+%%                  TypeId  - datatype ID of argument instance
+%%                  IsPtr   - arg is a pointer
+%%                  IsCplx  - arg is complex
+%%                  IsConst - arg is const (read-only)
+%%
+%function LibGenFcnExpr(FcnRec, sharedLib) void
+    %assign fcnInfo = SLibGenFcnExprInfo(FcnRec)
+    %if ISEMPTY(fcnInfo)
+        %return ""
+    %endif
+    %return fcnInfo.Expr
+%endfunction %% LibGenFcnExpr
+
+%% Function: SLibGenFcnExprInfo ====================================================================
+%% Abstract:
+%%  Generate an expression to perform the requested generic run-time function
+%%  consuming the required arguments contained in the FcnRec record's ArgList.
+%%  This API also supports function inlining and returns function body if a
+%%  corresponding TflCustom entry exists for the given function.
+%%  The expression is packed into a record along with the required header file.
+%%  The resulting string is not an lvalue.  If the requested generic function
+%%  is not supported, the empty string "" is returned.
+%%
+%%  If output type does not match generic output type, an output cast is added.
+%%  If an input arg type does not match the generic input type, a cast is
+%%  added to the input argument.
+%%
+%%  FcnRec record definition:
+%%    Name      - generic function name
+%%    RetTypeId - generic function return type (tSS_DOUBLE, etc.)
+%%    RetExpr   - Expression for return argument (string)
+%%    NumArgs   - length of ArgList
+%%    ArgList   - record array containing these fields:
+%%                Expr    - Expression for argument instance (string)
+%%                TypeId  - datatype ID of argument instance
+%%                IsPtr   - arg is a pointer
+%%                IsCplx  - arg is complex
+%%                IsConst - arg is const (read-only)
+%%
+%function SLibGenFcnExprInfo(FcnRec) void
+
+    %copyrecord FcnRecForTfl FcnRec
+
+    %assign isRetVoid = ISFIELD(FcnRec, "RetTypeId")
+    %% Convert the TypeIDs into strings
+
+    %assign RetTypeId = []
+    %assign RetTypeIsPtr = []
+    %if isRetVoid == TLC_TRUE
+        %assign RetTypeId = FcnRec.RetTypeId
+        %assign RetTypeIsPtr = 0
+        %if ISFIELD(FcnRec, "IsPtr")
+            %if FcnRec.IsPtr == 1
+                %assign RetTypeIsPtr = 1
+            %endif
+        %endif
+        %assign FcnRecForTfl.RetTypeId = FcnGetMathDataTypeNameFromId(RetTypeId)
+    %endif
+    %assign ArgIds = []
+    %if FcnRec.NumArgs == 1
+        %assign argType = FcnGetMathDataTypeNameFromId(FcnRec.ArgList.TypeId)
+        %assign FcnRecForTfl.ArgList.TypeId = argType
+    %else
+        %foreach k = FcnRec.NumArgs
+            %assign argType = FcnGetMathDataTypeNameFromId(FcnRec.ArgList[k].TypeId)
+            %assign FcnRecForTfl.ArgList[k].TypeId = argType
+        %endforeach
+    %endif
+
+    %% Test that we can use call the UDD based math function attached to the model
+    %assign FcnInfo = FEVAL("rtwprivate","rtw_tfl_query_nothrow", LibGetModelName(),  FcnRecForTfl, ...
+        ::IsSimBuild)
+
+    %if ISEMPTY(FcnInfo)
+        %return FcnInfo
+    %elseif ISFIELD(FcnInfo,"ErrIdentifier")
+        %<SLibReportErrorWithIdAndArgs(FcnInfo.ErrIdentifier, FcnInfo.ErrArguments)>
+    %else
+        %assign CustomizationEntry = FcnInfo.CustomizationEntry
+    %endif
+
+    %if CustomizationEntry == 0
+        %assign functionInfo = FcnGenerateFcnCallInfo(FcnRec, FcnRecForTfl, FcnInfo, ...
+            isRetVoid, RetTypeId, RetTypeIsPtr)
+
+        %assign functionInfo.Expr = "%<FcnRec.RetExpr> = %<functionInfo.Expr>;"
+        %return functionInfo
+    %else
+        %assign vec = FcnGenExprFromIR(FcnRec, FcnInfo)
+        %assign callExpr = "%<vec[2]>"
+        %createrecord FunctionInfo { Expr callExpr; HeaderFile " "}
+        %return FunctionInfo
+    %endif
+
+%endfunction %% SLibGenFcnExprInfo
+
+
+
+%% Function: SLibGetMathFcnNameFromTFL =============================================================
+%% Abstract:
+%%    Return the implementation name for the given generic math function name
+%%
+%%       o) RTWFcnName - Generic function name
+%%       o) RTWFcnType - type needed for function output (e.g., tSS_DOUBLE)
+%%       o) Arg1Type   - type needed for function input (e.g., tSS_DOUBLE)
+%%       o) Arg2Type   - if needed, type needed for function input (e.g., tSS_DOUBLE)
+%%
+%%    If no specification is found that exactly matches the
+%%    given prototype, the empty string is returned
+%%
+%%    If use of a function requires a #include of a file
+%%    then the use of this function triggers the generation of the
+%%    include file associated with this function.
+%%
+%%
+%function SLibGetMathFcnNameFromTFL(RTWFcnName, RTWFcnTypeId, Arg1Type, Arg2Type) void
+
+    %createrecord FcnRec { Name RTWFcnName; RetTypeId RTWFcnTypeId; NumArgs 1 }
+    %addtorecord FcnRec ArgList { Expr ""; TypeId Arg1Type; IsPtr 0; IsCplx 0; IsConst 0 }
+
+    %if Arg2Type != ""
+        %assign FcnRec.NumArgs = 2
+        %addtorecord FcnRec ArgList { Expr ""; TypeId Arg2Type; IsPtr 0; IsCplx 0; IsConst 0 }
+    %endif
+
+    %assign FcnInfo = SLibGenFcnCallInfoWithCheck(FcnRec, TLC_TRUE, TLC_TRUE)
+
+    %if ISEMPTY(FcnInfo)
+        %return ""
+    %endif
+    %return FcnInfo.FcnName
+%endfunction %% SLibGetMathFcnNameFromTFL
+
+%% ==========================================================================
+%% Run TLC based TargetFcnLib callbacks a second time. This will catch any
+%% callbacks that need to be invoked due to TLC TFL queries that happen
+%% after the first set of callbacks (specifically initnonfinite)
+%function SLibRunTFLCallbacks() void
+    %assign numcbs = FEVAL("rtwprivate","rtw_get_tfl_cb_info", LibGetModelName(), -1)
+    %% Allow a maximum of 5 callback recursions
+    %foreach j = 5
+        %if numcbs == 0
+            %break
+        %endif
+        %foreach i = numcbs
+            %assign fctInfo = FEVAL("rtwprivate","rtw_get_tfl_cb_info", ...
+                LibGetModelName(), i+1)
+
+            %% Only generate if the file has not been generated and does not already exist
+            %if !ISSUBSTRING(::CalledTflTlcCallbacks, fctInfo.FileName+",")
+                %assign ::CalledTflTlcCallbacks = ::CalledTflTlcCallbacks + fctInfo.FileName + ","
+                %assign fullPath = FULLFILE(GenUtilsPath,fctInfo.FileName)
+                %assign headerExists = FEVAL("exist","%<fullPath>.h")
+                %assign sourceExists = FEVAL("exist","%<fullPath>.%<LangFileExt>")
+                %if !(headerExists || sourceExists)
+                    %assign fileH = SLibGetFileRecForUtilCode("util_hdr", fctInfo.FileName)
+                    %<LibSetSourceFileOutputDirectory(fileH,GenUtilsPath)>
+                    %assign fileC = SLibGetFileRecForUtilCode("util_src", fctInfo.FileName)
+                    %<LibSetSourceFileOutputDirectory(fileC,GenUtilsPath)>
+                    %if FILE_EXISTS(fctInfo.genCallback)
+                        %% Remove '.tlc' from callback name and use as the 'Type' for generatefile.
+                        %assign type = STRREP("%<fctInfo.genCallback>",".tlc","")
+                        %generatefile type "%<fctInfo.genCallback>"
+                        %if GENERATE_TYPE_FUNCTION_EXISTS(fctInfo, fctInfo.genCallbackFcn, type)
+                            %% Generate the contents of the header and source files
+                            %assign result =  GENERATE_TYPE(fctInfo, fctInfo.genCallbackFcn, type, fileH, fileC)
+                        %else
+                            %assign args = ["%<fctInfo.genCallbackFcn>", "%<fctInfo.genCallback>"]
+                            %<SLibReportErrorWithIdAndArgs("RTW:tlc:FcnNotFoundinTFL", args)>
+                        %endif
+                    %else
+                        %<SLibReportErrorWithIdAndArgs("RTW:tlc:FileNotFoundinTFL", "%<fctInfo.genCallback>")>
+                    %endif
+                %else
+                    %if headerExists
+                        %<SLibAddGeneratedFileToList(fctInfo.FileName + ".h", "utility", "header","")>
+                    %endif
+                    %if sourceExists
+                        %<SLibAddGeneratedFileToList(fctInfo.FileName + "." + LangFileExt, "utility", "source","")>
+                    %endif
+                    %<SLibRefreshTflHitCache(fctInfo)>
+                %endif
+            %endif
+        %endforeach
+        %assign numcbs = FEVAL("rtwprivate","rtw_get_tfl_cb_info",LibGetModelName(),-2)
+    %endforeach
+%endfunction %% SLibRunTFLCallbacks
+
+%% Function SLibRefreshTflHitCache(fctInfo) ========================================
+%% Abstract:
+%%   When a utility file alreay exists, refresh the TFL cache list for other
+%% utilty files that it depends on.
+%%
+%function SLibRefreshTflHitCache(fctInfo) void
+    %if !ISEMPTY(fctInfo.genCallback) && fctInfo.genCallback == "genrtnonfinite.tlc" && !EXISTS(CustomNonFinites)
+        %assign type = "genrtnonfinite"
+        %generatefile "%<type>" "%<fctInfo.genCallback>"
+        %if FILE_EXISTS(fctInfo.genCallback) && GENERATE_TYPE_FUNCTION_EXISTS(fctInfo, fctInfo.genCallbackFcn, type)
+            %assign fileH = SLibGetFileRecForUtilCode("util_hdr", fctInfo.FileName)
+            %assign fileC = SLibGetFileRecForUtilCode("util_src", fctInfo.FileName)
+            %% refresh the TFL hit cache without generating the real files
+            %assign result =  GENERATE_TYPE(fctInfo, fctInfo.genCallbackFcn, type, fileH, fileC)
+            %<SLibSetModelFileAttribute(fileH, "Filter", 1)>
+            %<SLibSetModelFileAttribute(fileC, "Filter", 1)>
+        %else
+            %<SLibReportErrorWithIdAndArgs("RTW:tlc:FcnNotFoundinTFL", ...
+                ["%<fctInfo.genCallbackFcn>", "%<fctInfo.genCallback>"])>
+        %endif
+    %endif
+%endfunction
+
+%function FcnAppendModuleFcnHeaders(module, headerFile, moduleFileTypeIdx) void
+    %assign system = System[module.CGSystemIdx]
+    %<FcnAppendSystemFcnHeaders(system, headerFile, moduleFileTypeIdx)>
+%endfunction
+
+%function FcnAppendSystemFcnHeaders(system, headerFile, moduleFileTypeIdx) void
+    %<SLibCheckComplexSupportRequired(headerFile)>
+    %assign ownerSystem = System[system.FileNameOwnerIdx]
+    %assign fileName = ""
+    %if ISEQUAL(moduleFileTypeIdx, ::CompiledModel.MdlHeaderFileIdx)
+        %<SLibCacheSystemCodeToFile("sys_hdr_util_incl", system, headerFile)>
+        %assign fileName = SLibGetFullFileNameForSystemCode("sys_hdr_util_incl", system.SystemIdx)
+    %elseif ISEQUAL(moduleFileTypeIdx, ::CompiledModel.MdlSrcFileIdx)
+        %<SLibCacheSystemCodeToFile("sys_src_util_incl", system, headerFile)>
+        %assign fileName = SLibGetFullFileNameForSystemCode("sys_src_util_incl", system.SystemIdx)
+    %else
+        %error "Unknown moduleFileTypeIdx for ModuleFileType"
+    %endif
+    %if !ISEMPTY(fileName)
+        %<SLibUpdateHeadersNeededByFile(fileName, headerFile)>
+    %endif
+%endfunction
+
+%function FcnAppendUtilsIncludes(utilsIncludeIdx, headerFile) void
+    %<SLibCheckComplexSupportRequired(headerFile)>
+    %<SLibCacheCodeToFile(utilsIncludeIdx, headerFile)>
+    %assign fileType = CGMODEL_ACCESS("FileRepository.getFileType", utilsIncludeIdx)
+    %assign fileName = LibGetModelFileFullName(fileType)
+    %<SLibUpdateHeadersNeededByFile(fileName, headerFile)>
+%endfunction
+
+%function GetCurrentUtilsIncludesIdx() void
+    %return ::CurrentUtilsIncludesIdx
+%endfunction
+
+%function SetCurrentUtilsIncludesIdx(val) void
+    %assign ::CurrentUtilsIncludesIdx = val
+%endfunction
+
+%% Function: FcnTrackHeaderFileUsage ===============================================================
+%% Abstract:
+%%   Low-level routine for tracking utility header file usage, e.g. for
+%%   CRL header files, or header files for MATLAB/Simulink utilities.
+%%   Note: for header files for MATLAB/Simulink utilities generated in
+%%   TLC, call FcnTrackSharedUtilHeaderFileUsage instead of calling this
+%%   directly.
+%%
+%%       o) HdrFile - file name of header for utility functions
+%%       o) hasTLCGenCallBack - is the utility generated via a TLC callback
+%%       o) isGeneratedUtility - is the utility one generated by MATLAB/Simulink, eg
+%%                               fixed point or lookup table utilities, as
+%%                               distinguished from others like CRL utility headers
+%%
+%function FcnTrackHeaderFileUsage(HdrFile, hasTLCGenCallBack, isGeneratedUtility) void
+    %if !ISEMPTY(HdrFile)
+        %assign compact = SLibIsCompactFileFormat()
+        %assign sharedUtilFile = ...
+            (::CompiledModel.GenUtilsSrcInSharedLocation == 1) || !compact
+        %if sharedUtilFile && ...
+            (%<CGMODEL_ACCESS("CGModel.GlobalSharedUtilsIncludesSize")> > 0)
+            %<LibAddtoSharedUtilsIncludes(HdrFile)>
+        %else
+            %assign genToShared = (::CompiledModel.GenUtilsSrcInSharedLocation == 1)
+            %% Handle the case of a utility that we generate via a TLC callback when we're not
+            %% generating to a shared location, and the file format is compact.  In this case the
+            %% utility is inlined into model.c and the declaration is in model.h, and thus there
+            %% is no utility header file to include
+            %assign fileIsGenerated = hasTLCGenCallBack
+            %if !hasTLCGenCallBack && HdrFile == "rt_nonfinite.h"
+                %assign fileIsGenerated = TLC_TRUE
+            %endif
+            %if !genToShared && compact && fileIsGenerated
+                %return
+            %endif
+            %assign utilsIncludesIdx = GetCurrentUtilsIncludesIdx()
+            %if ISEMPTY(utilsIncludesIdx)
+                %assign moduleIdx = ::CurrentModuleIdx >= 0 ? ::CurrentModuleIdx : GetBaseModuleIdx()
+                %assign rtwModule = RTWCGModules.RTWCGModule[moduleIdx]
+                %if isGeneratedUtility && genToShared
+                    %assign moduleFileTypeIdx = ::CompiledModel.MdlSrcFileIdx
+                %else
+                    %assign moduleFileTypeIdx = ::CompiledModel.MdlHeaderFileIdx
+                %endif
+                %<FcnAppendModuleFcnHeaders(rtwModule, HdrFile, moduleFileTypeIdx)>
+            %else
+                %<FcnAppendUtilsIncludes(utilsIncludesIdx, HdrFile)>
+            %endif
+        %endif
+    %endif
+%endfunction
+
+%% Function SLibAddTFLTypeIncludes ==============================================
+%% Go over all the entries with DWork in the TFL hit cache and include those CRL
+%% headers that define DWork types to model_types.h. CRL headers are included to
+%% model_types.h only when public types are present in the module.
+%function SLibAddTFLTypeIncludes() void
+
+    %assign hdrIncludes = ""
+    %foreach modIdx = RTWCGModules.NumRTWCGModules
+        %assign module = RTWCGModules.RTWCGModule[modIdx]
+        %if module.HasPublicTypes
+            %assign hdrIncludes = FEVAL("rtwprivate","rtw_get_tfl_dwork_headers",LibGetModelName())
+            %break
+        %endif
+    %endforeach
+
+    %if ISEMPTY(hdrIncludes)
+        %return
+    %endif
+
+    %<SetCurrentUtilsIncludesIdx("mdl_types_util_incl")>
+    %foreach h = SIZE(hdrIncludes,1)
+        // CRL headers are not Simulink generated utilities, set isGeneratedUtility=false
+        %<FcnTrackHeaderFileUsage(hdrIncludes[h], TLC_FALSE, TLC_FALSE)>
+    %endforeach
+    %<SetCurrentUtilsIncludesIdx("")>
+
+%endfunction
+
+%% Function: SLibLoadNonfiniteUtils ================================================================
+%% Abstract:
+%%   This function generates and loads nonfinite utility functions that have been
+%%   created by CGIR in either rtwgen or from calls in TLC to the CGIR nonfinite
+%%   generation functions
+%%
+%function SLibLoadNonfiniteUtils() void
+    %if !::NonFinitesGenerated && SLibIsValidCoderContext()
+        %assign rtwCtx = ::CompiledModel.RTWContext
+        %if FEVAL("rtwprivate", "rtwcgtlc", "WriteNonfiniteFile", rtwCtx)
+            %include "%<LibGetModelName()>_nonfinite_util.tlc"
+            %<CGIRBlockRegisterNonfiniteFunctions()>
+            %<SLibSynchronizeFileRepWithFileRecords()>
+            %%assign ::NonFinitesGenerated = TLC_TRUE
+        %else
+            %%START_ASSERT
+            %error "Failure to write the nonfinite TLC file"
+            %%END_ASSERT
+        %endif
+    %endif
+%endfunction
+
+
+%function TrackPendingHeaderUsage() void
+    %assert(SLibIsMainCodeGenPhase())
+    %with ::CompiledModel
+        %assign originalIndex = ::CurrentModuleIdx
+        %foreach headerIdx = CGMODEL_ACCESS("Includes.NumCachedTrackingHeaders")
+            %assign headerFile = CGMODEL_ACCESS("Includes.GetTrackingHeaderFile", headerIdx)
+            %assign hasCallback = CGMODEL_ACCESS("Includes.getHasTLCGenCallBack", headerIdx)
+            %assign isGenUtil = CGMODEL_ACCESS("Includes.getIsGeneratedUtil", headerIdx)
+            %assign headerBlock= CGMODEL_ACCESS("Includes.getModuleIndex", headerIdx)
+            %if headerBlock != -1
+                %assign currentSystem = ::CompiledModel.System[headerBlock]
+                %assign ::CurrentModuleIdx = currentSystem.CGIRModuleIdx
+            %else
+                %assign ::CurrentModuleIdx = -1
+            %endif
+            %<FcnTrackHeaderFileUsage(headerFile, hasCallback, isGenUtil)>
+        %endforeach
+        %<CGMODEL_ACCESS("Includes.ResetTrackingHeaders")>
+        %assign ::CurrentModuleIdx = originalIndex
+    %endwith
+%endfunction
+
+%function FcnTrackSharedUtilHeaderFileUsageForFCTFile(HdrFile) void
+    %assign moduleIdx = ::CurrentModuleIdx >= 0 ? ::CurrentModuleIdx : GetBaseModuleIdx()
+    %assign rtwModule = RTWCGModules.RTWCGModule[moduleIdx]
+    %assign system = System[rtwModule.CGSystemIdx]
+    %if LibSystemIsRoot(system) && !SLibIsCompactFileFormat()
+        %assign stepSourceFile = GetEntryPointFcnMappedFile("OutputFcn", "Source", system.CurrentTID)
+        %if stepSourceFile == SLibGetFileNameForCode("mdl_src") + "." + ::LangFileExt
+            %return
+        %endif
+
+        %if (::CompiledModel.GenUtilsSrcInSharedLocation == 1)
+            %<SLibUpdateHeadersNeededByFile(stepSourceFile, HdrFile)>
+        %else
+            %<SLibUpdateHeadersNeededByFile(stepSourceFile, SLibGetFullFileNameForCode("mdl_priv_fcn_decl"))>
+        %endif
+    %endif
+%endfunction
+
+
+%endif %% _MATHLIB_
+
+%% [EOF] mathlib.tlc

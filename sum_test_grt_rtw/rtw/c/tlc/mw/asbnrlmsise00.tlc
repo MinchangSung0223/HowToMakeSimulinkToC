@@ -1,0 +1,49 @@
+%% File    : asbnrlmsise00.tlc
+%%
+%% Abstract: Utility to create prototype of and call gtd7 for
+&& the NRLMSISE-00 Atmospheric Model
+%%     Used by Aerospace Blockset blocks:
+%%         - NRLMSISE-00 Atmospheric Model block
+%%         - Orbit Propagator block
+%%         - Spacecraft Dynamics block
+%%
+%% This file must be under matlab\rtw\c\tlc\ in order
+%% to call it with RTW::Block::tlcFunction()
+%%
+%% Copyright 2022 The MathWorks, Inc.
+
+%if EXISTS(_ASBNRLMSISE00_) == 0
+%assign _ASBNRLMSISE00_ = 1
+
+%assign MATLAB_ROOT = FEVAL("matlabroot")
+%if FILE_EXISTS("%<MATLAB_ROOT>/toolbox/shared/aerospace/common/shared_aero_atmos/tlc_c/asbnrlmsise00lib.tlc")
+    %addincludepath "%<MATLAB_ROOT>/toolbox/shared/aerospace/common/shared_aero_atmos/tlc_c"
+    %include "asbnrlmsise00lib.tlc"
+%endif
+
+%% Function FcnCallGTD7SharedUtility ==========================================
+%% Abstract:
+%%
+%%
+%function FcnCallGTD7SharedUtility(block, doy_input, sec, h_input, phi, lambda, lst_input, f107a, f107, ap, aph, numInputs, switches, sw, swc, rho, T) Output
+    %%
+    %% When calling through saeroatmnrlmsise.tlc, these macros are already defined in mdlSetup
+    %% (they are protected to only be defined once).
+    %% They need to be defined here when called from OrbitPropagator and SpacecraftDynamics
+    %openfile buffer
+    %<FcnCreateNRLMSISETypeDefMacros()>
+    %closefile buffer
+    %<LibCacheTypedefs(buffer)>
+    %openfile buffer
+    %<FcnCreateNRLMSISEDefineMacros()>
+    %closefile buffer
+    %<LibCacheDefine(buffer)>
+
+    %assign gtd7FcnName = FcnGTD7SharedUtility(block)
+    %<gtd7FcnName>(%<doy_input>, %<sec>, %<h_input>, %<phi>, %<lambda>, %<lst_input>, %<f107a>, %<f107>, %<ap>, %<aph>, %<numInputs>, %<switches>, %<sw>, %<swc>, %<rho>, %<T>);
+
+%endfunction
+
+%endif %% _ASBNRLMSISE00_
+
+%% [EOF] asbnrlmsise00.tlc

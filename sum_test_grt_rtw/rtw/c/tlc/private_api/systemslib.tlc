@@ -1,0 +1,29 @@
+%% ============================================================================
+%% Abstract:
+%%   systemslib.tlc contains utility functions for generating system output code.
+%%
+%% Copyright 2019-2020 The MathWorks, Inc.
+%%
+%selectfile NULL_FILE
+
+%if EXISTS(_SYSTEMSLIB_) == 0
+%assign _SYSTEMSLIB_ = 1
+
+%function SLibIsMatrixUsingStdArray() void
+    %return CGMODEL_ACCESS("CGModel.IsMatrixUsingStdArray")
+%endfunction
+
+%% ============================================================================
+%% Abstract:
+%%    Returns the feature value of EnableRTMZeroInitCpp.
+%%
+%function SLibIsRTMZeroInitCppEnabled() void
+    %return CGMODEL_ACCESS("CGModel.EnableRTMZeroInitCpp")
+%endfunction
+
+%function SLibRemoveSimstrucFromRtwtypes() void
+    %return CGMODEL_ACCESS("CGModel.getRemoveSimstrucFromRtwtypes")
+%endfunction
+
+%endif  %% _SYSTEMSLIB_
+%% [EOF] systemslib.tlc

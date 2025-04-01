@@ -1,0 +1,768 @@
+%%
+%%
+%% Copyright 2009-2023 The MathWorks, Inc.
+%%
+
+%if EXISTS(_FILEPACKAGINGLIB_) == 0
+%assign _FILEPACKAGINGLIB_ = 1
+
+%include "fileoperations.tlc"
+%include "filepackaging_private_api.tlc"
+
+%% Function: SLibGenModelTypesFile() ===============================
+%% Abstract:
+%%   Return true if model_types.h is needed in Compact file format.
+%% Case 1: there are Code Variants
+%% Case 2: there are non-shared custom files generated for custom storage class
+%%
+%function SLibGenModelTypesFile()
+    %if SLibIsCompactFileFormat() && ...
+        !SLibGenCustomNonSharedHeaderFileForCSC()
+        %return TLC_FALSE
+    %endif
+    %return TLC_TRUE
+%endfunction %% SLibGenModelTypesFile
+
+%% Function: FcnGetFileNameTableID(codeGroupName) ====================
+%% Abstract:
+%%    Lookup the id of file name table for for codeGroupName.
+%%
+%function FcnGetFileNameTableID(codeGroupName)
+    %assign value = GETFIELD(::CompiledModel.FilePackagingTable, codeGroupName)
+    %assign fileName_ID = value[0]
+    %assert (TYPE(fileName_ID)=="Number")
+    %return fileName_ID
+%endfunction %% FcnGetFileNameTableID
+
+%% Function: SLibGetFileNameForCodeFromTLC(codeGroupName) ====================
+%% Abstract:
+%%    Lookup the file name in file packaging table from TLC for codeGroupName
+%%
+%function SLibGetFileNameForCodeFromTLC(codeGroupName)
+    %assign fileName_ID = FcnGetFileNameTableID(codeGroupName)
+    %return ::CompiledModel.FileNameTable.File%<fileName_ID>.Name
+%endfunction %% SLibGetFileNameForCode
+
+%% Function: SLibGetSectionNameForCode(codeGroupName)
+%% Abstract:
+%%    Lookup the section name in file packaging table for codeGroupName
+%%
+%function SLibGetSectionNameForCode(codeGroupName)
+    %assign sectionName = ""
+    %if SLibIsMoveFilePackagingTableFromTLC()
+        %assign sectionName = CGMODEL_ACCESS("FileRepository.getFileSection", codeGroupName)
+    %else
+        %assign value = GETFIELD(::CompiledModel.FilePackagingTable, codeGroupName)
+        %assign sectionName_ID = value[1]
+        %assert(TYPE(sectionName_ID)=="Number")
+        %assign sectionName = ::CompiledModel.FileSectionTable.Section%<sectionName_ID>
+    %endif
+    %return sectionName
+%endfunction %% SLibGetSectionNameForCode
+
+%function SLibUpdateModelFileAttribute(modelFileName, codeGroupName)
+    %if ISEMPTY(modelFileName)
+        %return ""
+    %endif
+    %if SLibIsMoveFilePackagingTableFromTLC()
+        %assign fileCreator = CGMODEL_ACCESS("FileRepository.getFileAttribute", codeGroupName, "Creator")
+        %assign GroupName =  CGMODEL_ACCESS("FileRepository.getFileAttribute", codeGroupName,  "Group")
+        %assign type = CGMODEL_ACCESS("FileRepository.getFileAttribute", codeGroupName, "Type")
+        %assign fileRec = SLibAddModelFile(type, fileCreator, modelFileName)
+        %<SLibSetModelFileAttribute(fileRec, "Group", GroupName)>
+        %return fileRec
+    %else
+        %assign fileName_ID = FcnGetFileNameTableID(codeGroupName)
+        %assert (TYPE(fileName_ID)=="Number")
+        %assign fileCreator = ::CompiledModel.FileNameTable.File%<fileName_ID>.Creator
+        %assign GroupName =  ::CompiledModel.FileNameTable.File%<fileName_ID>.Group
+        %assign type = ::CompiledModel.FileNameTable.File%<fileName_ID>.Type
+        %assign fileRec = SLibAddModelFile(type, fileCreator, modelFileName)
+        %<SLibSetModelFileAttribute(fileRec, "Group", GroupName)>
+        %return fileRec
+    %endif
+%endfunction
+
+%% Function: SLibGetFileRecForCode(codeGroupName) =====================
+%% Abstract:
+%%    Return the file record to hold specified codeGroup. Return "" if
+%%    this codeGroup should not be generated.
+%%
+%function SLibGetFileRecForCode(codeGroupName)
+    %assign fileName = SLibGetFileNameForCode(codeGroupName)
+    %return SLibUpdateModelFileAttribute(fileName, codeGroupName)
+%endfunction %% SLibGetFileRecForCode
+
+%function SLibGetFileRecForModelCode(codeGroupName, fullFileName)
+    %return SLibUpdateModelFileAttribute(fullFileName, codeGroupName)
+%endfunction
+
+%% Function: SLibGetFileRec(FileType) =====================
+%% Abstract:
+%%    Return the file record for the given file type - new
+%%    file packaging infrastructure
+%function SLibGetFileRec(FileType) void
+    %if FileType == "UndefinedFile"
+        %return ""
+    %endif
+
+    %assign modelFileIndex = CGMODEL_ACCESS("FileRepository.getModelFileIndex", FileType)
+
+    %if modelFileIndex == -1
+        %assign fileRec = CGMODEL_ACCESS("FileRepository.createNewFileOrReturnExistingFile", FileType)
+        %return LibUpdateCompiledModelFiles(fileRec)
+    %else
+        %return ::CompiledModel.ModelFiles.ModelFile[modelFileIndex]
+    %endif
+%endfunction %% SLibGetFileRec
+
+%% Function: SLibCacheCodeToFile(codeGroupName, buffer) ===============
+%% Abstract:
+%%    Place code buffer into right section of a right file record according to
+%%  file package table.
+%%
+%function SLibCacheCodeToFile(codeGroupName, buffer) void
+    %assign fileRec = SLibGetFileRecForCode(codeGroupName)
+    %assign section = SLibGetSectionNameForCode(codeGroupName)
+
+    %if !WHITE_SPACE(buffer) && !ISEMPTY(fileRec) && !ISEMPTY(section)
+        %if section == "Includes" || section == "RequiredIncludes" || section == "UtilityIncludes"
+            %<LibSetIncludesSection(fileRec, section, buffer)>
+        %else
+            %<SLibSetModelFileAttribute(fileRec, section, buffer)>
+        %endif
+    %endif
+%endfunction %% SLibCacheCodeToFile
+
+%% Function: SLibGetFileNameForSystemCode(codeGroupName, sysIdx) ======
+%% Abstract:
+%%    Lookup the file name in file packaging table for system
+%%  codeGroupName.
+%%    sysIdx is a system index. (Include <root> system)
+%%
+%function SLibGetFileNameForSystemCode(codeGroupName, sysIdx)
+    %assign system = ::CompiledModel.System[sysIdx]
+    %if SLibIsMoveFilePackagingTableFromTLC()
+        %return CGMODEL_ACCESS("FileRepository.getSystemBaseFileNameForCode", codeGroupName, system.FileNameOwnerIdx)
+    %else
+        %if CGMODEL_ACCESS("CGModel.System.SourceFileName", system.SystemIdx) != GetRootSystemSourceFileName()
+            %% go to separate subsystem file
+            %assign systemSrcFileName = SLibGetSystemOutputSrcFileBaseName(system)
+            %assign systemHdrFileName = SLibGetSystemOutputHdrFileBaseName(system)
+            %assign systemPrivHdrFileName = systemHdrFileName
+        %else
+            %% go to model file
+            %assign systemHdrFileName = SLibGetFileNameForCodeFromCGModel("mdl_hdr")
+            %assign systemSrcFileName = SLibGetFileNameForCodeFromCGModel("mdl_src")
+            %assign systemPrivHdrFileName = systemHdrFileName + "_private"
+        %endif
+        %%modify
+        %assign subsystemDataFileName = systemSrcFileName + "_data"
+        %assign value = GETFIELD(::CompiledModel.systemFilePackagingTable, codeGroupName)
+        %assign fileName_ID = value[0]
+        %assert (TYPE(fileName_ID)=="Number")
+        %assign fileNameString = ::CompiledModel.systemFileNameTable.File%<fileName_ID>.Name
+        %assign fileName = %<fileNameString>
+        %return fileName
+    %endif
+%endfunction %% SLibGetFileNameForSystemCode
+
+%% Function: SLibGetSectionNameForSystemCode(codeGroupName,system) ====
+%% Abstract:
+%%    Lookup the section name in file packaging table for system
+%%  codeGroupName.
+%%    system is a system record. (Include <root> system)
+%%
+%function SLibGetSectionNameForSystemCode(codeGroupName, system)
+    %if SLibIsMoveFilePackagingTableFromTLC()
+        %return CGMODEL_ACCESS("FileRepository.getSystemFileSection", codeGroupName)
+    %else
+        %assign value = GETFIELD(::CompiledModel.systemFilePackagingTable, codeGroupName)
+        %assign sectionName_ID = value[1]
+        %assert(TYPE(sectionName_ID)=="Number")
+        %assign sectionName = ::CompiledModel.FileSectionTable.Section%<sectionName_ID>
+        %return sectionName
+    %endif
+%endfunction %% SLibGetSectionNameForSystemCode
+
+%% Function: SLibGetFileRecForSystemCode(codeGroupName, system, isRLS, isGlobalServer) =======
+%% Abstract:
+%%    Return the file record to hold specified system codeGroup.
+%%    Return "" if codeGroup should not be generated.
+%%    system is a system record. (Include <root> system)
+%%    If isRLS, the file goes into the utilities group.
+%%    If isGlobalServer and a header file, the file goes into the utilities group.
+%%
+%function SLibGetFileRecForSystemCode(codeGroupName, system, isRLS, isGlobalServer)
+    %assign fileName = SLibGetFileNameForSystemCode(codeGroupName, system.SystemIdx)
+    %if SLibIsMoveFilePackagingTableFromTLC()
+        %assign type = CGMODEL_ACCESS("FileRepository.getSystemFileAttribute", codeGroupName, "Type")
+    %else
+        %assign value = GETFIELD(::CompiledModel.systemFilePackagingTable, codeGroupName)
+        %assign fileName_ID = value[0]
+        %assert (TYPE(fileName_ID)=="Number")
+        %assign type = ::CompiledModel.systemFileNameTable.File%<fileName_ID>.Type
+    %endif
+    %assign globalServerHeader = isGlobalServer && (type == "SystemHeader")
+    %if globalServerHeader && !SLibIsCompactFileFormat()
+        %assign fileName = fileName + "_private"
+    %endif
+    %if ISEMPTY(fileName)
+        %return fileName
+    %endif
+    %assign fileRec = SLibAddSystemFile(globalServerHeader, type, fileName)
+    %if CGMODEL_ACCESS("CGModel.System.SourceFileName", system.SystemIdx) == CGMODEL_ACCESS("CGModel.System.SourceFileName", GetBaseSystemIdx())
+        %<SLibSetModelFileAttribute(fileRec, "Group", "model")>
+    %else
+        %if isRLS
+            %<SLibSetModelFileAttribute(fileRec, "Group", "utility")>
+        %else
+            %<SLibSetModelFileAttribute(fileRec, "Group", "subsystem")>
+        %endif
+    %endif
+    %return fileRec
+%endfunction %% SLibGetFileRecForSystemCode
+
+%function SLibAddSystemFile(globalServerHeader, type, fileName)
+    %if SLibGetEnableFileControlForSimulinkFcns() && globalServerHeader && SLibIsCompactFileFormat()
+        %% For global Simulink function, the header file should be placed in the sharedutils folder
+        %assign fileNameWithPath = "%<::CompiledModel.RTWInfoMatFile.sharedSourcesDir>%<fileName>"
+        %assign fileRec = SLibAddModelFileWithBasename(type, "Simulink", fileNameWithPath, fileName)
+    %else
+        %assign fileRec = SLibAddModelFile(type, "Simulink", fileName)
+    %endif
+    %return fileRec
+%endfunction %% SLibAddSystemFile
+
+%% Function: SLibCacheSystemCodeToFile(codeGroupName, system, buffer) =========
+%% Abstract:
+%%    Place code buffer into right section of a right file record according to
+%%  system file package table.
+%%    system is a system record. (Include <root> system)
+%%
+%function SLibCacheSystemCodeToFile(codeGroupName, system, buffer) void
+    %if LibIsSystemExistingLibrary(system)
+        %return
+    %endif
+
+    %if(CGMODEL_ACCESS("CGModel.TLCServerBlockOperationsInCPP"))
+        %assign sysIdx = system.FileNameOwnerIdx
+        %<LibCacheSystemCodeToFile(codeGroupName, sysIdx, buffer)>
+    %else
+        %assign ownerFile = ::CompiledModel.System[system.FileNameOwnerIdx]
+        %assign isRls = LibSystemIsReusedLibraryFcn(ownerFile)
+        %assign isGlobalServer = LibIsGlobalServer(ownerFile)
+        %assign fileRec = SLibGetFileRecForSystemCode(codeGroupName, system, isRls, isGlobalServer)
+        %assign sectionName = SLibGetSectionNameForSystemCode(codeGroupName, system)
+        %if !WHITE_SPACE(buffer) && !ISEMPTY(fileRec) && !ISEMPTY(sectionName)
+            %if sectionName == "Includes" || sectionName == "RequiredIncludes" || sectionName == "UtilityIncludes"
+                %<LibSetIncludesSection(fileRec, sectionName, buffer)>
+            %else
+                %<SLibSetModelFileAttribute(fileRec, sectionName, buffer)>
+            %endif
+        %endif
+    %endif
+%endfunction %% SLibCacheSystemCodeToFile
+
+%% Function: SLibGetFileRecForUtilCode(codeGroupName, utilFileName) ============
+%% Abstract:
+%%    Return the file record to hold specified utility codeGroup. Return ""
+%% if this codeGroup should not be generated. Return the passed-in fileRec if
+%% instruced by the file packaging table ("$pass_in_filename$" in FPT).
+%%
+%function SLibGetFileRecForUtilCode(codeGroupName, utilFileName)
+    %assign fileName = SLibGetFileNameForCode(codeGroupName)
+    %if ISEMPTY(fileName)
+        %return ""
+    %endif
+    %if fileName == "$pass_in_filename$"
+        %assign fileName = utilFileName
+    %endif
+    %return SLibUpdateModelFileAttribute(fileName, codeGroupName)
+%endfunction %% SLibGetFileRecForUtilCode
+
+%% Function: SLibCacheUtilCodeToFile(codeGroupName, utilFileRec, buffer) ======
+%% Abstract:
+%%    Place utility code buffer into the right section of a right file record
+%%  according to utility file package table.
+%%
+%function SLibCacheUtilCodeToFile(codeGroupName, utilFileRec, buffer) void
+    %assign utilRecName = LibGetFileRecordName(utilFileRec)
+    %assign fileRec = SLibGetFileRecForUtilCode(codeGroupName, utilRecName)
+    %assign sectionName = SLibGetSectionNameForCode(codeGroupName)
+    %if !WHITE_SPACE(buffer) && !ISEMPTY(fileRec) && !ISEMPTY(sectionName)
+        %if ISEMPTY(fileRec)
+            %% if not specified in File Packaging Table, use the passed-in fileRec
+            %if sectionName == "Includes" || sectionName == "RequiredIncludes" || sectionName == "UtilityIncludes"
+                %<LibSetIncludesSection(utilFileRec, sectionName, buffer)>
+            %else
+                %<SLibSetModelFileAttribute(utilFileRec, sectionName, buffer)>
+            %endif
+        %else
+            %% if specifiled in File Packaging Table, do not use passed-in fileRec
+            %if sectionName == "Includes" || sectionName == "RequiredIncludes" || sectionName == "UtilityIncludes"
+                %<LibSetIncludesSection(fileRec, sectionName, buffer)>
+            %else
+                %<SLibSetModelFileAttribute(fileRec, sectionName, buffer)>
+            %endif
+        %endif
+    %endif
+%endfunction %% SLibCacheUtilCodeToFile
+
+%% Function: SLibFilterUtilSourceFile(utilFileRec) =====
+%% Abstract:
+%%   Request to filter out utility source file.
+%%
+%function SLibFilterUtilSourceFile(utilFileRec)  void
+    %if !SLibIsCompactFileFormat() || ::CompiledModel.GenUtilsSrcInSharedLocation == 1
+        %<SLibSetModelFileAttribute(utilFileRec, "Filter", 1)>
+    %endif
+%endfunction %% SLibFilterUtilSourceFile
+
+%% Function: SLibCacheMacroToUtilityFile(macroName,macroBuf,codeGroup,fileRec)=
+%% Abstract:
+%%   Cache macro buf into fileRec only when it has not been cached.
+%%
+%function SLibCacheMacroToUtilityFile(macroName, macroBuf, codeGroup, fileRec) void
+    %assign definedMacro = SLibDirectAccessGetFileAttribute(fileRec, "DefinedMacro")
+
+    %if !ISSUBSTRING(definedMacro, macroName + ", ")
+        %assign newDefinedMacro = definedMacro + macroName + ", "
+        %<SLibDirectAccessSetFileAttribute(fileRec, "DefinedMacro", newDefinedMacro)>
+        %<SLibCacheUtilCodeToFile(codeGroup, fileRec, macroBuf)>
+    %endif
+%endfunction %% SLibCacheMacroToUtilityFile
+
+%% Function: FcnGenOpenExternCForCPP() =========================================
+%function FcnGenOpenExternCForCPP() Output
+    %if GenCPP
+        %if SLibIsCompactFileFormat()
+            extern "C" {
+        %else
+            #ifdef __cplusplus
+            extern "C" {
+                #endif
+        %endif
+    %endif
+%endfunction %% FcnGenOpenExternCForCPP
+
+%% Function: FcnGenCloseExternCForCPP() ========================================
+%function FcnGenCloseExternCForCPP() Output
+    %if GenCPP
+        %if SLibIsCompactFileFormat()
+        } /* extern "C" */
+        %else
+            #ifdef __cplusplus
+        } /* extern "C" */
+        #endif
+        %endif
+    %endif
+%endfunction %% FcnGenCloseExternCForCPP
+
+%% Function: SLibIncludePrivateHeader() =========================================
+%function SLibIncludePrivateHeader() Output
+    %assign mdlPrivHdrFileName = SLibGetFileNameForCode("mdl_priv_hdr")
+    %if !WHITE_SPACE(mdlPrivHdrFileName)
+        #include "%<mdlPrivHdrFileName>.h"
+    %endif
+%endfunction %% SLibIncludePrivateHeader
+
+%% Function: SLibIncludeModelTypesHeader() =========================================
+%function  SLibIncludeModelTypesHeader() Output
+    %assign mdlTypesHdrFileName = SLibGetFileNameForCode("mdl_types_hdr")
+    %if !WHITE_SPACE(mdlTypesHdrFileName)
+        #include "%<mdlTypesHdrFileName>.h"
+    %endif
+%endfunction %% SLibIncludeModelTypesHeader
+
+%% Function: SLibIncludeModelHeader() =========================================
+%function SLibIncludeModelHeader() Output
+    %assign mdlHeaderFile = SLibGetFileNameForCode("mdl_hdr")
+    %if !WHITE_SPACE(mdlHeaderFile)
+        #include "%<mdlHeaderFile>.h"
+    %endif
+%endfunction %% SLibIncludeModelHeader
+
+%% Function: SLibIncludeRTnonFiniteHeader() =====================================
+%function SLibIncludeRTnonFiniteHeader() Output
+    %if SLibRealNonFinitesRequired() && ...
+        (!SLibIsCompactFileFormat() || ::CompiledModel.GenUtilsSrcInSharedLocation == 1)
+        #include "rt_nonfinite.h"
+    %endif
+%endfunction %% SLibIncludeRTnonFiniteHeader
+
+%% Function: SLibUpdateLocalSymbolTableForFile() ================================
+%function SLibUpdateLocalSymbolTableForFile(fileName, symbolName) void
+    %assign success = CGMODEL_ACCESS("FileRepository.updateTheLocalSymbolTable", fileName, symbolName)
+    %assert (success == 0)
+%endfunction %% SLibUpdateLocalSymbolTableForFile
+
+%function SLibCacheCodeToModelFile(codeGroupName, fullFileName, buffer) void
+    %assign fileRec = SLibGetFileRecForModelCode(codeGroupName, fullFileName)
+    %assign section = SLibGetSectionNameForCode(codeGroupName)
+
+    %if !WHITE_SPACE(buffer) && !ISEMPTY(fileRec) && !ISEMPTY(section)
+        %if section == "Includes" || section == "RequiredIncludes" || section == "UtilityIncludes"
+            %<LibSetIncludesSection(fileRec, section, buffer)>
+        %else
+            %<SLibSetModelFileAttribute(fileRec, section, buffer)>
+        %endif
+    %endif
+%endfunction
+
+%function SLibGetVarGroupInstDeclarationFile(category) void
+    %assign fileName = CGMODEL_ACCESS("FileRepository.getVarGroupInstDeclarationFile", category)
+    %return fileName
+%endfunction
+
+%function SLibGetVarGroupInstDefinitionFile(category) void
+    %assign fileName = CGMODEL_ACCESS("FileRepository.getVarGroupInstDefinitionFile", category)
+    %return fileName
+%endfunction
+
+%function SLibFcnBufferContainsRTM(buffer) void
+    %assign p = CGMODEL_ACCESS("String.find", buffer, ::tSimStructType)
+    %return p >= 0
+%endfunction
+
+%function SLibGetFcnDeclarationRTMSymbolName() void
+    %return "\%<::tSimStructType>"
+%endfunction
+
+%function SLibGetFcnDefinitionRTMSymbolName() void
+    %return "\%<::tSimStructType>_tag"
+%endfunction
+
+%function SLibAddEntryToFunctionTable(fcnName, headerFile, sourceFile, declDeps, defnDeps) void
+    %assign comma = ""
+    %assign declDepsStr = ""
+    %foreach idx = SIZE(declDeps, 1)
+        %assign declDepsStr = declDepsStr + comma + declDeps[idx]
+        %assign comma = ","
+    %endforeach
+
+    %assign comma = ""
+    %assign defnDepsStr = ""
+    %foreach idx = SIZE(defnDeps, 1)
+        %assign defnDepsStr = defnDepsStr + comma + defnDeps[idx]
+        %assign comma = ","
+    %endforeach
+
+    %assign success = CGMODEL_ACCESS("FileRepository.addEntryToFunctionTable", ...
+        fcnName, headerFile, sourceFile, declDepsStr, defnDepsStr)
+    %assert success
+%endfunction
+
+%function SLibUpdateFunctionSymbols(fcnName, declDeps, defnDeps) void
+    %assign comma = ""
+    %assign declDepsStr = ""
+    %foreach idx = SIZE(declDeps, 1)
+        %assign declDepsStr = declDepsStr + comma + declDeps[idx]
+        %assign comma = ","
+    %endforeach
+
+    %assign comma = ""
+    %assign defnDepsStr = ""
+    %foreach idx = SIZE(defnDeps, 1)
+        %assign defnDepsStr = defnDepsStr + comma + defnDeps[idx]
+        %assign comma = ","
+    %endforeach
+
+    %assign success = CGMODEL_ACCESS("FileRepository.updateFunctionSymbols", ...
+        fcnName, declDepsStr, defnDepsStr)
+    %assert success
+%endfunction
+
+%function SLibGetFullFileNameForUtilCode(codeGroupName, utilFileRec) void
+    %assign utilRecName = LibGetFileRecordName(utilFileRec)
+    %assign fileRec = SLibGetFileRecForUtilCode(codeGroupName, utilRecName)
+    %if ISEMPTY(fileRec)
+        %return ""
+    %else
+        %return LibGetModelFileAttribute(fileRec.Index, "BaseName")
+    %endif
+%endfunction
+
+%function SLibUpdateCGTypeUsedByFile(fileName, cgTypeIdx) void
+    %if cgTypeIdx < 0
+        %return
+    %endif
+    %assign success = CGMODEL_ACCESS("FileRepository.updateCGTypeUsedByFile", fileName, cgTypeIdx)
+    %assert success
+%endfunction
+
+%function SLibDumpNewIncludes(fileName) void
+    %if LibUseOldFilePackagingInfrastructure()
+        %return ""
+    %endif
+    %assign numHeaders = CGMODEL_ACCESS("FileRepository.getNumberOfHeaders", fileName)
+    %openfile retBuff
+    %foreach idx = numHeaders
+        %assign incHeaderFile = CGMODEL_ACCESS("FileRepository.getFileAtIndex", fileName, idx)
+        %if incHeaderFile[0] == "<" || incHeaderFile[0] == "\""
+            #include %<incHeaderFile>
+        %else
+            #include %<"\"%<incHeaderFile>\"">
+        %endif
+    %endforeach
+    %closefile retBuff
+    %return retBuff
+%endfunction
+
+%function SLibUpdateSymbolForFunction(fcnName, symbol, isIOSymbol) void
+    %assign declDeps = []
+    %assign defnDeps = []
+    %if isIOSymbol
+        %assign declDeps = declDeps + symbol
+    %else
+        %assign defnDeps = defnDeps + symbol
+    %endif
+    %<SLibUpdateFunctionSymbols(fcnName, declDeps, defnDeps)>
+%endfunction
+
+%function SLibUpdateLocalSymbolForCurrentFunction(symbol) void
+    %if ::CurrentModuleIdx >= 0 && ::CurrentFunctionIdx >= 0
+        %assign fcn = ::CompiledModel.RTWCGModules.RTWCGModule[::CurrentModuleIdx].Function[::CurrentFunctionIdx]
+        %<SLibUpdateSymbolForFunction(fcn.Name, symbol, TLC_FALSE)>
+        %return TLC_TRUE
+    %else
+        %return TLC_FALSE
+    %endif
+%endfunction
+
+%function SLibUpdateSymbolFwdDeclInFile(fileName, symbolName) void
+    %assign success = CGMODEL_ACCESS("FileRepository.updateSymbolFwdDeclInFile", fileName, symbolName)
+    %assert success
+%endfunction
+
+%function SLibUpdateMdlRefGuardedHeader(aFileName, aMdlRefHeader, aGuardedHeaderStr) void
+    %assign success = CGMODEL_ACCESS("FileRepository.updateMdlRefGuardedHeader",aFileName, aMdlRefHeader, aGuardedHeaderStr)
+    %assert success
+%endfunction
+
+%function SLibGetEnableFileControlForEntryPointFcns()
+    %return CGMODEL_ACCESS("FileRepository.getEnableFileControlForEntryPointFcns")
+%endfunction
+
+%function SLibGetEnableFileControlForSimulinkFcns()
+    %return CGMODEL_ACCESS("FileRepository.getEnableFileControlForSimulinkFcns")
+%endfunction
+
+%function GetEntryPointFcnMappedFile(fcnType, fileType, fileIndex)
+    %if ISEMPTY(fileIndex)
+        %assign fileIndex = 0
+    %endif
+    %assign fcnFileName = CGMODEL_ACCESS("FileRepository.getFileNameForFileType", fcnType, fileType, fileIndex)
+
+    %if !ISEMPTY(fcnFileName)
+        %return fcnFileName
+    %endif
+
+    %if fileType == "Header"
+        %return SLibGetFileNameForCode("mdl_hdr") + ".h"
+    %else
+        %return SLibGetFileNameForCode("mdl_src") + "." + ::LangFileExt
+    %endif
+
+%endfunction
+
+%function FcnHasNoActiveMapping(bufferType, fcnHeaderFileName, fcnSourceFileName)
+    %if bufferType == "Declaration"
+        %return fcnHeaderFileName == SLibGetFileNameForCode("mdl_hdr") + ".h" || ISEMPTY(fcnHeaderFileName)
+    %else
+        %return fcnSourceFileName == SLibGetFileNameForCode("mdl_src") + "." + ::LangFileExt || ISEMPTY(fcnSourceFileName)
+    %endif
+
+    %return TLC_TRUE
+%endfunction
+
+%function SLibPrintEntryPointFcnToFile(fcnType, fileType, fileIndex, fcnName, entryPointFcnBuffer, bufferType)
+    %assert bufferType == "Declaration" || bufferType == "Definition"
+    %if SLibGetEnableFileControlForEntryPointFcns()
+        %assign fcnHeaderFileName = GetEntryPointFcnMappedFile(fcnType, "Header", fileIndex)
+        %assign fcnSourceFileName = GetEntryPointFcnMappedFile(fcnType, "Source", fileIndex)
+
+        %if FcnHasNoActiveMapping(bufferType, fcnHeaderFileName, fcnSourceFileName)
+            %return entryPointFcnBuffer
+        %endif
+        %if bufferType == "Declaration"
+            %<SLibSetHeaderFileDeclarationsAttribute(fcnHeaderFileName, entryPointFcnBuffer)>\
+
+            %if SLibFcnBufferContainsRTM(entryPointFcnBuffer)
+                %<SLibUpdateLocalSymbolTableForFile(fcnHeaderFileName, SLibGetFcnDeclarationRTMSymbolName())>
+            %endif
+
+            %if !ISEMPTY(fcnName)
+                %<SLibUpdateGlobalSymbolTableForFile(fcnHeaderFileName, fcnName)>\
+            %endif
+
+        %else
+            %<SLibSetSourceFileFunctionsAttribute(fcnSourceFileName, entryPointFcnBuffer)>\
+            %<SLibUpdateHeadersNeededByFile(fcnSourceFileName, fcnHeaderFileName)>\
+        %endif
+
+        %return ""
+    %else
+        %return entryPointFcnBuffer
+    %endif
+%endfunction
+
+%function SLibPrintEntryPointFcnToFileUsingFcnName(fcnName, entryPointFcnBuffer, bufferType)
+    %assert bufferType == "Declaration" || bufferType == "Definition"
+    %if SLibGetEnableFileControlForEntryPointFcns()
+        %assign fcnHeaderFileName = CGMODEL_ACCESS("FileRepository.getHeaderFileForFunctionName", fcnName)
+        %assign fcnSourceFileName = CGMODEL_ACCESS("FileRepository.getSourceFileForFunctionName", fcnName)
+        %if FcnHasNoActiveMapping(bufferType, fcnHeaderFileName, fcnSourceFileName)
+            %return entryPointFcnBuffer
+        %endif
+        %if bufferType == "Declaration"
+            %<SLibSetHeaderFileDeclarationsAttribute(fcnHeaderFileName, entryPointFcnBuffer)>\
+
+            %if SLibFcnBufferContainsRTM(entryPointFcnBuffer)
+                %<SLibUpdateLocalSymbolTableForFile(fcnHeaderFileName, SLibGetFcnDeclarationRTMSymbolName())>
+            %endif
+
+            %if !ISEMPTY(fcnName)
+                %<SLibUpdateGlobalSymbolTableForFile(fcnHeaderFileName, fcnName)>\
+            %endif
+
+        %else
+            %<SLibSetSourceFileFunctionsAttribute(fcnSourceFileName, entryPointFcnBuffer)>\
+            %<SLibUpdateHeadersNeededByFile(fcnSourceFileName, fcnHeaderFileName)>\
+        %endif
+
+        %return ""
+    %else
+        %return entryPointFcnBuffer
+    %endif
+%endfunction
+
+
+%function SLibSetSourceFileFunctionsAttribute(srcFileName, buffer) void
+    %assign srcFile = SLibAddModelFile("SystemSource", "Simulink", srcFileName)
+    %<SLibSetModelFileAttribute(srcFile, "Functions", buffer)>
+%endfunction
+
+%function SLibSetHeaderFileDeclarationsAttribute(hdrFileName, buffer) void
+    %assign hdrFile = SLibAddModelFile("SystemHeader", "Simulink", hdrFileName)
+    %<SLibSetModelFileAttribute(hdrFile, "Declarations", buffer)>
+%endfunction
+
+%function SLibUpdateERTMainNeededByFile(fcnType, fileType, fileIndex, buffer) void
+    %if !SLibGetEnableFileControlForEntryPointFcns() || WHITE_SPACE(buffer)
+        %return
+    %endif
+
+    %assign fcnHdrFile = GetEntryPointFcnMappedFile(fcnType, fileType, fileIndex)
+    %if fcnHdrFile == FcnGetPublicModelHeaderFile()
+        %return
+    %endif
+
+    %assign ertMainFile = SLibGetFileNameForCode("main_src") + "." + ::LangFileExt
+    %if CGMODEL_ACCESS("FileRepository.getIsFileAlreadyIncluded", fcnHdrFile, ertMainFile)
+        %return
+    %endif
+
+    %openfile fcnHdrFileIncl
+    #include "%<fcnHdrFile>"
+    %closefile fcnHdrFileIncl
+    %<SLibCacheCodeToFile("mainSrc_incl", fcnHdrFileIncl)>\
+%endfunction
+
+%function SLibUpdateCLinkageHeader(aHeader) void
+    %assign success = CGMODEL_ACCESS("FileRepository.updateCLinkageForHeader", aHeader)
+    %assert success
+%endfunction
+
+%function SLibPrintSimulinkFcnDeclToHeaderFile(aSys, modelScopedSLFcnBuff) void
+    %if SLibGetEnableFileControlForEntryPointFcns()
+        %assign fcnRecord = SLibSystemFcnInfoRecord(aSys, "OutputUpdate")
+        %assign fcnName = fcnRecord.Name
+        %assign fcnHdrFileName = CGMODEL_ACCESS("FileRepository.getHeaderFileForFunctionName", fcnName)
+        %<SLibSetHeaderFileDeclarationsAttribute(fcnHdrFileName, modelScopedSLFcnBuff)>
+    %else
+        %<SLibCacheSystemCodeToFile("sys_fcn_decl", aSys, modelScopedSLFcnBuff)>
+    %endif
+%endfunction
+
+%function SLibAddModelTypesDependencyToFile(aFileName) void
+    %assign success = CGMODEL_ACCESS("FileRepository.addModelTypesDependencyToFile",aFileName)
+    %assert success
+%endfunction
+
+%function SLibFCTInfoStoredUsingFcnName(tid) void
+    %return SLibIsExportFcnDiagram() || SLibIsExplicitTaskingExportFcnRateGrouping("OutputUpdate", tid) || SLibResetOrResetWithInitEventTID(tid)
+%endfunction
+
+%function UpdateSymbolForResetFunction(block, sysFcn, tidInChildModel, tidInParentModel) void
+    %if SLibResetOrResetWithInitEventTID(tidInParentModel)
+        %assign blockInterface = GetModelrefInterface(block)
+
+        %assign callerFcnName = SampleTime[tidInParentModel].EntryFcnName
+
+        %assign sysFcnName = ISEQUAL(tidInChildModel,"") ? ...
+            "%<sysFcn>Fcn" :  "%<sysFcn>TID%<tidInChildModel>Fcn"
+
+        %assign fcnInfo = blockInterface.%<sysFcnName>
+        %assign calleeFcnName = fcnInfo.FcnName
+
+        %<SLibUpdateSymbolForFunction(callerFcnName, calleeFcnName, TLC_TRUE)>\
+    %endif
+%endfunction
+
+%% Function: SLibSetModelFileName(fileType, fName) void ========================
+%% Abstract:
+%%   Update the file name in the file packaging table to fName.
+%%
+%function SLibSetModelFileName(fileType, fName) void
+    %if !SLibIsMoveFilePackagingTableFromTLC()
+        %assign FNT_Index = FcnLoadFileNameTableIndex()
+        %switch (fileType)
+          %case "mainHdr"
+          %case "mainSrc"
+          %case "mdlSrc"
+          %case "mdlHdr"
+          %case "mdlPriv"
+          %case "mdlData"
+          %case "mdlType"
+          %case "mdlBaseHdr"
+          %case "mdlBaseSrc"
+          %case "mdlCAPIHdr"
+          %case "mdlCAPISrc"
+          %case "mdlTestHdr"
+          %case "mdlTestSrc"
+          %case "mdlsSFcn"
+          %case "mdlsfcnmid"
+          %case "mdlsfcnsf"
+          %case "mdlsfcnsid"
+          %case "mdlTgtConnSrc"
+            %assign fileIdx = fileType+"Idx"
+            %assign fileIdx = FNT_Index.%<fileIdx>
+            %assign ::CompiledModel.FileNameTable.File%<fileIdx>.Name = fName
+        %endswitch
+    %else
+        %<CGMODEL_ACCESS("FileRepository.updateFileNameToTable", fileType, fName)>
+    %endif
+%endfunction %% SLibSetModelFileName
+
+
+%<CGMODEL_ACCESS("FileRepository.addSFunctionFileNameToTable")>
+%if SLibIsERTTarget()
+    %assign filePackagingFormat = ::CompiledModel.ConfigSet.ERTFilePackagingFormat
+    %assign hasVariant = ::CompiledModel.HasVariants
+    %assign genUtilsSrcInSharedLocation = ::CompiledModel.GenUtilsSrcInSharedLocation
+    %<CGMODEL_ACCESS("FileRepository.updateFilePackagingTableProperties",IsModelReferenceSimTarget(),filePackagingFormat,SLibGenModelTypesFile(),CAST("Boolean", genUtilsSrcInSharedLocation),CAST("Boolean",hasVariant ),::GenCPP)>
+%endif
+
+%if LibUseOldFilePackagingInfrastructure()
+    %<CGMODEL_ACCESS("FileRepository.updateFilePackagingTableForOldFilePackagingInfrastructure")>
+%endif
+
+%if !SLibIsMoveFilePackagingTableFromTLC()
+    %include "filepackagingtable.tlc"
+%endif
+
+%include "filepackaginglib_FCT.tlc"
+
+%endif %% _FILEPACKAGINGLIB_
+%% [EOF] filepackaginglib.tlc

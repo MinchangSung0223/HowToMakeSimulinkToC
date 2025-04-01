@@ -1,0 +1,31 @@
+%% ============================================================================
+%% Abstract:
+%%   Utilities for managing TLC compile stats.
+%%
+%%   Copyright 2010-2018 The MathWorks, Inc.
+%%
+
+
+%% The _COMPILESTATS_ needs to be checked so that this file can be included
+%% in other TLC files like commonsetup.tlc and genmap.tlc
+%if EXISTS(_COMPILESTATS_) == 0
+%assign _COMPILESTATS_ = 1
+
+%function SetCompileStatsEnabled() void
+    %assign ::CompileStatsEnabled = ...
+        (1 == CGMODEL_ACCESS("CompileStats.getCompileStatsEnabled"))
+%endfunction
+
+%% Function: SLibAddTLCCompileStatsCheckPoint()
+%% Abstract:
+%%   Adds a checkpoint to the TLC compile stats
+%%
+%function SLibAddTLCCompileStatsCheckPoint(aStartOrEnd, checkPointName) void
+    %if (::CompileStatsEnabled == TLC_TRUE)
+        %% Must enter a valid name for the checkpoint
+        %assert !ISEMPTY(checkPointName)
+        %assign err = CGMODEL_ACCESS("CompileStats.addTLCCompileStatsCheckPoint", ...
+            "TLC", checkPointName, aStartOrEnd ? "start" : "end")
+    %endif
+%endfunction
+%endif %% _COMPILESTATS_

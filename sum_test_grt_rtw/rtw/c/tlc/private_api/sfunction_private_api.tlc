@@ -1,0 +1,69 @@
+%if EXISTS(::_SFUNCTION_PRIVATE_API_) == 0
+%assign ::_SFUNCTION_PRIVATE_API_ = 1
+%%
+%% Copyright 2019 The MathWorks, Inc.
+%%
+
+%%
+%% Global Variable to cache the existence of TLC files
+%%   FILE_EXISTS can be very slow.  Once it is known that a file exists,
+%%   it is much quicker to look in the cache.
+%%
+%assert !EXISTS(::GblInlinedTLCFileAccessed)
+%createrecord ::GblInlinedTLCFileAccessed {}
+
+%% Function{Block Functions}: LibBlockSFunctionFileExists
+%% Abstract:
+%%   LibBlockSFunctionFileExists determines if the TLC file for an
+%%   S-function exists.  Because FILE_EXISTS can be very slow especially
+%%   over a network, the existence of the file is cached in a global variable.
+%%   Subsequent calls for the same S-Function will execute much quicker.
+%%
+%function LibBlockSFunctionFileExists(sfuncName) void
+    %%
+    %% check cache to see if file existence has already been checked
+    %%
+    %if ISFIELD(::GblInlinedTLCFileAccessed, sfuncName)
+        %assign fileExists = 1
+    %elseif FILE_EXISTS(::GENERATE_FILENAME(sfuncName))
+        %assign fileExists = 1
+        %<SETFIELD(GblInlinedTLCFileAccessed, sfuncName, 1)>
+    %else
+        %assign fileExists = 0
+    %endif
+    %return fileExists
+%endfunction %% LibBlockSFunctionFileExists
+
+%% Function{Block Functions}: LibSFunctionLevel
+%% Abstract:
+%%   Determine the S-function version level {Level1, Level2, RTWLevel2}
+%%
+%function LibSFunctionLevel() void
+    %if EXISTS(ParamSettings.RTWGenerated)
+        %return "RTWLevel2"
+    %elseif EXISTS(SFcnParamSettings)
+        %% For backwards compatibility with R11
+        %if EXISTS(SFcnParamSettings.RTWGenerated)
+            %return "RTWLevel2"
+        %endif
+    %elseif ParamSettings.FunctionLevel == 1
+        %return "Level1"
+    %else
+        %return "Level2"
+    %endif
+%endfunction %% LibSFunctionLevel
+
+
+%% Function{Block Functions}: SLibSfcnHasBranchFcnCall
+%% Abstract:
+%%   This function returns true if a sfcn fcn-call
+%%   generator emits branched fcn-call.
+%%
+%function SLibSfcnHasBranchFcnCall(sfcnBlk)
+    %if (sfcnBlk.Type == "S-Function")
+        %return (LibBlockGetNumFcnCallOutputDsts(sfcnBlk) > LibBlockGetNumFcnCallOutputs(sfcnBlk))
+    %endif
+    %return TLC_FALSE
+%endfunction
+
+%endif %% _SFUNCTION_PRIVATE_API_

@@ -1,0 +1,40 @@
+%if !EXISTS(::_BLOCK_PRIVATE_API_V3_)
+%assign ::_BLOCK_PRIVATE_API_V3_ = 1
+%%
+%% Copyright 2019-2023 The MathWorks, Inc.
+%%
+
+%function CheckIndex(ucv, idx) void
+    %% Ucv and empty index handling
+    %if ucv != "" || TYPE(idx) != "Number"
+        %return 0
+    %endif
+    %return idx
+%endfunction
+
+%% Function: SLibGetBlockXWork =====================================================================
+%% Abstract:
+%%   Common function used to implement the RWork, IWork and PWork access library
+%%   functions.
+%%
+%function SLibGetBlockXWork(definedxwork, NumXWorkDefines, dwork, ucv, lcv, idx) void
+    %% Complex values are not recommented for IWork,RWork,PWork. For Complex data consider creating
+    %% a DWork.
+    %assign idx = CheckIndex(ucv,idx)
+    %assign idNum = SLibGetReimAndIdx(idx)
+    %if !ISEMPTY(idNum[0])
+        %<SLibReportErrorWithId("Simulink:CodeGeneration:InvalidSignalIndexStringForDefinedDWork")>
+    %endif
+
+    %if NumXWorkDefines > 0
+        %return CGMODEL_ACCESS("Block.DefinedXWork", CGMODEL_ACCESS("Block.DWorkVar", ...
+            dwork.RecordIdx[0], dwork.RecordIdx[1], dwork.RecordIdx[2], ::CurrentBlockFcn, ...
+            ::CurrentBlockTid),  definedxwork.Name, definedxwork.Width, ucv, lcv, "%<idx>")
+    %else
+        %return CGMODEL_ACCESS("Block.DWork", dwork.RecordIdx[0], dwork.RecordIdx[1], ...
+            dwork.RecordIdx[2], ::CurrentBlockFcn, ::CurrentBlockTid, ...
+            ucv, lcv, "%<idx>")
+    %endif
+%endfunction %% SLibGetBlockXWork
+
+%endif

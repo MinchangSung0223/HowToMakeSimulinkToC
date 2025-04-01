@@ -1,0 +1,27 @@
+%if EXISTS(_SYSTEM_PRIVATE_API_) == 0
+%assign _SYSTEM_PRIVATE_API_ = 1
+%%
+%% Copyright 2019-2022 The MathWorks, Inc.
+%%
+
+%% Function{System Functions}: LibSystemIsReusedLibraryFcn
+%% Description:
+%%      Returns TLC_TRUE if the subsystem is a reused library subsystem
+%%
+%function LibSystemIsReusedLibraryFcn(system) void
+    %return CGMODEL_ACCESS("CGModel.isRLSSubsystem", system.SystemIdx)
+%endfunction %% LibSystemIsReusedLibraryFcn
+
+
+
+%% Function: FcnReplaceCCastWithStaticCastForCPP ===================================================
+%% Abstract: Function to replace C-style casting with static_cast for C++
+%% code generation.
+%% TopTester: test/toolbox/rtw/cpp/cppclassgen/tTypeCasting.m
+%%
+%function FcnReplaceCCastWithStaticCastForCPP(inputArg)
+    %return CGMODEL_ACCESS("CGModel.replaceCCastWithStaticCast", inputArg)
+%endfunction %%FcnReplaceCCastWithStaticCastForCPP
+
+
+%endif %% _SYSTEM_PRIVATE_API_

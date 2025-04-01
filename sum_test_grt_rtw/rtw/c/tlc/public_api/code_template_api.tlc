@@ -1,0 +1,498 @@
+%% Copyright 2020-2023 The MathWorks, Inc.
+
+%if EXISTS(_CODE_TEMPLATE_API_) == 0
+%assign ::_CODE_TEMPLATE_API_ = 1
+
+%% DocFunction{Sample Time Functions}: LibNumDiscreteSampleTimes ================
+%% Abstract:
+%%   Return the number of discrete sample times in the model
+%function LibNumDiscreteSampleTimes() void
+    %return CGMODEL_ACCESS("CGModel.NumSynchronousSampleTimes") - LibIsContinuous(0)
+%endfunction
+
+%% DocFunction{Sample Time Functions}: LibNumSynchronousSampleTimes ================
+%% Abstract:
+%%   Return the number of synchronous sample times in the model
+%function LibNumSynchronousSampleTimes() void
+    %return CGMODEL_ACCESS("CGModel.NumSynchronousSampleTimes")
+%endfunction
+
+%% DocFunction{Sample Time Functions}: LibNumAsynchronousSampleTimes ============
+%% Abstract:
+%%   Return the number of asynchronous sample times in the model
+%function LibNumAsynchronousSampleTimes() void
+    %return CGMODEL_ACCESS("CGModel.NumAsynchronousSampleTimes")
+%endfunction
+
+%% DocFunction{Code Configuration Functions}: LibGetNumSourceFiles ===============
+%% Abstract:
+%%   Get the number of source files (.c and .h) that have been created.
+%%
+%% Call syntax:
+%%   %assign numFiles = LibGetNumSourceFiles()
+%%
+%% Returns:
+%%   Returns the number of files (Number).
+%function LibGetNumSourceFiles() void
+    %return LibGetNumModelFiles()
+%endfunction
+
+%% Function: LibGetNumModelFiles ===================================================================
+%% Abstract:
+%%   Get the number of generated files.
+%%
+%function LibGetNumModelFiles() void
+    %return NUM_SOURCE_FILES()
+%endfunction
+
+%function LibGetModelFileBaseName(fileType)
+    %assign fileName = ""
+    %if fileType != "UndefinedFile"
+        %assign fileName = CGMODEL_ACCESS("FileRepository.getModelFileName", fileType, "BaseFileName")
+    %endif
+    %return fileName
+%endfunction
+
+%% DocFunction{Code Configuration Functions}: LibGetMdlSrcBaseName ==============
+%% Abstract:
+%%   Return the base name of the model's main source (e.g., model.c) file
+%%
+%function LibGetMdlSrcBaseName() void
+    %return LibGetModelFileBaseName("ModelSourceFile")
+%endfunction
+
+%% DocFunction{Code Configuration Functions}: LibGetMdlPubHdrBaseName ===========
+%% Abstract:
+%%   Return the base name of the model's public header (e.g., model.h) file
+%%
+%function LibGetMdlPubHdrBaseName() void
+    %return LibGetModelFileBaseName("ModelHeaderFile")
+%endfunction
+
+%% DocFunction{Code Configuration Functions}: LibGetImageTypeSrcBaseName ==============
+%% Abstract:
+%%   Return the base name of the model's image_type source (e.g., image_type.c) file
+%%
+%function LibGetImageTypeSrcBaseName() void
+    %return LibGetModelFileBaseName("ImageTypeSrcFile")
+%endfunction
+
+%% DocFunction{Code Configuration Functions}: LibGetImageTypeHdrBaseName ===========
+%% Abstract:
+%%   Return the base name of the model's image type header (e.g., image_type.h) file
+%%
+%function LibGetImageTypeHdrBaseName() void
+    %return LibGetModelFileBaseName("ImageTypeHdrFile")
+%endfunction
+
+%% DocFunction{Code Configuration Functions}: LibGetMdlPrvHdrBaseName ===========
+%% Abstract:
+%%   Return the base name of the model's private header (e.g., model_private.h)
+%%   file
+%%
+%function LibGetMdlPrvHdrBaseName() void
+    %return LibGetModelFileBaseName("ModelPrivateFile")
+%endfunction
+
+%% DocFunction{Code Configuration Functions}: LibGetMdlDataSrcBaseName ==============
+%% Abstract:
+%%   Return the base name of the model's data file (e.g., model_data.c)
+%%
+%function LibGetMdlDataSrcBaseName() void
+    %return LibGetModelFileBaseName("ModelDataFile")
+%endfunction
+
+%% DocFunction{Code Configuration Functions}: LibGetMdlTypesHdrBaseName ==============
+%% Abstract:
+%%   Return the base name of the model types file (e.g., model_types.h)
+%%
+%function LibGetMdlTypesHdrBaseName() void
+    %return LibGetModelFileBaseName("ModelTypesFile")
+%endfunction
+
+%% DocFunction{Code Configuration Functions}: LibGetMdlCapiHdrBaseName ==============
+%% Abstract:
+%%   Return the base name of the model capi header file (e.g., model_capi.h)
+%%
+%function LibGetMdlCapiHdrBaseName() void
+    %return LibGetModelFileBaseName("ModelCapiHdrFile")
+%endfunction
+
+%% DocFunction{Code Configuration Functions}: LibGetMdlCapiSrcBaseName ==============
+%% Abstract:
+%%   Return the base name of the model capi source file (e.g., model_capi.c)
+%%
+%function LibGetMdlCapiSrcBaseName() void
+    %return LibGetModelFileBaseName("ModelCapiSrcFile")
+%endfunction
+
+%% DocFunction{Code Configuration Functions}: LibGetMdlCapiHostHdrBaseName ==========
+%% Abstract:
+%%   Return the base name of the model capi host header file (e.g., model_host_capi.h)
+%%
+%function LibGetMdlCapiHostHdrBaseName() void
+    %return LibGetModelFileBaseName("ModelCapiHostHdrFile")
+%endfunction
+
+%% DocFunction{Code Configuration Functions}: LibGetMdlTestIfHdrBaseName ============
+%% Abstract:
+%%   Return the base name of the model testinterface header file (e.g., model_testinterface.h)
+%%
+%function LibGetMdlTestIfHdrBaseName() void
+    %return LibGetModelFileBaseName("ModelTestIfHdrFile")
+%endfunction
+
+%% DocFunction{Code Configuration Functions}: LibGetMdlTestIfSrcBaseName ==============
+%% Abstract:
+%%   Return the base name of the model testinterface source file (e.g., model_testinterface.c)
+%%
+%function LibGetMdlTestIfSrcBaseName() void
+    %return LibGetModelFileBaseName("ModelTestIfSrcFile")
+%endfunction
+
+%% DocFunction{Code Configuration Functions}: LibGetDataTypeTransHdrBaseName =========
+%% Abstract:
+%%   Return the base name of the data type transition file (e.g., model_dt.h) for code
+%%   generation's RealTime and Embedded-c code formats
+%%
+%function LibGetDataTypeTransHdrBaseName() void
+    %return LibGetModelFileBaseName("ModelExtModeDataInterfaceFile")
+%endfunction
+
+%% DocFunction{Code Configuration Functions}: LibNotifySymbolExportedFromFile =====
+%% Function: LibNotifySymbolExportedFromFile =======================================================
+%% Abstract:
+%%     This method is to notify the code generation infrastructure that the symbol is being exported
+%%     from the file.
+%%     This is recommended for custom user symbols such as variable/type/macro/function declarations.
+%%     This would help the code generation infrastructure to include appropriate headers when the
+%%     passed symbol is used in the auto generated files
+%% Arguments
+%%     symbol - Should be a string representing macro, variable, type or function name
+%%     fileNameWithExtension -  Should be a string representing file name with language extension E.g. <modelName>.h
+%% Warning
+%%     Improper usage might result in compilation error
+%%   Example:
+%%     %openfile myFcnDecl
+%%       extern real_T myCustomFcn(void);
+%%     %closefile myFcnDecl
+%%      %<LibCacheFunctionPrototype(myFcnDecl)>
+%%     %assign modelPrivateFile = "%<LibGetMdlPrvHdrBaseName()>.h"
+%%     %<LibNotifySymbolExportedFromFile("myCustomFcn",modelPrivateFile)
+%% %if ISEMPTY(symbol) || ISEMPTY(fileNameWithExtension)
+%%        %return
+%%   %endif
+%function LibNotifySymbolExportedFromFile(symbol, fileNameWithExtension) void
+    %if ISEMPTY(symbol) || WHITE_SPACE(symbol)
+        %return
+    %endif
+    %if ISEMPTY(fileNameWithExtension) || WHITE_SPACE(fileNameWithExtension)
+        %return
+    %endif
+    %<CGMODEL_ACCESS("FileRepository.updateTheGlobalSymbolTable", fileNameWithExtension, symbol)>
+%endfunction
+
+
+%% DocFunction{Code Configuration Functions}: LibNotifySymbolUsedByFile =====
+%% Function: LibNotifySymbolUsedByFile =============================================================
+%% Abstract:
+%%     This method is to notify the code generation infrastructure that the symbol is being used
+%%     by the file.
+%%     This would help the code generation infrastructure to include headers for the
+%%     symbol passed to the function
+%%     This is recommended for custom user symbols such as variable/type/macro/function declarations.
+%% Arguments
+%%     symbol - Should be a string representing macro, variable, type or function name
+%%     fileNameWithExtension - Should be a string representing file name with language extension E.g. <modelName>.c
+%% Warning
+%%     Improper usage might result in compilation error
+%% Exmaple
+%%  %assign u = LibBlockInputSignal(0, "", "", 0)
+%%  %% The following line is expanded and placed in mdlOutputs within wrapper.c
+%%  %<y> = myCustomFcn();
+%%  %% This model uses C code gen
+%%  %assign modelSrcFile = LibGetModelDotCFile()
+%%  %<LibNotifySymbolUsedByFile("myCustomFcn",modelSrcFile)>
+%%
+%function LibNotifySymbolUsedByFile(symbol, fileNameWithExtension) void
+    %if ISEMPTY(symbol) || WHITE_SPACE(symbol)
+        %return
+    %endif
+    %if ISEMPTY(fileNameWithExtension) || WHITE_SPACE(fileNameWithExtension)
+        %return
+    %endif
+    %<CGMODEL_ACCESS("FileRepository.updateTheLocalSymbolTable", fileNameWithExtension, symbol)>
+%endfunction
+
+%% DocFunction{Code Configuration Functions}: LibCreateSourceFile ===============
+%% Abstract:
+%%   Create a new C file, and return its reference.  If the file already exists,
+%%   simply return its reference.
+%%
+%% Call syntax:
+%%   %assign fileH = LibCreateSourceFile("Source", "Custom", "foofile")
+%%
+%% Arguments:
+%%   type (String):
+%%     Valid values are "Source" and "Header" for .c and .h files,
+%%     respectively.
+%%
+%%   creator (String):
+%%     Who's creating the file?  An error is reported if different creators
+%%     attempt to create the same file.
+%%
+%%   name (String):
+%%     Name of the file (without the extension).
+%%
+%% Note: File are not written to disk if they are empty.
+%%
+%% Returns:
+%%   Reference to the model file (Scope).
+%%
+%function LibCreateSourceFile(type,creator,name) void
+    %assign type = (type == "Source") ? "SystemBody" : "SystemHeader"
+    %return SLibAddModelFile(type,creator,name)
+%endfunction
+
+%% DocFunction{Code Configuration Functions}: LibSetSourceFileSection ===========
+%% Abstract:
+%%   Add to the contents of a file.  Valid attributes include:
+%%
+%%   Banner            - Set the file banner (comment) at the top of the file.
+%%   Includes          - Append to the #include section.
+%%   Defines           - Append to the #define section.
+%%   IntrinsicTypes    - Append to the intrinsic typedef section.  Intrinsic
+%%                       types are those that only depend on intrinsic C types.
+%%   PrimitiveTypedefs - Append to the primitive typedef section.  Primitive
+%%                       typedefs are those that only depend on intrinsic C types
+%%                       and any typedefs previously defined in the
+%%                       IntrinsicTypes section.
+%%   UserTop           - Append to the "user top" section.
+%%   Typedefs          - Append to the typedef section.  Typedefs can depend on
+%%                       any previously defined type.
+%%   GuardedIncludes   - Appends after typedef section. headers which are guarded by preprocessors
+%%                       are present in this section
+%%   Enums             - Append to the enumerated types section.
+%%   Definitions       - Append to the data definition section.
+%%   ExternData        - (reserved) extern data.
+%%   ExternFcns        - (reserved) extern functions.
+%%   FcnPrototypes     - (reserved) function prototypes.
+%%   Declarations      - Append to the data declaration section.
+%%   Functions         - Append to the C functions section.
+%%   CompilerErrors    - Append to the #error section.
+%%   CompilerWarnings  - Append to the #warning section.
+%%   Documentation     - Append to the documentation (comment) section.
+%%   UserBottom        - Append to the "user bottom" section.
+%%
+%%  Code is emitted by Simulink Coder in the order in which it is listed
+%%  above.
+%%
+%%  Example call syntax (iterating over all file):
+%%
+%%  %openfile tmpBuf
+%%    whatever
+%%  %closefile tmpBuf
+%%
+%%  %foreach fileIdx = LibGetNumSourceFiles()
+%%    %assign fileH = LibGetSourceFileFromIdx(fileIdx)
+%%    %<LibSetSourceFileSection(fileH,"SectionOfInterest",tmpBuf)>
+%%  %endforeach
+%%
+%%  %assign fileH = LibCreateSourceFile("Header","Custom","foofile")
+%%  %<LibSetSourceFileSection(fileH,"Defines","#define FOO 5.0\n")
+%%
+%%  Arguments:
+%%    fileH   - Reference or index to a file (Scope or Number).
+%%    section - File section of interest (String).
+%%    value   - Value (String).
+%%
+%function LibSetSourceFileSection(fileH, section, value) void
+    %if TYPE(fileH) != "Scope"
+        %if TYPE(fileH) == "Number"
+            %assign fileH = ::CompiledModel.ModelFiles.ModelFile[fileH]
+        %else
+            %assign errTxt = "LibSetSourceFileSection expects a reference or " ...
+                "and index to a file.  It was passed a %<TYPE(fileH)>"
+            %<LibReportError(errTxt)>
+        %endif
+    %endif
+    %if section == "ExternData" || section == "ExternFcns" || section == "FcnPrototypes"
+        %assign errTxt = "%<section> is reserved for Simulink Coder."
+        %setcommandswitch "-v1"
+        %<LibReportError(errTxt)>
+    %endif
+
+    %<SLibSetModelFileAttribute(fileH,section,value)>
+%endfunction
+
+%% DocFunction{Code Configuration Functions}: LibSetSourceFileCodeTemplate ======
+%% Abstract:
+%%   By default, *.c and *.h files are generated with the code templates
+%%   specified in the GUI.  This function allows you to change the
+%%   the template for a file.  Uses the "Code templates" entered into the
+%%   Templates UI.
+%%
+%%   Note: Custom templates is a feature of Embedded Coder.
+%%
+%% Call syntax:
+%%   %assign tag = LibSetSourceFileCodeTemplate(opFile,name)
+%%
+%% Arguments:
+%%   opFile (Scope)  - Reference to file
+%%   name   (String) - Name of the desired template
+%%
+%% Returns:
+%%   None
+%%
+%function LibSetSourceFileCodeTemplate(opFile,name) void
+    %<SLibSetModelFileAttribute(opFile,"CodeTemplate",name)>
+%endfunction
+
+%% DocFunction{Code Configuration Functions}: LibSetSourceFileOutputDirectory ===
+%% Abstract:
+%%   By default, *.c and *.h files are generated into the build directory.
+%%   This function allows you to change the default location.  Note that
+%%   the caller is reponsible for specifying a valid directory.
+%%
+%% Call syntax:
+%%   %assign tag = LibSetSourceFileOutputDirectory(opFile,dirName)
+%%
+%% Arguments:
+%%   opFile  (Scope)  - Reference to file
+%%   dirName (String) - Name of the desired output directory
+%%
+%% Returns:
+%%   None
+%%
+%function LibSetSourceFileOutputDirectory(opFile,name) void
+    %<SLibSetModelFileAttribute(opFile,"OutputDirectory",name)>
+%endfunction
+
+%% DocFunction{Code Configuration Functions}: LibGetSourceFileFromIdx ===========
+%% Abstract:
+%%   Return a model file reference based on its index.  This is very useful
+%%   for a common operation on all files.  For example, to set the leading file
+%%   banner of all files.
+%%
+%% Call syntax:
+%%   %assign fileH = LibGetSourceFileFromIdx(fileIdx)
+%%
+%% Arguments:
+%%   fileIdx (Number): Index of model file (that is internally managed by Simulink Coder).
+%%
+%% Returns:
+%%   Reference (Scope) to the model file.
+%%
+%function LibGetSourceFileFromIdx(fileIdx) void
+    %return ::CompiledModel.ModelFiles.ModelFile[fileIdx]
+%endfunction
+
+%% DocFunction{Code Configuration Functions}: LibGetSourceFileTag ===============
+%% Abstract:
+%%   Returns <fileName>_h and <fileName>_c for header and source files,
+%%   respectively where fileName is the name of the model file.
+%%
+%% Call syntax:
+%%   %assign tag = LibGetSourceFileTag(fileIdx)
+%%
+%% Arguments:
+%%   fileIndex (Number) - File index.
+%%
+%% Returns:
+%%   Returns the tag (String).
+%%
+%function LibGetSourceFileTag(fileIdx) void
+    %return LibGetModelFileTag(fileIdx)
+%endfunction
+
+%% DocFunction{Code Configuration Functions}: LibGetModelDotHFile ==============
+%% Abstract:
+%%   Get the record for the model.h file. Additional code can then be cached
+%%   using LibSetSourceFileSection().
+%%
+%% Call syntax:
+%%   %assign hdrFile = LibGetModelDotHFile()
+%%   %<LibSetSourceFileSection(hdrFile, "Functions", mybuf)>
+%%
+%% Returns:
+%%   Returns the model.h source file record.
+%%
+%function LibGetModelDotHFile() void
+    %assign modelHdrName = LibGetMdlPubHdrBaseName()
+    %return LibCreateSourceFile("Header","Simulink",modelHdrName)
+%endfunction
+
+%% DocFunction{Code Configuration Functions}: LibGetModelDotCFile ==============
+%% Abstract:
+%%   Get the record for the model.c file. Additional code can then be cached
+%%   using LibSetSourceFileSection().
+%%
+%% Call syntax:
+%%   %assign srcFile = LibGetModelDotCFile()
+%%   %<LibSetSourceFileSection(srcFile, "Functions", mybuf)>
+%%
+%% Returns:
+%%   Returns the model.c source file record.
+%%
+%function LibGetModelDotCFile() void
+    %assign modelSrcName = LibGetMdlSrcBaseName()
+    %return LibCreateSourceFile("Source","Simulink",modelSrcName)
+%endfunction
+
+%% DocFunction{Code Configuration Functions}: LibSetSourceFileCustomSection =====
+%% Abstract:
+%%   Set a custom section previously created with LibAddSourceFileCustomSection.
+%%
+%%   Only available with Embedded Coder.
+%%
+%% Arguments:
+%%   file   - Source file reference or index  (Scope or Number)
+%%   attrib - Name of custom section          (String)
+%%   value  - value to be appended to section (String)
+%%
+%function LibSetSourceFileCustomSection(file,attrib,value) void
+    %if TYPE(file) != "Scope"
+        %if TYPE(file) == "Number"
+            %assign file = ::CompiledModel.ModelFiles.ModelFile[file]
+        %else
+            %assign errTxt = "LibSetSourceFileCustomSection expect a " ...
+                "reference or an index to a file.  It was passed a: " ...
+                "%<TYPE(file)>"
+            %<LibReportError(errTxt)>
+        %endif
+    %endif
+
+    %if ISEMPTY(value)
+        %assign value = ""
+    %endif
+    %<ADD_CUSTOM_SECTION_CONTENT(file.Index, attrib, value)>
+%endfunction
+
+%% DocFunction{Code Configuration Functions}: LibAddSourceFileCustomSection =====
+%% Abstract:
+%%   Add a custom section to a source file.  You must associate a custom
+%%   section with one of the built-in sections: Includes, Defines, Types,
+%%   Enums, Definitions, Declarations, Functions, or Documentation.
+%%
+%%   No action if the section already exists, except to report an error
+%%   if a inconsistent built-in section association is attempted.
+%%
+%%   Only available with Embedded Coder.
+%%
+%% Arguments:
+%%   file           - Source file reference (Scope)
+%%   builtInSection - Name of the associated built-in section (String)
+%%   newSection     - Name of the new (custom) section (String)
+%%
+%function LibAddSourceFileCustomSection(file,builtInSection,newSection) void
+
+    %if !SLibIsERTTarget()
+        %assign errTxt = "LibAddSourceFileCustomSection is only available with " ...
+            "ERT-based (Embedded Coder) targets."
+        %<LibReportError(errTxt)>
+    %endif
+
+    %<ADD_CUSTOM_SECTION(file.Index, builtInSection, newSection)>
+%endfunction
+
+%endif

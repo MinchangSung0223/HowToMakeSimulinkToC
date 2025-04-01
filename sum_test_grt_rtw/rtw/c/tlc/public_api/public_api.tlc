@@ -1,0 +1,119 @@
+%if EXISTS(_PUBLIC_API_) == 0
+%assign _PUBLIC_API_ = 1
+%%
+%% Copyright 2019-2022 The MathWorks, Inc.
+%%
+
+%% ============================================================================
+%% Public diagnostics library functions
+%%
+%include "diagnostics_api.tlc"
+
+%% ============================================================================
+%% Public code format library functions
+%%
+%include "codeformat_api.tlc"
+
+%% ============================================================================
+%% Public block related library functions
+%%
+%include "block_api.tlc"
+
+%% ============================================================================
+%% Public block IO related library functions
+%%
+%include "blkio_api.tlc"
+
+%% ============================================================================
+%% Public block parameter related library functions
+%%
+%include "parameter_api.tlc"
+
+%% ============================================================================
+%% Public utilities related library functions
+%%
+%include "utils_api.tlc"
+
+%% ============================================================================
+%% Public datatype related library functions
+%%
+%include "dtype_api.tlc"
+
+%% ============================================================================
+%% Public modelref util related library functions
+%%
+%include "modelrefutil_api.tlc"
+
+%% ============================================================================
+%% Obsolete TLC functions required for backwards compatability
+%%
+%include "obsolete_api.tlc"
+
+%% ============================================================================
+%% Public cache shared util related library functions
+%%
+%include "cache_sharedutils_api.tlc"
+
+%% ============================================================================
+%% Public commonhdr related library functions
+%%
+%include "commonhdr_api.tlc"
+
+%% ============================================================================
+%% Public system related library functions
+%%
+%include "systems_api.tlc"
+
+%% ============================================================================
+%% Public code template related library functions
+%%
+%include "code_template_api.tlc"
+
+%% ============================================================================
+%% Public caching special block code related library functions
+%%
+%include "codecache_api.tlc"
+
+%% ============================================================================
+%% Records information related library functions
+%%
+%include "records_api.tlc"
+
+%% ============================================================================
+%% Sample time related library functions
+%%
+%include "sample_time_api.tlc"
+
+%% ============================================================================
+%%  rate and task related library functions
+%%
+%include "rate_and_task_api.tlc"
+
+%% ============================================================================
+%%  async block library functions
+%%
+%include "async_api.tlc"
+
+%% ============================================================================
+%%  fix point target functions
+%%
+%include "fixpttarget_api.tlc"
+
+%% ============================================================================
+%%  custom code functions
+%%
+%include "customcode_api.tlc"
+
+%include "fixpt_code_gen_time_calc_api.tlc"
+
+%% ============================================================================
+%%  math functions
+%%
+%include "math_api.tlc"
+
+%% ============================================================================
+%%  comment functions
+%%
+%include "commentlib_api.tlc"
+
+%endif %% _PUBLIC_API_

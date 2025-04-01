@@ -1,0 +1,25 @@
+%%
+%% Copyright 2020 The MathWorks, Inc.
+%%
+
+%if EXISTS(::_COMMONHDR_API_) == 0 %% to only check in the global scope for a variable
+%assign ::_COMMONHDR_API_ = 1 %% to create a globally scoped variable
+
+
+%% Function: GetRootSystemSourceFileName ===========================================================
+%% Abstract:
+%%    Get the file name for root system.
+%%
+%function GetRootSystemSourceFileName()
+    %return CGMODEL_ACCESS("CGModel.System.RootSystemSourceFileName")
+%endfunction
+
+%% Function: GetRootSystemHeaderFileName ===========================================================
+%% Abstract:
+%%    Get the file name for root system.
+%%
+%function GetRootSystemHeaderFileName()
+    %return CGMODEL_ACCESS("CGModel.System.RootSystemHeaderFileName")
+%endfunction
+
+%endif %% _COMMONHDR_API_

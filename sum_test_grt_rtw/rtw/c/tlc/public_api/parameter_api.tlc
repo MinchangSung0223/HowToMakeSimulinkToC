@@ -1,0 +1,226 @@
+%%
+%% Copyright 2020-2022 The MathWorks, Inc.
+%%
+%% Abstract:
+%%   This Thin TLC library file contains the general purpose functions
+%%   for accessing block parameters.
+%%
+%if EXISTS(::_PARAMETER_API_) == 0
+%assign ::_PARAMETER_API_ = 1
+
+%% DocFunction{Parameter Functions}: LibBlockParameterName ================
+%% Abstract:
+%%   Returns the name of a specified block parameter.
+%%
+%function LibBlockParameterName(param) void
+    %if SLibIsBlockParameter(param)
+        %return CGMODEL_ACCESS("Block.GetParamName",  ...
+            param.RecordIdx[0],  param.RecordIdx[1], param.BlockParamIdx)
+    %endif
+    %return param.Name
+%endfunction
+
+%% DocFunction{Parameter Functions}: LibBlockParameterIsComplex ================
+%% Abstract:
+%%   Returns 1 if the specified block parameter is complex, 0 otherwise.
+%%
+%function LibBlockParameterIsComplex(param) void
+    %% See Also:
+    %%   LibBlockInputSignalIsComplex
+    %%   LibBlockOutputSignalIsComplex
+    %%
+    %if SLibIsBlockParameter(param)
+        %return CGMODEL_ACCESS("Block.GetParamIsComplex",  ...
+            param.RecordIdx[0],  param.RecordIdx[1], param.BlockParamIdx)
+    %endif
+    %return LibGetRecordIsComplex(param)
+%endfunction
+
+%% DocFunction{Parameter Functions}: LibBlockParameterDimensions ===============
+%% Abstract:
+%%   Returns a row vector of length N, N >= 1 giving the dimensions of the
+%%   parameter data. For example:
+%%
+%%        %assign dims  = LibBlockParameterDimensions("paramName")
+%%        %assign nDims = SIZE(dims,1)
+%%        %foreach i=nDims
+%%           /* Dimension %<i+1> = %<dims[i]> */
+%%        %endforeach
+%%
+%%   This function differs from LibBlockParameterSize in that it returns the
+%%   dimensions of the parameter data prior to performing collapsing the
+%%   Matrix parameter to a column-major vector.  The collapsing occurs
+%%   for run-time parameters that have specified their outputAsMatrix
+%%   field as false.
+%%
+%function LibBlockParameterDimensions(param) void
+    %if SLibIsBlockParameter(param)
+        %return CGMODEL_ACCESS("Block.GetParamDimensions",  ...
+            param.RecordIdx[0],  param.RecordIdx[1], param.BlockParamIdx)
+    %endif
+
+    %return LibGetRecordDimensions(param)
+%endfunction %% LibBlockParameterDimensions
+
+%% DocFunction{Parameter Functions}: LibBlockParameterWidth ===================
+%% Abstract:
+%%   Returns the number of elements (width) of a parameter.
+%%
+%function LibBlockParameterWidth(param) void
+    %assign dims = LibBlockParameterDimensions(param)
+    %assign width = 1
+
+    %foreach dimsIdx = SIZE(dims, 1)
+        %assign width = width*dims[dimsIdx]
+    %endforeach
+
+    %return width
+%endfunction %% LibBlockParameterWidth
+
+%% DocFunction{Parameter Functions}: LibBlockParameterDataTypeId ===============
+%% Abstract:
+%%   Returns the numeric ID corresponding to the data type of the specified
+%%   block parameter.
+%%
+%function LibBlockParameterDataTypeId(param) void
+    %% See Also:
+    %%   LibBlockParameterDataTypeName
+    %%   LibBlockOutputSignalDataTypeId
+    %%   LibBlockInputSignalDataTypeId
+    %%
+    %if SLibIsBlockParameter(param)
+        %return CGMODEL_ACCESS("Block.GetParamDataTypeId", ...
+            param.RecordIdx[0], param.RecordIdx[1], param.BlockParamIdx)
+    %endif
+    %return LibGetRecordDataTypeId(param)
+%endfunction
+
+%% DocFunction{Parameter Functions}: LibBlockParameterDataTypeName =============
+%% Abstract:
+%%   Returns the name of the data type corresponding to the specified block
+%%   parameter.
+%%
+%function LibBlockParameterDataTypeName(param, reim) void
+    %% See Also:
+    %%   LibBlockParameterDataTypeId
+    %%   LibBlockOutputSignalDataTypeName
+    %%   LibBlockInputSignalDataTypeName
+    %%
+    %if SLibIsBlockParameter(param)
+        %return CGMODEL_ACCESS("Block.GetParamDataTypeName",  ...
+            param.RecordIdx[0],  param.RecordIdx[1], param.BlockParamIdx, reim)
+    %endif
+
+    %% This code path is to handle non-block/model parameters
+    %return SLibGetRecordDataTypeName(param, reim)
+%endfunction
+
+%% DocFunction{Parameter Functions}: LibBlockParameterSize =====================
+%% Abstract:
+%%   Returns a vector of size two in the format [nRows, nCols] where nRows is
+%%   the number of rows and nCols is the number of columns.
+%%
+%%   See LibBlockParameterDimensions to obtain the original parameter
+%%   data size.
+%%
+%function LibBlockParameterSize(param) void
+    %return SLibGetSizeOfValueFromParamRec(param)
+%endfunction %% LibBlockParameterSize
+
+%% DocFunction{Parameter Functions}: LibBlockParameterString ===================
+%% Abstract:
+%%   Returns the specified block parameter interpreted as a string, i.e., this
+%%   function returns:
+%%
+%%      STRINGOF(param.Value[0])  if the parameter is a row matrix
+%%      STRINGOF(param.Value)     otherwise
+%%
+%%   Note:
+%%     It is an error to invoke this function with a matrix-valued parameter
+%%     with more than one row.
+%%
+%%   If you are only accessing the parameter value(s) using
+%%   LibBlockParameterString or LibBlockParameterValue, you should consider
+%%   converting the parameter to a ParamSetting. This will produce more
+%%   efficient code since the parameter would not be declared as a variable in
+%%   the code.
+%%
+%function LibBlockParameterString(param) void
+
+    %% See Also:
+    %%   Built-in TLC function STRINGOF()
+
+    %assert !LibIsEnumDataType(LibBlockParameterDataTypeId(param))
+    %assign prmValue = SLibGetValueFromParamRec(param, TLC_FALSE)
+    %assign nRows    = SIZE(prmValue, 0)
+
+    %if nRows > 1 || LibBlockParameterIsComplex(param)
+        %assign errTxt = "Cannot access the parameter %<LibBlockParameterName(param)> as a " ...
+            "string because it is either complex valued or is a matrix (or both)."
+        %<LibBlockReportError([], errTxt)>
+    %endif
+
+    %if TYPE(prmValue) == "Matrix"
+        %return STRINGOF(prmValue[0])
+    %else
+        %return STRINGOF(prmValue)
+    %endif
+%endfunction %% LibBlockParameterString
+
+%% DocFunction{Parameter Functions}: LibBlockParameterValue ====================
+%% Abstract:
+%%   Determine the numeric value of a parameter.
+%%
+%%   If you are only accessing the parameter value(s) using this function, you
+%%   should consider converting the parameter to a ParamSetting. This will
+%%   produce more efficient code since the parameter would not be declared as a
+%%   variable in the code.
+%%
+%%   If you are only accessing the parameter value(s) using
+%%   LibBlockParameterValue or LibBlockParameterString, you should consider
+%%   converting the parameter to a ParamSetting. This will produce more
+%%   efficient code since the parameter would not be declared as a variable in
+%%   the code.
+%%
+%%   Example:
+%%     If you want to generate code for a different integrator depending
+%%     on a block's parameter, you could use the following:
+%%
+%%     %assign mode = LibBlockParameterValue(Integrator, 0)
+%%     %switch (mode)
+%%       %case 1
+%%         %<CodeForIntegrator1>
+%%         %break
+%%       %case 2
+%%         %<CodeForIntegrator2>
+%%         %break
+%%       %default
+%%         Error: Unrecognized integrator value.
+%%         %break
+%%     %endswitch
+%%
+%function LibBlockParameterValue(blockParam, elIdx) void
+
+    %% See Also:
+    %%   LibBlockParameter
+    %%
+    %if FixPt_IsParameterDataSizeLargerThan32(blockParam)
+        %error Simulink Coder Fatal Error: LibBlockParameterValue: blockParam's data type size should be 32 or less
+    %endif
+    %% Split the overloaded idx
+
+    %assign idNum   = SLibGetReimAndIdx(elIdx)
+    %assign reim    = idNum[0]
+    %assign idx     = idNum[1]
+    %assign complex = LibBlockParameterIsComplex(blockParam)
+    %assign blockPrmSize = SLibGetSizeOfValueFromParamRec(blockParam)
+    %assign nCols   = blockPrmSize[1]
+    %% Scalar expand the parameter if necessary
+    %% If complex, must ask specifically for real or imaginary part
+    %assign pIdx = (nCols > 1) ? idx : 0
+
+    %return SLibBlockParameterValueCore(blockParam, pIdx, complex, reim)
+
+%endfunction  %% LibBlockParameterValue
+
+%endif %% _PARAMETER_API_

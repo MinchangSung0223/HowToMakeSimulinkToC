@@ -1,0 +1,232 @@
+%% ============================================================================
+%%
+%% Abstract:
+%%
+%%   This system file generates the extmode_task_info.m file containing
+%%   information related to the tasks in the External Mode model.
+%%
+%% Copyright 2017-2020 The MathWorks, Inc.
+%%
+%if EXISTS(_EXTMODETASKLIB_) == 0
+%assign _EXTMODETASKLIB_ = 1
+
+%% Function: SLibWriteExtModeTaskInfoFile ==========================================================
+%% Abstract:
+%%  The output of this file provides information on the tasks that
+%%  are part of the External Mode model.
+%%
+%%   Notes
+%%     o in XCP-based external Mode, the extmode_task_info() output
+%%       is used by coder.internal.xcp.updateCodeDescriptor script
+%%       to retrieve the task/rate id assigned to the various signals
+%%       when the model contains ModelRef
+%%
+%function SLibWriteExtModeTaskInfoFile() void
+
+    %selectfile STDOUT
+    %if RTWVerbose
+%%}}
+### Creating extmode_task_info.m.
+%%{{
+    %endif
+    %selectfile NULL_FILE
+
+    %openfile ExtModeTaskInfoDotM = "extmode_task_info.m"
+%%}
+function [taskInfo, numtask, isDeploymentDiagram]=extmode_task_info()
+%%{
+    %assign isDeploymentDiagram = LibIsDeploymentDiagram()
+    isDeploymentDiagram = %<isDeploymentDiagram>;
+    %if isDeploymentDiagram
+        %% If we are using Explicit Partitions, then as well as
+        %% the sample period and offset, we need to know the
+        %% task entry points, so that External Mode can associate
+        %% the Async Queue with the right event.
+        %<FcnWriteExtModeTaskInfoFileDeploymentDiagram()>
+    %else
+        %% If we are not using Explicit Partitions, then the sample
+        %% period and offset tell us everything we know.
+        %<FcnWriteExtModeTaskInfoFileNonDeploymentDiagram()>
+    %endif
+%%}
+end %%%function extmode_task_info()
+%%{
+    %closefile ExtModeTaskInfoDotM
+    %selectfile NULL_FILE
+%endfunction %% SLibWriteExtModeTaskInfoFile
+
+
+%% Function: FcnWriteExtModeTaskInfoFileNonDeploymentDiagram =======================================
+%%
+%% Abstract:
+%%  Write out "taskInfo" entries for periodic tasks when Explicit Partitions
+%%  are disabled.
+%%
+%function FcnWriteExtModeTaskInfoFileNonDeploymentDiagram() Output
+    %assign stOneBased = 1
+    %foreach st = NumSampleTimes
+        %% We are only interested in periodic and async tasks.  Initialize, Reset and
+        %% Terminate tasks have a period of "inf".  If present, they will be
+        %% after the periodic tasks, so will not affect the index in taskInfo of
+        %% the periodic tasks.
+        %% Union sample times have a period of "NaN" and they should also be excluded.
+        %if !ISINF(SampleTime[st].PeriodAndOffset[0]) && !ISNAN(SampleTime[st].PeriodAndOffset[0])
+            taskInfo(%<stOneBased>).samplePeriod = %<SampleTime[st].PeriodAndOffset[0]>;
+            taskInfo(%<stOneBased>).sampleOffset = %<SampleTime[st].PeriodAndOffset[1]>;
+
+            %if EXISTS(SampleTime[st].Priority)
+                taskInfo(%<stOneBased>).taskPrio = %<SampleTime[st].Priority>;
+            %else
+                taskInfo(%<stOneBased>).taskPrio = 0;
+            %endif
+
+            %if ISEQUAL(1, %<stOneBased>)
+                taskInfo(%<stOneBased>).taskName = 'BaseRate';
+            %else
+                %assign tmprate = stOneBased - 1
+                taskInfo(%<stOneBased>).taskName = ['SubRate' '%<tmprate>'];
+            %endif
+            taskInfo(%<stOneBased>).entryPoints = {};
+            taskInfo(%<stOneBased>).nonFcnCallPartitionName = '%<SampleTime[st].NonFcnCallPartitionName>';
+            %assign stOneBased = stOneBased + 1
+        %endif
+
+    %endforeach
+
+    %assign ntask = stOneBased - 1
+
+    %if ISEQUAL(0, ntask)
+        taskInfo(1).samplePeriod = %<SampleTime[0].PeriodAndOffset[0]>;
+        taskInfo(1).sampleOffset = %<SampleTime[0].PeriodAndOffset[1]>;
+        taskInfo(1).taskPrio = 0;
+        taskInfo(1).taskName = 'BaseRate';
+        taskInfo(1).entryPoints = {};
+        taskInfo(1).nonFcnCallPartitionName = '%<SampleTime[0].NonFcnCallPartitionName>';
+        %assign ntask = 1
+    %endif
+
+    numtask = %<ntask>;
+    for i = 1:numtask
+    if ( 0 == isnumeric(taskInfo(i).samplePeriod) )
+    taskInfo(i).samplePeriod = evalin('base', 'str2double(taskInfo(i).samplePeriod)');
+    end
+    if ( isempty(taskInfo(i).taskName) )
+    taskInfo(i).taskName = ['AutoGen' i ];
+    end
+    end
+%endfunction
+
+
+%% Function: FcnWriteExtModeTaskInfoFileDeploymentDiagram ==========================================
+%%
+%% Abstract:
+%%  Write out "taskInfo" entries for periodic tasks when Explicit Partitions
+%%  are enabled.
+%%
+%function FcnWriteExtModeTaskInfoFileDeploymentDiagram() Output
+    %assign numTasks = %<FcnWriteExtModeTaskInfoForPeriodicTasks()>
+    %assign numTasks = %<FcnWriteExtModeTaskInfoForPeriodicTriggers(numTasks)>
+    numtask = %<numTasks>;
+%endfunction
+
+
+%% Function: FcnWriteExtModeTaskInfoForPeriodicTasks ===============================================
+%%
+%% Abstract:
+%%  Write out "taskInfo" entries for periodic tasks associated with periodic
+%%  triggers.  In this case the index is the TASK index, obtained by
+%%  iterating over all event handlers in sequence, and within that
+%%  iteration,  iterating over the tasks within each event handler in
+%%  sequence.
+%%
+%%      Return value:
+%%          The number of periodic tasks.
+%%
+%function FcnWriteExtModeTaskInfoForPeriodicTasks() Output
+    %assign taskIdxOneBased = 0
+    %foreach ehIdx = LibGetNumTriggers()
+        %assign evType = LibGetTriggerType(ehIdx)
+        %if ISEQUAL(evType, "AperiodicTrigger")
+            %continue
+        %endif
+        %assign tg = LibDeploymentGetTaskGroup(ehIdx)
+        %foreach innerTaskIdx = LibGetNumTriggerTasks(ehIdx)
+            %assign task = tg.Task[innerTaskIdx]
+            %assign taskIdxOneBased = taskIdxOneBased + 1
+            %<FcnWriteExtModeTaskInfoForPeriodicTasksHelper(task, taskIdxOneBased)>
+        %endforeach
+    %endforeach %% ehIdx
+    %if taskIdxOneBased != SLibGetNumPeriodicTasks()
+        %error "Did not capture all periodic tasks"
+    %endif
+    %return SLibGetNumPeriodicTasks()
+%endfunction
+
+
+%% Function: FcnWriteExtModeTaskInfoForPeriodicTriggers ============================================
+%%
+%% Abstract:
+%%  Write out "taskInfo" entries for entry points directly associated with
+%%  triggers.  In this case the subsystem is mapped to the trigger itself
+%%  rather than to a task.
+%function FcnWriteExtModeTaskInfoForPeriodicTriggers(numPeriodicTasks) Output
+    %assign periodicThreadIDCounter = 0
+    %assign taskIdxOneBased = numPeriodicTasks
+    %foreach ehIdx = LibGetNumTriggers()
+        %assign evType = LibGetTriggerType(ehIdx)
+        %if ISEQUAL(evType, "AperiodicTrigger")
+            %continue
+        %endif
+        %if ISEQUAL(LibGetNumTriggerTasks(ehIdx), 0)
+            %assign periodicThreadIDCounter = periodicThreadIDCounter + 1
+            %assign taskIdxOneBased = numPeriodicTasks+periodicThreadIDCounter
+
+            %% The terms "Task Group" and "Event Handler" appear to be
+            %% interchangeable.
+            %assign tg = LibDeploymentGetTaskGroup(ehIdx)
+
+            %<FcnWriteExtModeTaskInfoForPeriodicTasksHelper(tg, taskIdxOneBased)>
+        %endif
+    %endforeach
+    %assign numtask = taskIdxOneBased
+    %return numtask
+%endfunction
+
+
+%% Function: FcnWriteExtModeTaskInfoForPeriodicTasksHelper =========================================
+%%
+%% Abstract:
+%%  Writes out the "taskInfo" entry for a task, or a task group
+%%  (EventHandler) with no constituent "tasks", but that has its own entry
+%%  points.
+%%
+%%      Inputs:
+%%          taskOrTaskGroup - A record for a Task or a task group (EventHandler)
+%%          taskIdxOneBased - One-based index of the task for use in MATLAB
+%function FcnWriteExtModeTaskInfoForPeriodicTasksHelper(taskOrTaskGroup, taskIdxOneBased) Output
+    %assign period = taskOrTaskGroup.EntryPointInfo[0].Period
+    %assign tid = FcnGetTaskSampleTimeIndex(taskOrTaskGroup)
+
+
+    %assign entryPointStr = ""
+    %foreach epIdx = taskOrTaskGroup.NumEntryPointInfos
+        %if !ISEQUAL(taskOrTaskGroup.EntryPointInfo[epIdx].Period, period)
+            %error "All entry points should have same period."
+        %endif
+        %if epIdx != 0
+            %assign entryPointStr = entryPointStr + ", "
+        %endif
+        %assign sysIdx = taskOrTaskGroup.EntryPointInfo[epIdx].BlockIdx[0]
+        %assign blkIdx = taskOrTaskGroup.EntryPointInfo[epIdx].BlockIdx[2]
+        %assign entryPointStr = entryPointStr + "'" + STRING(System[sysIdx].Block[blkIdx].TLCBlockSID) + "'"
+    %endforeach
+    taskInfo(%<taskIdxOneBased>).samplePeriod = %<period>;
+    taskInfo(%<taskIdxOneBased>).sampleOffset = 0;
+    taskInfo(%<taskIdxOneBased>).entryPoints = {%<entryPointStr>};
+    taskInfo(%<taskIdxOneBased>).nonFcnCallPartitionName = '%<SampleTime[tid].NonFcnCallPartitionName>';
+%endfunction
+
+
+%endif %% _EXTMODETASKLIB_
+
+%% [EOF] extmodetasklib.tlc

@@ -1,0 +1,133 @@
+%if EXISTS(::_BLOCK_API_V3_) == 0
+%assign ::_BLOCK_API_V3_ = 1
+%%
+%% Copyright 2020-2023 The MathWorks, Inc.
+%%
+
+%include "block_private_api.tlc"
+
+%%
+%% Block states access for the TLC interface V3
+%%
+
+%function LibBlockDWork(dwork, ucv, lcv, idx) void
+    %<SLibV3CallsiteValid("LibBlockDWork")>
+    %return CGMODEL_ACCESS("Block.DWork", dwork.RecordIdx[0], dwork.RecordIdx[1], ...
+        dwork.RecordIdx[2], ::CurrentBlockFcn, ::CurrentBlockTid, ...
+        ucv, lcv, "%<idx>")
+%endfunction %% LibBlockDWork
+
+%function LibBlockDWorkAddr(dwork, ucv, lcv, idx) void
+    %<SLibV3CallsiteValid("LibBlockDWorkAddr")>
+    %return CGMODEL_ACCESS("Block.DWorkAddr", dwork.RecordIdx[0], dwork.RecordIdx[1], ...
+        dwork.RecordIdx[2], ::CurrentBlockFcn, ::CurrentBlockTid, ...
+        ucv, lcv, "%<idx>")
+%endfunction %% LibBlockDWorkAddr
+
+%function LibBlockRWork(rwork, ucv, lcv, idx) void
+    %<SLibV3CallsiteValid("LibBlockRWork")>
+    %% Set use of floating-point types if integer only code
+    %assign block = SLibGetCurrentBlock()
+    %if PurelyIntegerCode
+        %%START_ASSERT
+        %% %<SLibCacheIntegerOnlyWarning(block.Name, "WorkVector")>
+        %%END_ASSERT
+    %endif
+    %return SLibGetBlockXWork(rwork, block.NumRWorkDefines, block.RWORK, ...
+        ucv, lcv, idx)
+%endfunction %% LibBlockRWork
+
+%function LibBlockIWork(iwork, ucv, lcv, idx) void
+    %<SLibV3CallsiteValid("LibBlockIWork")>
+    %assign block = SLibGetCurrentBlock()
+    %return SLibGetBlockXWork(iwork, block.NumIWorkDefines, block.IWORK, ...
+        ucv, lcv, idx)
+%endfunction %% LibBlockIWork
+
+%function LibBlockPWork(pwork, ucv, lcv, idx) void
+    %<SLibV3CallsiteValid("LibBlockPWork")>
+    %assign block = SLibGetCurrentBlock()
+    %return SLibGetBlockXWork(pwork, block.NumPWorkDefines, block.PWORK, ...
+        ucv, lcv, idx)
+%endfunction %% LibBlockPWork
+
+%function LibBlockMode(ucv, lcv, idx) void
+    %<SLibV3CallsiteValid("LibBlockMode")>
+    %assign block = SLibGetCurrentBlock()
+    %assign dwork = block.MODE
+    %assign idx = CheckIndex(ucv,idx)
+
+    %return CGMODEL_ACCESS("Block.DWork", dwork.RecordIdx[0], dwork.RecordIdx[1], ...
+        dwork.RecordIdx[2], ::CurrentBlockFcn, ::CurrentBlockTid, ...
+        ucv, lcv, "%<idx>")
+%endfunction %% LibBlockMode
+
+%function LibBlockDiscreteState(ucv, lcv, idx) void
+    %<SLibV3CallsiteValid("LibBlockDiscreteState")>
+    %assign block = SLibGetCurrentBlock()
+    %assign dwork = block.DSTATE
+
+    %% Set use of floating-point types if integer only code
+    %if PurelyIntegerCode
+        %%START_ASSERT
+        %assign dTypeId = LibGetDataTypeIdAliasedThruToFromId(LibGetRecordDataTypeId(dwork))
+        %if dTypeId == tSS_DOUBLE || dTypeId == tSS_SINGLE
+            %<SLibCacheIntegerOnlyWarning(Name,"State")>
+        %endif
+        %%END_ASSERT
+    %endif
+
+    %assign idx = CheckIndex(ucv,idx)
+    %return CGMODEL_ACCESS("Block.DWork", dwork.RecordIdx[0], dwork.RecordIdx[1], ...
+        dwork.RecordIdx[2], ::CurrentBlockFcn, ::CurrentBlockTid, ...
+        ucv, lcv, "%<idx>")
+
+%endfunction %% LibBlockDiscreteState
+
+%function LibBlockContinuousState(ucv, lcv, idx) void
+    %<SLibV3CallsiteValid("LibBlockContinuousState")>
+    %% Set use of floating-point types if integer only code
+    %if PurelyIntegerCode
+        %%START_ASSERT
+        %<SLibCacheIntegerOnlyWarning(Name,"State")>
+        %%END_ASSERT
+    %endif
+
+    %return CGMODEL_ACCESS("Block.CState", RecordIdx[0], RecordIdx[1], ...
+        ::CurrentBlockFcn, ::CurrentBlockTid, ...
+        ucv, lcv, "%<idx>")
+
+%endfunction %% LibBlockContinuousState
+
+%function LibBlockContinuousStateDerivative(ucv, lcv, idx) void
+    %<SLibV3CallsiteValid("LibBlockContinuousStateDerivative")>
+    %% Set use of floating-point types if integer only code
+    %if PurelyIntegerCode
+        %<SLibCacheIntegerOnlyWarning(Name,"StateDerivatives")>
+    %endif
+
+    %return CGMODEL_ACCESS("Block.CStateDerivative", RecordIdx[0], RecordIdx[1], ...
+        ::CurrentBlockFcn, ::CurrentBlockTid, ...
+        ucv, lcv, "%<idx>")
+
+%endfunction %% LibBlockContinuousStateDerivative
+
+%function LibBlockContStateDisabled(ucv, lcv, idx) void
+    %<SLibV3CallsiteValid("LibBlockContStateDisabled")>
+    %% Set use of floating-point types if integer only code
+    %if PurelyIntegerCode
+        %<SLibCacheIntegerOnlyWarning(Name,"StateDisabled")>
+    %endif
+
+    %return CGMODEL_ACCESS("Block.CStateDisabled", RecordIdx[0], RecordIdx[1], ...
+        ::CurrentBlockFcn, ::CurrentBlockTid, ...
+        ucv, lcv, "%<idx>")
+%endfunction %% LibBlockContStateDisabled
+
+%function LibBlockZCSignalValue(ucv, lcv, zcsIdx, zcElIdx) void
+    %return CGMODEL_ACCESS("Block.ZCSignalValue", RecordIdx[0], RecordIdx[1], ...
+        zcsIdx, ::CurrentBlockFcn, ::CurrentBlockTid, ...
+        ucv, lcv, "%<zcElIdx>")
+%endfunction %% LibBlockZCSignalValue
+
+%endif %% _BLOCK_API_V3_

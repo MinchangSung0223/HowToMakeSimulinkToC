@@ -1,0 +1,17 @@
+%% Copyright 2021 The MathWorks, Inc.
+%%
+
+%if EXISTS(_MODELREFUTILITY_PRIVATEAPI_) == 0
+%assign _MODELREFUTILITY_PRIVATEAPI_ = 1
+
+%% Function: SLibIsModelRefAsyncTID ================================================================
+%% Abstract:
+%%  We now support async TID's in referenced models, but only when they
+%% come from a root function-call inport.
+%function SLibIsModelRefAsyncTID(tid)
+    %return TYPE(tid) == "Number" && tid>=0 && CGMODEL_ACCESS("CGModel.IsModelRefAsyncTID", tid)
+%endfunction
+
+%endif %%_MODELREFUTILITY_PRIVATEAPI_
+
+%% [EOF] modelrefutility_private_api.tlc

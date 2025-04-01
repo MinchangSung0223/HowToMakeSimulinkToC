@@ -1,0 +1,6 @@
+# -*-conf-*- See http://wiki/gitignore
+# Copyright 2021 The MathWorks, Inc.
+
+# Derived files
+/classic_main.cpp
+/classic_main.cu

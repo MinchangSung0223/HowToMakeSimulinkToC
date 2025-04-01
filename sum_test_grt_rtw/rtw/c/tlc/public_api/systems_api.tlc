@@ -1,0 +1,64 @@
+%%
+%% Copyright 2020-2022 The MathWorks, Inc.
+%%
+
+%if EXISTS(::_SYSTEMS_API_) == 0 %% to only check in the global scope for a variable
+%assign ::_SYSTEMS_API_ = 1 %% to create a globally scoped variable
+
+%% Function: LibIsSystemExistingLibrary ============================================================
+%% Abstract:
+%%    Returns the system dumped flag.
+%%
+%function LibIsSystemExistingLibrary(system)
+    %return CGMODEL_ACCESS("CGModel.System.IsSystemExistingLibrary", system.SystemIdx)
+%endfunction
+
+%% Function: LibSystemIsInlined(system) void ===================================
+%% Description:
+%%      Returns TLC_TRUE if the system is inlined
+%%
+%function LibSystemIsInlined(system) void
+    %return CGMODEL_ACCESS("CGModel.System.IsSystemInlined", system.SystemIdx)
+%endfunction %% LibSystemIsInlined
+
+
+%% Function: LibSystemIsNonReusedFcn(system) void ==============================
+%% Description:
+%%      Returns TLC_TRUE if the subsystem is non-reused
+%%
+%function LibSystemIsNonReusedFcn(system) void
+    %return CGMODEL_ACCESS("CGModel.System.IsSystemNonReusedFcn", system.SystemIdx)
+%endfunction %% LibSystemIsNonReusedFcn
+
+
+%% Function: LibSystemIsReusedFcn(system) void =================================
+%% Description:
+%%      Returns TLC_TRUE if the subsystem is reused
+%%
+%function LibSystemIsReusedFcn(system) void
+    %return CGMODEL_ACCESS("CGModel.System.IsSystemReusedFcn", system.SystemIdx)
+%endfunction %% LibSystemIsReusedFcn
+
+%% Function: LibSystemIsRoot(system) void ======================================
+%% Description:
+%%      Returns TLC_TRUE if the system is root
+%%
+%function LibSystemIsRoot(system) void
+    %return CGMODEL_ACCESS("CGModel.System.IsRoot", system.SystemIdx)
+%endfunction %% LibSystemIsRoot
+
+%% Function: LibIsSingleRateSystem =================================================================
+%% Abstract:
+%%   LibIsSingleRateSystem returns one if the system is a single rate
+%%   system, and zero otherwise.
+%%
+%%   The system paramsetting for single rate is used to determine result.  Note that
+%%   model wide events such as parameter sample time are not factored into the
+%%   setting
+%%  TopTester: test/toolbox/simulink/variants/var-vss-codevariants/tcodevariants1.m
+%%
+%function LibIsSingleRateSystem(system) void
+    %return CGMODEL_ACCESS("CGModel.System.IsSingleRateSystem", system.SystemIdx)
+%endfunction
+
+%endif %% _COMMONBOD_API_

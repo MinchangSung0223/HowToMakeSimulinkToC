@@ -1,0 +1,14 @@
+%%
+%% Copyright 2022-2023 The MathWorks, Inc.
+%%
+
+%if EXISTS(::_CODE_TEMPLATE_API_V3_) == 0
+%assign ::_CODE_TEMPLATE_API_V3_ = 1
+
+%function LibSetRTModelErrorStatus(str) void
+    %<SLibV3CallsiteValid("LibSetRTModelErrorStatus")>
+    %return CGMODEL_ACCESS("Block.LibSetRTModelErrorStatus", BlockIdx[0], BlockIdx[2], ...
+        ::CurrentBlockFcn, ::CurrentBlockTid, str)
+%endfunction
+
+%endif

@@ -1,0 +1,100 @@
+%%
+%% Copyright 2020-2022 The MathWorks, Inc.
+%%
+%% Abstract:
+%%   This TLC library file contains all obsolete TLC functions required for
+%%   backwards compatability.
+%%
+%if EXISTS(::_OBSOLETE_API_) == 0
+%assign ::_OBSOLETE_API_ = 1
+
+%% Function: LibRenameParameter ====================================================================
+%% Abstract:
+%%      This call should be made from inside the block's BlockInstanceSetup
+%%      function.  This function
+%%
+%%      1) renames the parameter to the name specified
+%%      2) creates a new reference to the parameter by that name
+%%
+%% Synopsis:
+%%      LibRenameParameter(block, param, newName)
+%%
+%%      block   = reference to the block
+%%      param   = reference to the block parameter
+%%      newName = new name for the parameter
+%%
+%function LibRenameParameter(block, param, newName) void
+
+    %if ShowObsoleteWarnings
+        %assign warnTxt = "This function is now obsolete.  Specifying parameter names is " ...
+            "now supported via the mdlRTW() function of C-MEX S-Functions."
+        %<LibBlockReportWarning(block, warnTxt)>
+    %endif
+
+    %<CGMODEL_ACCESS("Block.SetParamName", block.BlockIdx[0], block.BlockIdx[2], ...
+        param.BlockParamIdx, newName)>
+    %assign param.Name = newName %% for backward compatibility
+    %% create a reference in the parent scope for future reference
+    %addtorecord block %<newName> param
+%endfunction %% LibRenameParameter
+
+%% Function: LibIsEqual ============================================================================
+%%
+%% Abstract:
+%%      This function is obsolete, us the built-in TLC function ISEQUAL
+%%
+%% Purpose:
+%%      Compare two expressions (not necessarily of the same type) for
+%%      equality.
+%%
+%% Syntax:
+%%      LibIsEqual(expr1, expr2)
+%%
+%% Arguments:
+%%      expr1: First expression
+%%      expr2: Second expression
+%%
+%% Returns:
+%%      1 if expr1 equals expr2
+%%      0 otherwise
+%%
+%% Description:
+%%      LibIsEqual returns 1 if expr1 equals expr2 and 0 otherwise.  LibIsEqual
+%%      differs from the simple equality "==" since it does type checking.
+%%      Different type expressions generally return 0.  For example, "0" does
+%%      not equal 0.  However, "Number" can be compared to "Real" and "String"
+%%      can be compared to "Identifier".
+%%
+%%      Valid comparisons:
+%%
+%%      expr1 Type           expr2 Type
+%%      ----------           ----------
+%%      expr2 Type
+%%      Number               Real
+%%      Real                 Number
+%%      Identifier           String
+%%      String               Identifier
+%%
+%%      Comparing any other types will return false, independent of the values
+%%      of the expressions.
+%%
+%function LibIsEqual(expr1, expr2) void
+    %if ShowObsoleteWarnings
+        %assign warnTxt = "The function LibIsEqual is obsolete." ...
+            "Please update the target file to use the built-in TLC command ISEQUAL."
+        %<LibBlockReportWarning([], warnTxt)>
+    %endif
+
+    %if  ( TYPE(expr1) == TYPE(expr2) ) ...
+        || ( TYPE(expr1) == "Number" && TYPE(expr2) == "Real" ) ...
+        || ( TYPE(expr1) == "Real" && TYPE(expr2) == "Number" ) ...
+        || ( TYPE(expr1) == "Identifier" && TYPE(expr2) == "String" ) ...
+        || ( TYPE(expr1) == "String" && TYPE(expr2) == "Identifier" )
+        %if expr1 == expr2
+            %return 1
+        %endif
+    %endif
+    %return 0
+%endfunction
+
+%endif %% _OBSOLETE_API_

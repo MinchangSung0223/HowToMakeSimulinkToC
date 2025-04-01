@@ -1,0 +1,90 @@
+%% ========================================================================
+%% Abstract:
+%%   This file caches general info in the binfo.mat file. If you need to
+%%   stuff into binfo, please consider adding them using this file. We'd
+%%   like to minimize the number of times we call out to MATLAB and write
+%%   to binfo.
+%%
+%% Copyright 2011-2018 The MathWorks, Inc.
+%%
+
+%if EXISTS(_CACHEGENERALDATAINMATINFOFILE_) == 0
+%assign _CACHEGENERALDATAINMATINFOFILE_ = 1
+
+%% Function: cacheGeneralDataIntoMatInfoFile =======================================================
+%% Abstract:
+%%     Cache general info in the mat file
+%function CacheGeneralDataIntoMatInfoFile() void
+
+    %with ::CompiledModel
+
+        %createrecord GeneralDataToAddToBinfo { Name  "%<Name>"}
+
+        %% Add RTMGetLoggingObject and RTMTPtrExpression. This information is
+        %% required by SIL/PIL to support Matfile logging
+        %if MatFileLogging==1 && GenRTModel
+            %addtorecord GeneralDataToAddToBinfo RTMLoggingObjectExpression RTMGetLoggingObject()
+            %addtorecord GeneralDataToAddToBinfo RTMTPtrExpression RTMSpecAccsGetTPtr(RTMGetRTModelRecShell().TPtr,RTMGetModelSS())
+        %endif
+
+        %if SLibIsERTTarget()
+
+            %if SLibAutosarActive()
+                %% add information about AUTOSAR Runnables
+                %% Add periodic runnables
+                %assign autosar = ::CompiledModel.RTWAutosar
+                %assign numAutosarRunnables = SIZE(autosar.AutosarRunnables.Runnable, 1)
+                %foreach rIdx = numAutosarRunnables
+                    %assign runnable = autosar.AutosarRunnables.Runnable[rIdx]
+                    %assign locName = runnable.Name
+                    %assign locSymbol = runnable.Symbol
+                    %addtorecord GeneralDataToAddToBinfo AutosarPeriodicRunnables { \
+                        Name locName; \
+                        Symbol locSymbol \
+                    }
+                %endforeach
+
+                %% Add initialize runnable
+                %assign initRunnable = ::CompiledModel.RTWAutosar.InitRunnables.Runnable
+                %assert(SIZE(initRunnable, 1) == 1)
+                %addtorecord GeneralDataToAddToBinfo AutosarInitRunnable {\
+                    Name initRunnable.Name; \
+                    Symbol initRunnable.Symbol \
+                }
+
+                %if IncludeMdlTerminateFcn
+                    %assign termRunnable = ::CompiledModel.RTWAutosar.TerminateRunnables.Runnable
+                    %assert(SIZE(termRunnable, 1) == 1)
+                    %addtorecord GeneralDataToAddToBinfo AutosarTermRunnable {\
+                        Name termRunnable.Name; \
+                        Symbol termRunnable.Symbol \
+                    }
+                %endif
+            %endif
+
+        %endif %% SLibIsERTTarget()
+    %endwith %% ::CompiledModel
+
+    %<CacheDataInBinfoMatFile(Name, "addGeneralDataFromTLC", GeneralDataToAddToBinfo)>
+
+%endfunction
+
+%% Function: CacheDataInMatInfoFile ================================================================
+%% Abstract:
+%%      Store data in .mat file.
+
+%function CacheDataInBinfoMatFile(mdl, type, interface) void
+
+    %if IsModelReferenceTarget()
+        %assign targetType = IsModelReferenceSimTarget() ? "SIM" : "RTW"
+    %else
+        %assign targetType = "NONE"
+    %endif
+    %assign rtwinfomat = FEVAL("coder.internal.infoMATFileMgr", ...
+        type, "binfo", "%<mdl>", ...
+        "%<targetType>", interface)
+
+
+%endfunction
+
+%endif %% _CACHEGENERALDATAINMATINFOFILE_

@@ -1,0 +1,225 @@
+%% Copyright 2020-2022 The MathWorks, Inc.
+
+%if EXISTS(_CACHELIB_API_) == 0
+%assign ::_CACHELIB_API_ = 1
+
+%include "block_private_api.tlc"
+%include "filepackaging_private_api.tlc"
+
+%if !EXISTS(::CustomCodeCacheType)
+    %createrecord ::CustomCodeCacheType {Define 0; FunctionPrototype 1; Include 2; Typedef 3; Extern 4}
+%endif
+
+%if !EXISTS(::ModelHeaderType)
+    %createrecord ::ModelHeaderType {SysPath 0; SysLocal 1; BlockPath 2; BlockLocal 3; NonSharedPath 4; NonSharedLocal 5}
+%endif
+
+%function FcnUpdateCustomBlockTypeSetupHeaderForSystem(codeGroupName) void
+    %if CGMODEL_ACCESS("CGModel.isCodeGenContextBuild")
+        %return
+    %endif
+
+    %if SLibInBlockScope()
+        %% include model_private.h in model.c/subsystem.c for custom content
+        %assign block = SLibGetCurrentBlock()
+        %assign sourceFile = SLibGetFullFileNameForSystemCode("sys_fcn_defn", block.BlkSysIdx)
+        %assign inclFile = SLibGetFullFileNameForCode(codeGroupName)
+        %<SLibUpdateHeadersNeededByFile(sourceFile, inclFile)>
+    %else
+        %<CGMODEL_ACCESS("CGModel.SetHasGlobalCustomBlockTypeSetupBuffer", TLC_TRUE)>
+    %endif
+%endfunction
+
+%assign ResetGlobalsErrorString = "#error A TLC Global was used after it was reset. To avoid this error, set the TLC variable 'ResetTLCGlobalsAfterUse' to 0."
+
+%% Function: SLibResetTLCGlobal ====================================================================
+%% Abstract:
+%%   Reset TLC globals that are either at root level TLC name space or a field
+%%   of the ::CompiledModel record. This function is controlled by the TLC flag
+%%   'ResetTLCGlobalsAfterUse'.
+%%
+%function SLibResetTLCGlobal(name) void
+    %if ResetTLCGlobalsAfterUse
+        %if ISFIELD(::CompiledModel, name)
+            %assign ::CompiledModel.%<name> = ResetGlobalsErrorString + name
+        %elseif EXISTS(name)
+            %assign %<name> = ResetGlobalsErrorString + name
+        %endif
+    %endif
+%endfunction
+
+%function SLibHasBufferAlreadyBeenAddedToCache() void
+    %if !SLibIsMainCodeGenPhase()
+        %return TLC_FALSE
+    %endif
+    %if EXISTS(::BlockFcn) && (::BlockFcn == "BlockTypeSetup" || ::BlockFcn == "BlockInstanceSetup")
+        %return CGMODEL_ACCESS("Block.GetCodeGenSucceeded", BlockIdx[0], BlockIdx[2])
+    %endif
+
+    %return TLC_FALSE
+%endfunction
+
+%function FcnAddSFcnHeaderToModuleHeader(moduleIdx, incFileName) void
+    %%Set the module
+    %assign origModuleIdx = ::CurrentModuleIdx
+    %assign ::CurrentModuleIdx = moduleIdx
+    %assign thisModule = ::CompiledModel.RTWCGModules.RTWCGModule[moduleIdx]
+    %assign sysIdx = thisModule.CGSystemIdx
+
+    %% Shared types will cause redundant includes
+    %assign sharedTypeAlreadyIncludes = ISFIELD(System[sysIdx], "IncludedSharedDataTypes") && ...
+        FcnAlreadyIncludedSharedDataHeader(incFileName, System[sysIdx].IncludedSharedDataTypes)
+    %if !sharedTypeAlreadyIncludes && ::CompiledModel.GenUtilsSrcInSharedLocation == 1
+        %<FcnTrackHeaderFileUsage(incFileName,TLC_FALSE, TLC_FALSE)>\
+    %endif
+    %% Unset the module
+    %assign ::CurrentModuleIdx = origModuleIdx
+%endfunction
+
+%% Helper function for addSfuncHeaderToRLSIncludes
+%function FcnAlreadyIncludedSharedDataHeader(incFileName, buffer) void
+    %foreach idx = SIZE(buffer,1)
+        %if buffer[idx] == "\"" + incFileName + "\"" || ...
+            buffer[idx] == "<" + incFileName + ">"
+            %return TLC_TRUE
+        %endif
+    %endforeach
+    %return TLC_FALSE
+%endfunction
+
+
+%% Function: FcnAddSfuncHeaderToRLSIncludes ========================================================
+%% Abstract:
+%%  If an RLS contains an S-function, this function includes the S-functions's
+%%  header to the RLS header
+%%
+%function FcnAddSfuncHeaderToRLSIncludes(incFileName) void
+
+    %% If we don't know which block called us, return early
+    %if !EXISTS(BlockIdx)
+        %return
+    %endif
+    %assign currentBlk = SLibGetCurrentBlock()
+    %assign currentSystem = ::CompiledModel.System[BlockIdx[0]]
+    %assign currentModuleIdx = currentSystem.CGIRModuleIdx
+
+    %% Don't care if not RLS
+    %if !LibSystemIsReusedLibraryFcn(currentSystem)
+        %return
+    %endif
+
+    %% Don't care if not S-function
+    %if (currentBlk.Type != "S-Function")
+        %return
+    %endif
+
+    %assign blockName = currentBlk.ParamSettings.FunctionName
+    %assert(!ISEMPTY(STRING(blockName)))
+
+    %% stateflow includes string.h for calls to memset in
+    %% code_machine_header_file_rtw.m, we don't track
+    %% header file usage of stateflow S-functions, so add the #include here
+    %if blockName == "stateflow"
+        %assert(incFileName == "<string.h>")
+        %<FcnAddSFcnHeaderToModuleHeader(currentModuleIdx, incFileName)>
+        %return
+    %endif
+
+    %% We cannot add the #include to the current module's file only. If this
+    %% function was called from BlockTypeSetup, it will be called only once
+    %% for every S-function - even if there are multiple instances of the
+    %% S-function in different RLS's. Dump the #include to every RLS that
+    %% uses this S-function
+    %assign numRLS =  CGMODEL_ACCESS("CGModel.getNumRLSFromSfuncMap",blockName)
+    %foreach idx = numRLS
+        %assign sysIdx = CGMODEL_ACCESS("CGModel.getRLSSysIdxFromSfuncMap",blockName, STRING(idx))
+        %assign rlsModuleIdx = System[sysIdx].CGIRModuleIdx
+        %<FcnAddSFcnHeaderToModuleHeader(rlsModuleIdx, incFileName)>
+    %endforeach
+
+%endfunction
+
+
+%function SAddSfuncHeaderToRLSIncludes(incFileName) void
+
+    %% block may not exist if this is called from any other place other than the BlockTypeSetup
+    %% TopTester: test/toolbox/simulink/blocks/sb2sl/tsb2slmdlref.m -testspec:lvlOne_MdlRef
+    %if SLibInBlockScope()
+        %assign block = SLibGetCurrentBlock()
+        %assign blkType = block.Type
+        %if block.Type == "S-Function"
+            %assign blkType = ParamSettings.FunctionName
+        %elseif block.Type == "M-S-Function"
+            %assign blkType = ParamSettings.MFile
+        %endif
+        %% Getting the variant condition and updating the headers accordingly
+        %assign vcond = SLibGetBlockVariantCondition(block)
+        %assign addHeaderForTypes = CGMODEL_ACCESS("FileRepository.addHeadersForAGivenBlockType",blkType, incFileName)
+        %assign addHeaderVCond = CGMODEL_ACCESS("FileRepository.addOrUpdateHeaderCondition",incFileName, vcond)
+    %endif
+
+    %<FcnAddSfuncHeaderToRLSIncludes(incFileName)>\
+%endfunction
+
+%% Function: SLibCacheIntegerOnlyWarning ===========================================================
+%% Abstract:
+%%   This function is called by the LibBlock* routines to cache any use of
+%%   non-integer data in the block inputs/outputs, parameters, states
+%%   or work vectors.
+%%
+%%   Arguments:
+%%        name: Name of the block
+%%        component: String describing the part of the block that is
+%%                   declaring a non-integer.
+%%
+%function SLibCacheIntegerOnlyWarning(name,component) void
+    %<CGMODEL_ACCESS("CGModel.CacheIntegerOnlyWarning", name, component)>
+%endfunction
+
+%% Function: SLibDumpIntegerOnlyWarning ============================================================
+%% Abstract:
+%%   This function dumps any warnings of float-point data that were
+%%   cached using SLibCacheIntegerOnlyWarning.
+%%
+%function SLibDumpIntegerOnlyWarning() void
+    %assign blocks = CGMODEL_ACCESS("CGModel.DumpIntegerOnlyWarning")
+
+    %if ISEMPTY(blocks)
+        %return
+    %endif
+    %assign numBlocks = SIZE(blocks, 1)
+    %openfile warnTxt
+%%}}
+
+The following blocks contain non-integer data but the Integer Code Only
+option is selected.  You should replace/correct the blocks or uncheck
+Integer Code Only via the Code Generation Options dialog.
+
+%%{{
+        %if numBlocks > 25
+            %assign loop = 20
+%%}}}
+Total of %<numBlocks> Blocks, only listing first 20.
+%%{{{
+        %else
+            %assign loop = numBlocks
+        %endif
+%%}}
+Block (details) :
+
+%%{{
+        %foreach idx = loop
+%%}}}
+%<blocks[idx]>
+%%{{{
+        %endforeach
+        %closefile warnTxt
+        %selectfile STDOUT
+%%}}
+%<warnTxt>
+%%{{
+        %selectfile NULL_FILE
+        %<SLibReportWarningWithIdAndArgs("RTW:tlc:GenericWarn", warnTxt)>
+    %endfunction
+
+%endif

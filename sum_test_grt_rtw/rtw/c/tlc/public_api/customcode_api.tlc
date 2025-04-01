@@ -1,0 +1,106 @@
+%% Copyright 2022 The MathWorks, Inc.
+
+%if EXISTS(_CUSTOMCODE_API_) == 0
+%assign ::_CUSTOMCODE_API_ = 1
+
+%% DocFunction{Code Configuration Functions}: LibMdlStartCustomCode ===========
+%%
+%% Purpose:
+%%      Place declaration statements and executable code inside the start
+%%      function.  Start code is executed once, during the model initialization
+%%      phase.
+%%
+%% Syntax:
+%%      LibMdlStartCustomCode(buffer, location)
+%%
+%% Arguments:
+%%      buffer: String buffer to append to internal cache buffer
+%%      location:
+%%        "header"      to place buffer at top of function
+%%        "declaration" same as specifying header
+%%        "execution"   to place buffer at top of function, but after header
+%%        "trailer"     to place buffer at bottom of function)
+%%
+%% Returns:
+%%      Nothing
+%%
+%% Description:
+%%      LibMdlStartCustomCode places declaration statements and executable code
+%%      inside the start function.
+%%
+%%      This code gets output into the following functions depending on
+%%      the current code format:
+%%
+%%      Function Name         Code Format
+%%      ---------------------------------
+%%      <model>_initialize    Embedded-C (if not ModelReferenceRTWTarget)
+%%      mdlStart              Embedded-C (if ModelReferenceRTWTarget)
+%%      mdlStart              S-function
+%%      MdlStart              RealTime, RealTimeMalloc
+%%
+%%      Each call to this function appends your buffer to the internal
+%%      cache buffer.
+%%
+%function LibMdlStartCustomCode(buffer, location) void
+    %assign ss = System[NumSystems-1]
+    %if IsModelReferenceTarget()
+        %% Tell TLC that this system has user data for start function
+        %if !ISEMPTY(buffer)
+            %if ::CompiledModel.CombineStartIntoSystemInitializeForRTW == TLC_FALSE
+                %assign ss = ::CompiledModel.System[GetBaseSystemIdx()]
+                %% Get the base system
+                %if !ISFIELD(ss, "StartMethodHasUserData")
+                    %<SETFIELD(ss, "StartMethodHasUserData", TLC_TRUE)>
+                %else
+                    %assign ss.StartMethodHasUserData = TLC_TRUE
+                %endif
+            %else
+                %% Dump custom start code to model initialize function
+                %<LibSystemInitializeCustomCode(ss, buffer, location)>
+                %return
+            %endif
+        %endif
+    %endif
+
+    %switch location
+      %case "header"
+      %case "declaration"
+        %<LibAddCustomCodeToCGModelCache(ss, "StartHeader", buffer)>
+        %break
+      %case "execution"
+        %<LibAddCustomCodeToCGModelCache(ss, "StartBody", buffer)>
+        %break
+      %case "trailer"
+        %<LibAddCustomCodeToCGModelCache(ss, "StartTrailer", buffer)>
+        %break
+      %default
+        %assign errTxt = "Invalid location: %<location>"
+        %<LibReportError(errTxt)>
+    %endswitch
+%endfunction
+
+%% Add the custom code cache to the CGModel for the given fieldName.
+%% Where fieldName is a concatenation of function, location and tid
+%% location: Location from where cache should be retrieve
+%%                One of {"Header", "Body", "Trailer"}
+%% function: Name of function for which to retrieve
+%%                One of {"Initialize", "Start", "Terminate", "Output",
+%%
+
+%function LibAddCustomCodeToCGModelCache(system, fieldName, buffer) void
+    %<CGMODEL_ACCESS("CGModel.AddCustomCodeFunctionCache", system.SystemIdx, fieldName, buffer)>
+%endfunction
+
+%% Retrieve the custom code cache from the CGModel for the given fieldName.
+%% Where fieldName is a concatenation of function, location and tid
+%% location: Location from where cache should be retrieve
+%%                One of {"Header", "Body", "Trailer"}
+%% function: Name of function for which to retrieve
+%%                One of {"Initialize", "Start", "Terminate", "Output",
+%%
+
+%function LibGetCustomCodeFromCGModelCache(system, fieldName)
+    %return CGMODEL_ACCESS("CGModel.GetCustomCodeFunctionCache", system.SystemIdx, fieldName)
+%endfunction
+
+%endif

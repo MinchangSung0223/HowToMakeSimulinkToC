@@ -1,0 +1,44 @@
+%if EXISTS(::_PRIVATE_API_V3_) == 0
+%assign ::_PRIVATE_API_V3_ = 1
+%%
+%% Copyright 2020-2023 The MathWorks, Inc.
+%%
+
+%% ============================================================================
+%% Pre code generation global setup library
+%%
+%include "setuplib_v3.tlc"
+
+%% ============================================================================
+%% Private block code genetation function execution
+%%
+%include "blockfunctionslib.tlc"
+
+%% ============================================================================
+%% Private block parameter related functions
+%%
+%include "parameter_private_api_v3.tlc"
+
+%% ============================================================================
+%% Private block parameter related functions
+%%
+%include "filepackaging_private_api_v3.tlc"
+
+%include "dtype_private_api_v3.tlc"
+
+%include "block_private_api_v3.tlc"
+
+%function SLibV3CallsiteValid(callsite) void
+    %if !EXISTS(::BlockFcn)
+        %if EXISTS(ShowErrorStackTrace) && ::ShowErrorStackTrace == TLC_TRUE
+            %setcommandswitch "-v1"
+        %endif
+        %exit %<callsite> must be called from a TLC Block Function.
+    %endif
+
+    %if (::BlockFcn == "BlockTypeSetup" || ::BlockFcn == "BlockInstanceSetup")
+        %assign errArgs = ["%<::BlockFcn>", "%<callsite>"]
+        %<SLibReportErrorWithIdAndArgs("Simulink:CodeGeneration:InvalidCallInTLCBlockFcn", errArgs)>
+    %endif
+%endfunction
+%endif %% ::_PRIVATE_API_V3_

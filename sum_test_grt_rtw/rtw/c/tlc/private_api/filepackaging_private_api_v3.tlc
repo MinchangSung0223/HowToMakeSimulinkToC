@@ -1,0 +1,22 @@
+%%
+%% Copyright 2022 The MathWorks, Inc.
+%%
+%if EXISTS(::_FILEPACKAGING_PRIVATE_API_V3_) == 0
+%assign ::_FILEPACKAGING_PRIVATE_API_V3_ = 1
+
+%include "filepackaging_private_api.tlc"
+
+%function SLibUpdateLocalSymbolForCurrentFunction(symbol) void
+    %% Still adding this function to V3, this would be a follow up task
+%endfunction
+
+%% Function: SLibGetFileNameForCodeFromTLC(codeGroupName) ====================
+%% Abstract:
+%%    Lookup the file name in file packaging table from TLC for codeGroupName
+%%
+%function SLibGetFileNameForCodeFromTLC(codeGroupName) void
+    %assign errMsg = "\'MoveFilePackagingTableFromTLC\' feature is turned off. Either turn on the feature or remove a call to LibEnableBlockFcnOptimizations from BlockInstanceSetup."
+    %<LibReportFatalError(errMsg)>
+%endfunction
+
+%endif %% _PARAMETER_PRIVATE_API_V3_

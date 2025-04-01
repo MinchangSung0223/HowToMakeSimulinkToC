@@ -1,0 +1,149 @@
+%if EXISTS(::_PRIVATE_API_) == 0
+%assign ::_PRIVATE_API_ = 1
+%%
+%% Copyright 2019-2023 The MathWorks, Inc.
+%%
+
+%% ============================================================================
+%% Private diagnostics library functions
+%%
+%include "diagnostics_private_api.tlc"
+
+%% ============================================================================
+%% Code generation entry library
+%%
+%include "codegenentrylib.tlc"
+
+%% ============================================================================
+%% Private code format library functions
+%%
+%include "codeformat_private_api.tlc"
+
+%% ============================================================================
+%% Private block type and instance setup library
+%%
+%include "blocksetuplib.tlc"
+
+%% ============================================================================
+%% Private block function library
+%%
+%include "block_private_api.tlc"
+
+%% ============================================================================
+%% Private s-function block function library
+%%
+%include "sfunction_private_api.tlc"
+
+%% ============================================================================
+%% Private system function library
+%%
+%include "system_private_api.tlc"
+
+%% ============================================================================
+%% Private block input and output siganal function library
+%%
+%include "blkio_internalapi.tlc"
+
+%% ============================================================================
+%% Private data type function library
+%%
+%include "dtype_private_api.tlc"
+
+%% ============================================================================
+%% Private utility function library
+%%
+%include "utility_private_api.tlc"
+
+%% ============================================================================
+%% Private filepackaging function library
+%%
+%include "filepackaging_private_api.tlc"
+
+%% ============================================================================
+%% Private fixpt utility functions library
+%%
+%include "fixpt_private_api.tlc"
+
+%% ============================================================================
+%% Private code cache functions library
+%%
+%include "cachelib_api.tlc"
+
+%% ============================================================================
+%% Private code template functions library
+%%
+%include "codetemplate_private_api.tlc"
+
+%% ============================================================================
+%% Private commonhdr functions library
+%%
+%include "commonhdr_private_api.tlc"
+
+%% ============================================================================
+%% Private commonhdr functions library
+%%
+%include "parameter_private_api.tlc"
+
+%% ============================================================================
+%% Private commonhdr functions library
+%%
+%include "sysbod_private_api.tlc"
+
+%% ============================================================================
+%% Private modelref utility functions library
+%%
+%include "modelrefutility_private_api.tlc"
+
+%% ============================================================================
+%% Private deployment diagram functions library
+%%
+%include "deployment_diagram_private_api.tlc"
+
+%% ============================================================================
+%% Private rate and task functions library
+%%
+%include "rate_and_task_private_api.tlc"
+
+%% ============================================================================
+%% Private rate and task functions library
+%%
+%include "custom_storage_api.tlc"
+
+%% ============================================================================
+%% Private Obsoleted RTM functions library
+%%
+%include "rtmdl_obsolete_api.tlc"
+
+%% ============================================================================
+%%  accel target functions
+%%
+%include "accel_api.tlc"
+
+%% ============================================================================
+%%  math functions
+%%
+%include "math_private_api.tlc"
+
+%% ============================================================================
+%% roller library
+%%
+%include "rollerlib.tlc"
+
+%% ============================================================================
+%% library of functions to access fields off the CompiledModel
+%%
+%include "model_api.tlc"
+
+%% ============================================================================
+%% Cached shared utils functions
+%%
+%include "cache_sharedutils_private_api.tlc"
+
+%% ============================================================================
+%% Common param private functions
+%%
+%include "commonprm_private_api.tlc"
+
+%include "data_customdata_private_api.tlc"
+
+%endif %% ::_PRIVATE_API_

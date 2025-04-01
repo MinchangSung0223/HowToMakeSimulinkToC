@@ -1,0 +1,44 @@
+%% =============================================================================
+%%
+%%
+%%
+%%
+%% Abstract:
+%%   Included by Embedded Coder code templates to emit generate code.
+%%
+%% Copyright 1994-2021 The MathWorks, Inc.
+%%
+%assign needGuard = LibGetModelFileNeedHeaderGuard(fileIdx)
+%if needGuard
+    %assign includeGuard = SLibGenerateIncludeGuardMacro(FileTag)
+    #ifndef %<includeGuard>
+    #define %<includeGuard>
+
+%endif
+
+%<LibWriteFileSectionToDisk(fileIdx,"Includes")>\
+%<LibWriteFileSectionToDisk(fileIdx,"ModelTypesIncludes")>\
+%<LibWriteFileSectionToDisk(fileIdx,"ModelTypesDefines")>\
+%<LibWriteFileSectionToDisk(fileIdx,"GuardedIncludes")>\
+%<LibWriteFileSectionToDisk(fileIdx,"Defines")>\
+%<LibWriteFileSectionToDisk(fileIdx,"ModelTypesTypedefs")>\
+%<LibWriteFileSectionToDisk(fileIdx,"IntrinsicTypes")>\
+%<LibWriteFileSectionToDisk(fileIdx,"PrimitiveTypedefs")>\
+%<LibWriteFileSectionToDisk(fileIdx,"UserTop")>\
+%<LibWriteFileSectionToDisk(fileIdx,"Typedefs")>\
+%<LibWriteFileSectionToDisk(fileIdx,"Enums")>\
+%<LibWriteFileSectionToDisk(fileIdx,"Definitions")>\
+%<LibWriteFileSectionToDisk(fileIdx,"ExternData")>\
+%<LibWriteFileSectionToDisk(fileIdx,"ExternFcns")>\
+%<LibWriteFileSectionToDisk(fileIdx,"FcnPrototypes")>\
+%<LibWriteFileSectionToDisk(fileIdx,"Declarations")>\
+%<LibWriteFileSectionToDisk(fileIdx,"Functions")>\
+%<LibWriteFileSectionToDisk(fileIdx,"CompilerErrors")>\
+%<LibWriteFileSectionToDisk(fileIdx,"CompilerWarnings")>\
+%<LibWriteFileSectionToDisk(fileIdx,"Documentation")>\
+%<LibWriteFileSectionToDisk(fileIdx,"UserBottom")>\
+
+%if needGuard
+
+    #endif /* %<includeGuard> */
+%endif

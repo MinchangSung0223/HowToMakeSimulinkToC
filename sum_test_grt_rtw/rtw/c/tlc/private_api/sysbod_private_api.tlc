@@ -1,0 +1,19 @@
+%%
+%% Copyright 2020-2022 The MathWorks, Inc.
+%%
+
+%if EXISTS(::_SYSBOD_PRIVATE_API_) == 0
+%assign ::_SYSBOD_PRIVATE_API_ = 1
+
+%function SLibConcurrentTasks() void
+    %return CGMODEL_ACCESS("CGModel.ConcurrentTasks")
+%endfunction
+
+%% Function: FcnBlkIsAsyncTopSfcn ==================================================================
+%%  Return true if block is the async sfcn block
+%%
+%function FcnBlkIsAsyncTopSfcn(block)
+    %return block.AsyncSfcn
+%endfunction %% FcnBlkIsAsyncTopSfcn
+
+%endif %% _SYSBOD_PRIVATE_API_

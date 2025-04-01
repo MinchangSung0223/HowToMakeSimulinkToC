@@ -1,0 +1,23 @@
+%%
+%% Copyright 2020-2023 The MathWorks, Inc.
+%%
+%% Abstract:
+%%   This Thin TLC library file contains the general purpose utility functions
+%%   for accessing data type information.
+%%
+%if EXISTS(::_DTYPE_PRIVATE_API_V3_) == 0
+%assign ::_DTYPE_PRIVATE_API_V3_ = 1
+
+%function LibCGTypeSymbolicWidth(cgTypeIdx) void
+    %<SLibV3CallsiteValid("LibCGTypeSymbolicWidth")>
+    %return CGMODEL_ACCESS("CGType.SymbolicWidth", BlockIdx[0], BlockIdx[2], ...
+        ::CurrentBlockFcn, ::CurrentBlockTid, cgTypeIdx)
+%endfunction
+
+%function LibCGTypeSymbolicDimensions(cgTypeIdx) void
+    %<SLibV3CallsiteValid("LibCGTypeSymbolicDimensions")>
+    %return CGMODEL_ACCESS("CGType.SymbolicDimensions", BlockIdx[0], BlockIdx[2], ...
+        ::CurrentBlockFcn, ::CurrentBlockTid, cgTypeIdx)
+%endfunction
+
+%endif
