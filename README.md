@@ -94,3 +94,12 @@ int main() {
 }
 
 ```
+
+10. build
+
+```bash
+mkdir build
+cd build
+cmake ..
+make -j32
+```
