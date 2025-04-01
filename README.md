@@ -1,59 +1,94 @@
+# How to Convert a Simulink Model to C Code and Build with CMake on Ubuntu
 
-1. Simulink 및 Simulink Coder설치
-2. 간단한 Simulink 모델 생성
+## 1. Install Simulink and Simulink Coder
+Ensure that both Simulink and Simulink Coder are installed on your system.
+
+---
+
+## 2. Create a Simple Simulink Model
+Design a basic Simulink model that adds two inputs.
+
 ![image](https://github.com/user-attachments/assets/e91cdce5-9120-4105-97c7-9054230ba017)
-3. 세팅 변경
-   ![image](https://github.com/user-attachments/assets/b2c46966-8760-4ee7-98bf-d648b0e1aabb)
-  ![image](https://github.com/user-attachments/assets/f669d867-2d6f-49d5-aaa5-b6a61dfb5b60)
+
+---
+
+## 3. Modify Configuration Parameters
+Update the model settings to enable code generation.
+
+- Set System target file to `grt.tlc`
+- Language: `C`
+- Hardware Board: `Intel->x86-64 (Linux 64)`
+
+![image](https://github.com/user-attachments/assets/b2c46966-8760-4ee7-98bf-d648b0e1aabb)
+![image](https://github.com/user-attachments/assets/f669d867-2d6f-49d5-aaa5-b6a61dfb5b60)
 ![image](https://github.com/user-attachments/assets/b06e9d84-4d2b-4ade-9ef4-550d90fff02d)
 ![image](https://github.com/user-attachments/assets/b01655e1-4a88-4b64-9188-40cb5bce04bf)
 
-4. Generate Code
+---
+
+## 4. Generate Code
+Click the "Build" button in the Simulink model to generate C code.
+
 ![image](https://github.com/user-attachments/assets/031c3481-b9fc-4bff-b24f-307adedd99b3)
 
-5. 생성된 코드 폴더 확인
+---
+
+## 5. Confirm Generated Code Folder
+Locate the folder (e.g., `sum_test_grt_rtw`) that contains the generated code.
+
 ![image](https://github.com/user-attachments/assets/2f95cd1b-6542-4fe3-ad9c-19d52803b0d7)
 
-6.아래 두 폴더를 생성된 코드 폴더에 복사.
-```bash
-    C:\Program Files\MATLAB\R2023b\simulink\include  
+---
 
-    C:\Program Files\MATLAB\R2023b\rtw
+## 6. Copy Required MATLAB Files
+Copy the following folders from your MATLAB installation into the generated code folder:
+
+```bash
+C:\Program Files\MATLAB\R2023b\simulink\include  -->  include/
+C:\Program Files\MATLAB\R2023b\rtw               -->  rtw/
 ```
 
-7. Ubuntu환경으로 복사
+---
 
-8. CMakeLists.txt 수정
-```bash
+## 7. Transfer Files to Ubuntu
+Move the entire folder to your Ubuntu system using a method like `scp`, USB drive, or WSL file access.
+
+---
+
+## 8. Create or Modify `CMakeLists.txt`
+Place this file in the root of your project:
+
+```cmake
 cmake_minimum_required(VERSION 3.10)
 project(sum_test_c)
 
 set(CMAKE_C_STANDARD 99)
 
-# include 디렉토리
 include_directories(
     ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/rtw/c/src    
-      ${CMAKE_SOURCE_DIR}/include     # 복사한 rtw 내부 경로
+    ${CMAKE_SOURCE_DIR}/rtw/c/src
+    ${CMAKE_SOURCE_DIR}/include
 )
 
-
-# 소스 목록 (ert_main.c는 직접 추가하거나 따로 작성해야 함)
 set(SOURCES
     sum_test.c
     rt_nonfinite.c
     rtGetInf.c
     rtGetNaN.c
-rtw/c/src/rt_logging.c     # <-- 이 줄 추가
-    main.c  # 직접 작성한 main 파일 (예: ert_main.c 역할)
+    rtw/c/src/rt_logging.c
+    main.c
 )
 
 add_executable(sum_test ${SOURCES})
 target_link_libraries(sum_test m)
-
 ```
-9. main.c 작성
-```bash
+
+---
+
+## 9. Write `main.c`
+Create a file named `main.c` with the following content to run the model and measure performance:
+
+```c
 #include <stdio.h>
 #include <time.h>
 #include "sum_test.h"
@@ -62,10 +97,8 @@ int main() {
     struct timespec start, end;
     double elapsed_ms;
 
-    // 모델 초기화
     sum_test_initialize();
 
-    // 시간 측정 시작
     clock_gettime(CLOCK_MONOTONIC, &start);
 
     for (int i = 0; i < 1000; i++) {
@@ -73,33 +106,33 @@ int main() {
         sum_test_U.Input1 = 7.0;
 
         sum_test_step();
-
-        // 결과 확인 (옵션)
-        // printf("Output: %f\n", sum_test_Y.Out1);
     }
 
-    // 시간 측정 끝
     clock_gettime(CLOCK_MONOTONIC, &end);
 
-    // 경과 시간(ms) 계산
     elapsed_ms = (end.tv_sec - start.tv_sec) * 1000.0;
     elapsed_ms += (end.tv_nsec - start.tv_nsec) / 1e6;
 
     printf("Execution time for 1000 iterations: %.3f ms\n", elapsed_ms);
 
-    // 모델 종료
     sum_test_terminate();
-
     return 0;
 }
-
 ```
 
-10. build
+---
+
+## 10. Build and Run
+Build and run the executable on Ubuntu:
 
 ```bash
 mkdir build
 cd build
 cmake ..
-make -j32
+make -j$(nproc)
+./sum_test
 ```
+
+---
+
+This guide allows you to generate and run Simulink C code outside MATLAB on a Linux system using CMake.
